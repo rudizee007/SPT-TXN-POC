@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/violetskysecurity/spt-txn-poc/internal/captoken"
+	"github.com/violetskysecurity/spt-txn-poc/internal/cttoken"
 	"github.com/violetskysecurity/spt-txn-poc/internal/cattoken"
 	"github.com/violetskysecurity/spt-txn-poc/internal/dpop"
 	"github.com/violetskysecurity/spt-txn-poc/internal/ledger"
@@ -36,7 +36,7 @@ type harness struct {
 	agentPub  ed25519.PublicKey
 	agentPriv ed25519.PrivateKey
 	cat       *cattoken.CAT
-	cap       *captoken.CAP
+	ct       *cttoken.CT
 	tc        ledger.TxnContext
 	l         ledger.Ledger
 }
@@ -84,13 +84,13 @@ func build(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("CAT: %v", err)
 	}
-	h.cap, err = captoken.Issue(captoken.IssueRequest{
+	h.ct, err = cttoken.Issue(cttoken.IssueRequest{
 		Issuer: issCT, ParentCAT: h.cat.Token, ParentIssuerKey: h.ctPub,
 		RequestedScope:  tbac.Scope{"max_amount": 8000, "currency": "USD"},
 		HolderPublicKey: h.agentPub,
 	}, h.ctPriv)
 	if err != nil {
-		t.Fatalf("CAP: %v", err)
+		t.Fatalf("CT: %v", err)
 	}
 
 	h.l, err = ledger.Get("xrpl")
@@ -104,7 +104,7 @@ func build(t *testing.T) *harness {
 		Extra: map[string]string{"DestinationTag": "42"},
 	}
 	txn, err := txntoken.Issue(txntoken.IssueRequest{
-		Issuer: issTTS, Audience: aud, ParentCAP: h.cap.Token, ParentIssuerKey: h.ctPub,
+		Issuer: issTTS, Audience: aud, ParentCT: h.ct.Token, ParentIssuerKey: h.ctPub,
 		HolderPublicKey: h.agentPub, Ledger: h.l, Txn: h.tc,
 	}, h.ttsPriv)
 	if err != nil {
@@ -118,7 +118,7 @@ func build(t *testing.T) *harness {
 	h.eng = verifier.New(reg)
 	h.in = verifier.Input{
 		TxnToken: txn.Token, DPoPProof: proof, HTM: htm, HTU: htu,
-		CAP: h.cap.Token, CAT: h.cat.Token, Txn: h.tc, Audience: aud,
+		CT: h.ct.Token, CAT: h.cat.Token, Txn: h.tc, Audience: aud,
 	}
 	return h
 }
@@ -165,7 +165,7 @@ func TestVerify_Step1_BadSignature(t *testing.T) {
 func TestVerify_Step2_Expired(t *testing.T) {
 	h := build(t)
 	txn, err := txntoken.Issue(txntoken.IssueRequest{
-		Issuer: issTTS, Audience: aud, ParentCAP: h.cap.Token, ParentIssuerKey: h.ctPub,
+		Issuer: issTTS, Audience: aud, ParentCT: h.ct.Token, ParentIssuerKey: h.ctPub,
 		HolderPublicKey: h.agentPub, Ledger: h.l, Txn: h.tc, TTL: -time.Minute,
 	}, h.ttsPriv)
 	if err != nil {
@@ -225,8 +225,8 @@ func TestVerify_Step5_Replay(t *testing.T) {
 
 func TestVerify_Step6_BrokenChain(t *testing.T) {
 	h := build(t)
-	// A different, validly-signed CAP whose jti the SPT-Txn does not reference.
-	other, err := captoken.Issue(captoken.IssueRequest{
+	// A different, validly-signed CT whose jti the SPT-Txn does not reference.
+	other, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer: issCT, ParentCAT: h.cat.Token, ParentIssuerKey: h.ctPub,
 		RequestedScope:  tbac.Scope{"max_amount": 8000, "currency": "USD"},
 		HolderPublicKey: h.agentPub,
@@ -234,13 +234,13 @@ func TestVerify_Step6_BrokenChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.in.CAP = other.Token
+	h.in.CT = other.Token
 	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
 }
 
 func TestVerify_Step7_ScopeOverflow(t *testing.T) {
 	h := build(t)
-	h.in.Txn.Amount = "9000" // exceeds the CAP ceiling of 8000
+	h.in.Txn.Amount = "9000" // exceeds the CT ceiling of 8000
 	mustDeny(t, h.eng.Verify(context.Background(), h.in), 7)
 }
 

@@ -54,26 +54,26 @@ func TestSec_ZeroKeyRejected(t *testing.T) {
 	mustDeny(t, h.eng.Verify(ctx, h.in), 1)
 }
 
-// Review H3: a maliciously over-scoped CAP — validly signed by the CT issuer but
+// Review H3: a maliciously over-scoped CT — validly signed by the CT issuer but
 // claiming more scope than its parent CAT — must be rejected by the verifier's
 // own monotonicity check, independent of issuance.
-func TestSec_OverScopedCAP_Forged(t *testing.T) {
+func TestSec_OverScopedCT_Forged(t *testing.T) {
 	h := build(t)
 	forged := forgeToken(map[string]any{
 		"iss":                        issCT,
 		"sub":                        "alice",
 		"iat":                        time.Now().Add(-time.Minute).Unix(),
 		"exp":                        time.Now().Add(time.Hour).Unix(),
-		"jti":                        h.cap.Claims["jti"], // keep spt_ct_ref matching
-		"txn_token_type":             "CAP",
-		"human_anchor":               h.cap.HumanAnchor,
+		"jti":                        h.ct.Claims["jti"], // keep spt_ct_ref matching
+		"txn_token_type":             "CT",
+		"human_anchor":               h.ct.HumanAnchor,
 		"capability_scope":           map[string]any{"max_amount": 999999, "currency": "USD"}, // > CAT's 10000
 		"delegation_depth_remaining": 2,
 		"holder_key":                 hex.EncodeToString(h.agentPub),
 		"spt_cat_ref":                h.cat.Claims["jti"],
 		"spt_parent_hash":            "x",
 	}, h.ctPriv)
-	h.in.CAP = forged
+	h.in.CT = forged
 	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
 }
 

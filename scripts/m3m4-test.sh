@@ -6,11 +6,11 @@ set -e
 cd "$(dirname "$0")/.."
 
 echo "== go vet (M3/M4 packages) =="
-go vet ./internal/tbac/... ./internal/captoken/... ./internal/ledger/... \
+go vet ./internal/tbac/... ./internal/cttoken/... ./internal/ledger/... \
        ./internal/dpop/... ./internal/txntoken/...
 
 echo "== go test (verbose) =="
-go test -v ./internal/tbac/... ./internal/captoken/... ./internal/ledger/... \
+go test -v ./internal/tbac/... ./internal/cttoken/... ./internal/ledger/... \
             ./internal/dpop/... ./internal/txntoken/...
 
 echo

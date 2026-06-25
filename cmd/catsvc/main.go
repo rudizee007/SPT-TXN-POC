@@ -1,4 +1,4 @@
-// cmd/catsvc — Capability Acquisition Token issuer service.
+// cmd/catsvc — Compliance Attestation Token issuer service.
 //
 // Listens on 127.0.0.1:8082. Reachable externally via relayd on :4444.
 // Reads the ct_issuer signing key from /var/spt-txn/a/keys/ct-issuer.sec

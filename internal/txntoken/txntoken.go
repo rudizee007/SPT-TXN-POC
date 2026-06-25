@@ -1,10 +1,10 @@
 // Package txntoken implements SPT-Txn Token issuance for the POC — Milestone 4.
 //
 // An SPT-Txn Token is the short-lived, transaction-bound leaf of the chain
-// CAT -> CAP -> SPT-Txn. Per Section 3 and Section 7 of
+// CAT -> CT -> SPT-Txn. Per Section 3 and Section 7 of
 // draft-coetzee-oauth-spt-txn-tokens, the Transaction Token Service (TTS):
 //
-//  1. verifies the parent Capability Token (internal/captoken),
+//  1. verifies the parent Capability Token (internal/cttoken),
 //  2. confirms the presenting holder key matches the capability's holder
 //     (sender-constraint chain),
 //  3. checks the concrete transaction is within the capability's scope
@@ -21,14 +21,14 @@
 //
 //	{
 //	  "iss":                  string,   // tts_issuer identifier
-//	  "sub":                  string,   // subject, carried from the CAP
+//	  "sub":                  string,   // subject, carried from the CT
 //	  "aud":                  string,   // executing domain identifier
 //	  "iat":                  int64,
 //	  "exp":                  int64,    // iat + 30s
 //	  "jti":                  string,
 //	  "txn_token_type":       "TXN",
 //	  "human_anchor":         string,   // propagated unchanged
-//	  "spt_ct_ref":           string,   // parent CAP jti
+//	  "spt_ct_ref":           string,   // parent CT jti
 //	  "spt_txn_chain":        string,   // ledger adapter name ("xrpl", "none", ...)
 //	  "spt_txn_context_hash": string,   // hex SHA-256 of the canonical txn context
 //	  "cnf":                  {"jkt": string}, // holder-key thumbprint (DPoP)
@@ -47,7 +47,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/violetskysecurity/spt-txn-poc/internal/captoken"
+	"github.com/violetskysecurity/spt-txn-poc/internal/cttoken"
 	"github.com/violetskysecurity/spt-txn-poc/internal/dpop"
 	"github.com/violetskysecurity/spt-txn-poc/internal/ledger"
 	"github.com/violetskysecurity/spt-txn-poc/internal/tbac"
@@ -65,15 +65,15 @@ type IssueRequest struct {
 	// Audience is the executing domain (Domain B) identifier.
 	Audience string
 
-	// ParentCAP is the compact JWT of the parent Capability Token.
-	ParentCAP string
+	// ParentCT is the compact JWT of the parent Capability Token.
+	ParentCT string
 
-	// ParentIssuerKey is the ct_issuer public key the CAP was signed with
+	// ParentIssuerKey is the ct_issuer public key the CT was signed with
 	// (from a Trust Registry lookup in the running service).
 	ParentIssuerKey ed25519.PublicKey
 
 	// HolderPublicKey is the agent key presenting the request. It MUST equal
-	// the CAP's holder_key — the SPT-Txn Token inherits the sender constraint.
+	// the CT's holder_key — the SPT-Txn Token inherits the sender constraint.
 	HolderPublicKey ed25519.PublicKey
 
 	// Ledger is the chain adapter used to canonicalize and hash the
@@ -96,7 +96,7 @@ type TXN struct {
 	ExpiresAt   time.Time
 }
 
-// Issue verifies the parent CAP, binds the transaction, and signs a 30-second
+// Issue verifies the parent CT, binds the transaction, and signs a 30-second
 // SPT-Txn Token. signingKey is the tts_issuer Ed25519 private key.
 func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*TXN, error) {
 	if req.Issuer == "" || req.Audience == "" {
@@ -109,27 +109,27 @@ func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*TXN, error) {
 		return nil, fmt.Errorf("ledger adapter required")
 	}
 
-	// ── 1. Verify the parent CAP ──────────────────────────────────────
-	parent, err := captoken.Verify(req.ParentCAP, req.ParentIssuerKey)
+	// ── 1. Verify the parent CT ──────────────────────────────────────
+	parent, err := cttoken.Verify(req.ParentCT, req.ParentIssuerKey)
 	if err != nil {
-		return nil, fmt.Errorf("parent CAP invalid: %w", err)
+		return nil, fmt.Errorf("parent CT invalid: %w", err)
 	}
 
-	// ── 2. Sender-constraint chain: holder must match the CAP holder ──
-	capHolder, _ := parent["holder_key"].(string)
-	if capHolder == "" {
-		return nil, fmt.Errorf("parent CAP missing holder_key")
+	// ── 2. Sender-constraint chain: holder must match the CT holder ──
+	ctHolder, _ := parent["holder_key"].(string)
+	if ctHolder == "" {
+		return nil, fmt.Errorf("parent CT missing holder_key")
 	}
-	if !strings.EqualFold(capHolder, hex.EncodeToString(req.HolderPublicKey)) {
+	if !strings.EqualFold(ctHolder, hex.EncodeToString(req.HolderPublicKey)) {
 		return nil, fmt.Errorf("holder key does not match the capability's holder (sender-constraint broken)")
 	}
 
 	humanAnchor, _ := parent["human_anchor"].(string)
 	sub, _ := parent["sub"].(string)
-	capJTI, _ := parent["jti"].(string)
+	ctJTI, _ := parent["jti"].(string)
 	parentScopeRaw, ok := parent["capability_scope"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("parent CAP missing capability_scope")
+		return nil, fmt.Errorf("parent CT missing capability_scope")
 	}
 	parentScope := tbac.Scope(parentScopeRaw)
 
@@ -169,7 +169,7 @@ func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*TXN, error) {
 		"jti":                  jti,
 		"txn_token_type":       "TXN",
 		"human_anchor":         humanAnchor,
-		"spt_ct_ref":           capJTI,
+		"spt_ct_ref":           ctJTI,
 		"spt_txn_chain":        req.Ledger.Name(),
 		"spt_txn_context_hash": ctxHash,
 		"cnf":                  map[string]any{"jkt": dpop.Thumbprint(req.HolderPublicKey)},

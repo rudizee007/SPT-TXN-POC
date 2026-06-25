@@ -1,14 +1,14 @@
-// Package captoken implements Capability Token (CAP) issuance for the SPT-Txn
+// Package cttoken implements Capability Token (CT) issuance for the SPT-Txn
 // POC — Milestone 3.
 //
-// A Capability Token is a scope-attenuated child of a Capability Acquisition
+// A Capability Token is a scope-attenuated child of a Compliance Attestation
 // Token (CAT, see internal/cattoken). Per Section 3.4 of
 // draft-coetzee-oauth-spt-txn-tokens, the issuer:
 //
 //  1. verifies the parent CAT signature and basic claims,
 //  2. checks the requested scope is contained within the CAT's capability_scope
 //     (internal/tbac), and
-//  3. issues a CAP that carries the humanAnchor forward unchanged, decrements
+//  3. issues a CT that carries the humanAnchor forward unchanged, decrements
 //     the remaining delegation depth, and references the parent CAT.
 //
 // Token structure (JWT claims):
@@ -19,7 +19,7 @@
 //	  "iat":                       int64,
 //	  "exp":                       int64,
 //	  "jti":                       string,
-//	  "txn_token_type":            "CAP",
+//	  "txn_token_type":            "CT",
 //	  "human_anchor":              string,   // propagated unchanged from the CAT
 //	  "capability_scope":          object,   // attenuated scope (<= parent)
 //	  "delegation_depth_remaining": int,     // parent max - 1
@@ -31,7 +31,7 @@
 // Signed with Ed25519 (alg EdDSA). The signing key is the registered
 // ct_issuer key (Role ct_issuer also signs CATs — same role, Section 8.1).
 // Standard library only.
-package captoken
+package cttoken
 
 import (
 	"crypto/ed25519"
@@ -49,7 +49,7 @@ import (
 )
 
 // DefaultTTL is the Capability Token lifetime when IssueRequest.TTL is zero.
-// CAPs are short-lived relative to CATs but longer-lived than SPT-Txn Tokens.
+// CTs are short-lived relative to CATs but longer-lived than SPT-Txn Tokens.
 const DefaultTTL = 10 * time.Minute
 
 // IssueRequest is the input to the Capability Token issuer.
@@ -57,7 +57,7 @@ type IssueRequest struct {
 	// Issuer is the registered ct_issuer identifier (Trust Registry).
 	Issuer string
 
-	// ParentCAT is the compact JWT of the parent Capability Acquisition Token.
+	// ParentCAT is the compact JWT of the parent Compliance Attestation Token.
 	ParentCAT string
 
 	// ParentIssuerKey is the public key the parent CAT was signed with. In the
@@ -77,8 +77,8 @@ type IssueRequest struct {
 	TTL time.Duration
 }
 
-// CAP is an issued Capability Token.
-type CAP struct {
+// CT is an issued Capability Token.
+type CT struct {
 	Token       string
 	HumanAnchor string // hex humanAnchor, propagated from the parent CAT
 	Claims      map[string]any
@@ -88,7 +88,7 @@ type CAP struct {
 
 // Issue verifies the parent CAT, attenuates scope, and signs a Capability
 // Token. signingKey is the ct_issuer Ed25519 private key.
-func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*CAP, error) {
+func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*CT, error) {
 	if req.Issuer == "" {
 		return nil, fmt.Errorf("issuer required")
 	}
@@ -154,7 +154,7 @@ func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*CAP, error) {
 		"iat":                        now.Unix(),
 		"exp":                        exp.Unix(),
 		"jti":                        jti,
-		"txn_token_type":             "CAP",
+		"txn_token_type":             "CT",
 		"human_anchor":               humanAnchor,
 		"capability_scope":           map[string]any(attenuated),
 		"delegation_depth_remaining": remaining,
@@ -168,7 +168,7 @@ func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*CAP, error) {
 		return nil, err
 	}
 
-	return &CAP{
+	return &CT{
 		Token:       token,
 		HumanAnchor: humanAnchor,
 		Claims:      claims,
@@ -185,8 +185,8 @@ func Verify(tokenStr string, issuerPublicKey ed25519.PublicKey) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	if tt, _ := claims["txn_token_type"].(string); tt != "CAP" {
-		return nil, fmt.Errorf("expected txn_token_type=CAP, got %q", tt)
+	if tt, _ := claims["txn_token_type"].(string); tt != "CT" {
+		return nil, fmt.Errorf("expected txn_token_type=CT, got %q", tt)
 	}
 	exp, ok := claims["exp"].(float64)
 	if !ok {

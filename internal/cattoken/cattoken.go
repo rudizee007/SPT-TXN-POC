@@ -1,4 +1,4 @@
-// Package cattoken implements Capability Acquisition Token (CAT) issuance
+// Package cattoken implements Compliance Attestation Token (CAT) issuance
 // for the SPT-Txn POC.
 //
 // A CAT is a signed JWT per Section 3.1 of draft-coetzee-oauth-spt-txn-tokens.
@@ -68,7 +68,7 @@ type IssueRequest struct {
 	HolderPublicKey ed25519.PublicKey
 }
 
-// CAT is an issued Capability Acquisition Token.
+// CAT is an issued Compliance Attestation Token.
 type CAT struct {
 	// Token is the compact JWT string (header.payload.signature).
 	Token string

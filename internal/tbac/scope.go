@@ -1,6 +1,6 @@
 // Package tbac implements the Token-Bound Access Control scope logic for the
 // SPT-Txn POC. M3 uses the scope-containment check defined here to attenuate a
-// parent Capability Acquisition Token's scope into a narrower Capability Token
+// parent Compliance Attestation Token's scope into a narrower Capability Token
 // scope, per Section 3.4 (Scope Invariants) of
 // draft-coetzee-oauth-spt-txn-tokens.
 //

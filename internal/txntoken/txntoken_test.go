@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/violetskysecurity/spt-txn-poc/internal/captoken"
+	"github.com/violetskysecurity/spt-txn-poc/internal/cttoken"
 	"github.com/violetskysecurity/spt-txn-poc/internal/cattoken"
 	"github.com/violetskysecurity/spt-txn-poc/internal/dpop"
 	"github.com/violetskysecurity/spt-txn-poc/internal/ledger"
@@ -23,9 +23,9 @@ func kp(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
 	return pub, priv
 }
 
-// buildChain issues CAT -> CAP and returns the CAP token plus the agent
+// buildChain issues CAT -> CT and returns the CT token plus the agent
 // (holder) keypair bound to it, and the ct_issuer public key.
-func buildChain(t *testing.T) (capToken string, ctIssuerPub ed25519.PublicKey, agentPub ed25519.PublicKey, agentPriv ed25519.PrivateKey) {
+func buildChain(t *testing.T) (ctToken string, ctIssuerPub ed25519.PublicKey, agentPub ed25519.PublicKey, agentPriv ed25519.PrivateKey) {
 	t.Helper()
 	ctIssuerPub, ctIssuerPriv := kp(t)
 	agentPub, agentPriv = kp(t)
@@ -43,7 +43,7 @@ func buildChain(t *testing.T) (capToken string, ctIssuerPub ed25519.PublicKey, a
 		t.Fatalf("CAT: %v", err)
 	}
 
-	cap, err := captoken.Issue(captoken.IssueRequest{
+	ct, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer:          "domain-a.authorg",
 		ParentCAT:       cat.Token,
 		ParentIssuerKey: ctIssuerPub,
@@ -51,9 +51,9 @@ func buildChain(t *testing.T) (capToken string, ctIssuerPub ed25519.PublicKey, a
 		HolderPublicKey: agentPub, // same agent carries the capability
 	}, ctIssuerPriv)
 	if err != nil {
-		t.Fatalf("CAP: %v", err)
+		t.Fatalf("CT: %v", err)
 	}
-	return cap.Token, ctIssuerPub, agentPub, agentPriv
+	return ct.Token, ctIssuerPub, agentPub, agentPriv
 }
 
 func xrplTxn() (ledger.Ledger, ledger.TxnContext) {
@@ -71,14 +71,14 @@ func xrplTxn() (ledger.Ledger, ledger.TxnContext) {
 }
 
 func TestIssue_FullChainAndVerify(t *testing.T) {
-	capToken, ctIssuerPub, agentPub, agentPriv := buildChain(t)
+	ctToken, ctIssuerPub, agentPub, agentPriv := buildChain(t)
 	ttsPub, ttsPriv := kp(t)
 	l, tc := xrplTxn()
 
 	txn, err := txntoken.Issue(txntoken.IssueRequest{
 		Issuer:          "domain-a.tts",
 		Audience:        "domain-b.execorg",
-		ParentCAP:       capToken,
+		ParentCT:       ctToken,
 		ParentIssuerKey: ctIssuerPub,
 		HolderPublicKey: agentPub,
 		Ledger:          l,
@@ -136,7 +136,7 @@ func TestIssue_FullChainAndVerify(t *testing.T) {
 }
 
 func TestIssue_TxnExceedsCapability(t *testing.T) {
-	capToken, ctIssuerPub, agentPub, _ := buildChain(t) // CAP ceiling 8000
+	ctToken, ctIssuerPub, agentPub, _ := buildChain(t) // CT ceiling 8000
 	_, ttsPriv := kp(t)
 	l, tc := xrplTxn()
 	tc.Amount = "9000" // over the 8000 capability ceiling
@@ -144,7 +144,7 @@ func TestIssue_TxnExceedsCapability(t *testing.T) {
 	_, err := txntoken.Issue(txntoken.IssueRequest{
 		Issuer:          "domain-a.tts",
 		Audience:        "domain-b.execorg",
-		ParentCAP:       capToken,
+		ParentCT:       ctToken,
 		ParentIssuerKey: ctIssuerPub,
 		HolderPublicKey: agentPub,
 		Ledger:          l,
@@ -156,15 +156,15 @@ func TestIssue_TxnExceedsCapability(t *testing.T) {
 }
 
 func TestIssue_WrongHolderRejected(t *testing.T) {
-	capToken, ctIssuerPub, _, _ := buildChain(t)
+	ctToken, ctIssuerPub, _, _ := buildChain(t)
 	_, ttsPriv := kp(t)
-	wrongPub, _ := kp(t) // not the agent bound to the CAP
+	wrongPub, _ := kp(t) // not the agent bound to the CT
 	l, tc := xrplTxn()
 
 	_, err := txntoken.Issue(txntoken.IssueRequest{
 		Issuer:          "domain-a.tts",
 		Audience:        "domain-b.execorg",
-		ParentCAP:       capToken,
+		ParentCT:       ctToken,
 		ParentIssuerKey: ctIssuerPub,
 		HolderPublicKey: wrongPub,
 		Ledger:          l,
@@ -176,14 +176,14 @@ func TestIssue_WrongHolderRejected(t *testing.T) {
 }
 
 func TestIssue_ExpiredTokenFailsVerify(t *testing.T) {
-	capToken, ctIssuerPub, agentPub, _ := buildChain(t)
+	ctToken, ctIssuerPub, agentPub, _ := buildChain(t)
 	ttsPub, ttsPriv := kp(t)
 	l, tc := xrplTxn()
 
 	txn, err := txntoken.Issue(txntoken.IssueRequest{
 		Issuer:          "domain-a.tts",
 		Audience:        "domain-b.execorg",
-		ParentCAP:       capToken,
+		ParentCT:       ctToken,
 		ParentIssuerKey: ctIssuerPub,
 		HolderPublicKey: agentPub,
 		Ledger:          l,

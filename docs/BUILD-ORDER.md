@@ -65,7 +65,7 @@ relies on.
 ## Milestone 2: CAT issuance (Day 3-4, ~10 hours)
 
 **Goal:** Domain A's CAT issuer takes an SD-JWT (or for POC, a test JWT)
-and issues a Capability Acquisition Token.
+and issues a Compliance Attestation Token.
 
 - [ ] `internal/token/cat.go` — CAT structure, claim set, JWT
       serialization, signing.

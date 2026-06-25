@@ -12,7 +12,8 @@ current, verified status.**
 a valid subject token; `/tr/register` → 404 at the edge; token+proof replay denied
 at enforcement step 5). The remaining items are **deferred roadmap** — documented,
 bounded, and not exploitable gaps in the POC threat model (key encryption-at-rest,
-registry persistence, threshold escrow, and an independent external audit).
+threshold escrow, and an independent external audit). Trust Registry persistence
+(M7), previously deferred, is now **fixed** — see below.
 
 Status shown as **original finding → current state** so the remediation trail is
 explicit.
@@ -33,7 +34,7 @@ explicit.
 | M3 | Medium | Deanonymization request freshness | `[OPEN]` → ✅ **FIXED** |
 | M5 | Medium | No request body size limits | `[OPEN]` → ✅ **FIXED** |
 | M6 | Medium | Service user / key-permission drift | `[OPEN]` → ✅ **FIXED** |
-| M7 | Medium | Trust Registry resets to revoked on restart | `[NEW]` → 🔶 **DEFERRED** (interim mitigation in place) |
+| M7 | Medium | Trust Registry resets to revoked on restart | `[NEW]` → ✅ **FIXED** (file-backed persistent registry) |
 | L2 | Low | Registry client ignored key status | `[OPEN]` → ✅ **FIXED** |
 
 ## Resolved findings — how
@@ -97,11 +98,18 @@ negative amounts, and cross-domain audience.
   encryption (one passphrase/keydisk at boot — best ROI; Linux equivalent: LUKS +
   TPM2); HSM/TPM-sealed key wrapping; or threshold (FROST) so no single host holds a
   whole signing key. Tied to the production-OS decision.
-- **M7 — Trust Registry persistence.** The mock registry seeds revoked placeholders
-  on start and does not persist real registrations, so a `trsvc` restart silently
-  reverts issuers to "revoked" and fail-closed services refuse to start. Interim:
-  `scripts/register-issuers.sh` re-applies the real keys after restart. Proper fix:
-  persist the registry (file/SQLite or chain-backed).
+- **M7 — Trust Registry persistence. FIXED.** Previously the in-memory mock registry
+  seeded revoked placeholders on start and did not persist real registrations, so a
+  `trsvc` restart silently reverted issuers to "revoked" and fail-closed services
+  refused to start. `trsvc` now uses `trustregistry.PersistentRegistry` — a pure-Go,
+  file-backed store (atomic write-temp-then-rename, mode 0600, no CGo, pledge-safe)
+  at `SPT_TR_DB` (default `/var/spt-txn/tr/registry.db`). Real registrations are
+  durable across restarts; `seedIfEmpty` is a no-op on a non-empty store, so an issuer
+  is never silently re-revoked. Regression tests in
+  `internal/trustregistry/persist_test.go` (survive-restart, revoke-persists,
+  corrupt-file-surfaced). `scripts/register-issuers.sh` is now only needed **once**,
+  right after upgrading to this build (to populate the keys the first time). A
+  chain-backed registry remains the v2 target.
 - **Threshold (FROST) escrow decryption; chain-backed Trust Registry; an independent
   ZK-circuit + protocol audit** (grant-funded, by a reputable firm).
 

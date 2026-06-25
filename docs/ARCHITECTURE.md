@@ -13,7 +13,7 @@ configurations, and audit logs, all hosted on `foss.violetskysecurity.com`.
 institution issuing the human's identity proofing and the agent's authority).
 Domain A operates:
 - An identity wallet endpoint that issues SD-JWTs to verified humans.
-- A CAT issuer that converts an SD-JWT into a Capability Acquisition Token
+- A CAT issuer that converts an SD-JWT into a Compliance Attestation Token
   bound to an agent's key.
 - A Capability Token issuer that attenuates a CAT into a scope-limited
   Capability Token.

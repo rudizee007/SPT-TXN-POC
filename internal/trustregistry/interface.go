@@ -5,14 +5,17 @@
 // JWKS endpoints. This package is the only API surface that knows where
 // keys come from.
 //
-// Two implementations are provided:
+// Three implementations are provided:
 //
-//   - MockRegistry: SQLite-backed, in-process. Suitable for development
-//     and the POC demo.
+//   - MockRegistry: in-memory, in-process. Ephemeral (lives only for the
+//     process lifetime). Suitable for unit tests and throwaway demos.
+//   - PersistentRegistry: file-backed (atomic JSON, pure Go, no CGo).
+//     Durable across restarts. This is what the trsvc service uses so that
+//     registered issuers are not lost on restart.
 //   - ChainRegistry (v2): EVM-backed, queries the on-chain Trust Registry
 //     contract. Suitable for production-realistic demonstrations.
 //
-// Both implement the Registry interface and are functionally
+// All implement the Registry interface and are functionally
 // interchangeable from a caller's perspective.
 package trustregistry
 
@@ -29,7 +32,7 @@ import (
 type Role string
 
 const (
-	// RoleCTIssuer signs Capability Acquisition Tokens and Capability
+	// RoleCTIssuer signs Compliance Attestation Tokens and Capability
 	// Tokens.
 	RoleCTIssuer Role = "ct_issuer"
 

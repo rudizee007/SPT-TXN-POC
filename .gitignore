@@ -31,3 +31,11 @@ zk/
 *.out
 docs/XRPL-GRANT-PROPOSAL.md
 docs/XRPL-GRANT-PROPOSAL.md
+docs/XRPL-INTEGRATION-PLAN.md
+docs/SPT-Txn-XRPL-Pitch.pptx
+docs/SPT-Txn-XRPL-Pitch.pdf
+
+# build artifacts / editor locks
+*.openbsd
+docs/.~lock.*#
+docs/*.tmp

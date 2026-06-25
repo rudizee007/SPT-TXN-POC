@@ -1,11 +1,13 @@
 #!/bin/ksh
-# scripts/register-issuers.sh — re-register the real issuer keys in the Trust
-# Registry after a trsvc (re)start.
+# scripts/register-issuers.sh — register the real issuer keys in the Trust
+# Registry. ONE-TIME after upgrading to the persistent-registry build.
 #
-# WHY THIS EXISTS: the mock Trust Registry seeds REVOKED all-zero placeholders on
-# every start and does NOT persist real registrations (no on-disk DB). So after
-# any `rcctl restart trsvc` the real keys are gone and fail-closed services like
-# catsvc (ct_issuer) refuse to start. This script re-applies the real keys.
+# WHY THIS EXISTS: trsvc now uses a file-backed PERSISTENT Trust Registry
+# (security review M7 — FIXED), so real registrations survive a restart. Run this
+# ONCE, right after upgrading to the persistent build, to populate the real keys
+# the first time — a fresh store still seeds REVOKED all-zero placeholders until
+# the real keys are registered. After that, `rcctl restart trsvc` keeps the
+# registered keys; no re-run is needed.
 #
 # Run as root (the admin socket /var/spt-txn/sockets/tr-admin.sock is owner-only):
 #   doas sh scripts/register-issuers.sh
@@ -15,8 +17,9 @@
 # currently-deployed services (catsvc); the rest are registered when present so
 # tts/audit/escrow services work if enabled.
 #
-# PROPER FIX (tracked): make the registry persist registrations across restarts,
-# which removes the need for this script entirely. See docs/SECURITY-REVIEW.md.
+# DONE: the registry now persists registrations across restarts (M7 fixed), so
+# this script is a one-time bootstrap rather than a per-restart fixup. See
+# docs/SECURITY-REVIEW.md and internal/trustregistry/persist.go.
 
 REGKEY="${REGKEY:-/usr/local/bin/regkey}"
 [ -x "$REGKEY" ] || REGKEY=/tmp/regkey

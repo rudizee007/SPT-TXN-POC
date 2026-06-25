@@ -51,7 +51,10 @@ func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 
 	// ── Open registry ──────────────────────────────────────────────
-	reg, err := trustregistry.NewMockRegistry(dbPath)
+	// File-backed and durable: real issuer registrations survive a
+	// restart, so seedIfEmpty (below) never silently re-revokes a live
+	// issuer (security review M7 / Trust Registry persistence).
+	reg, err := trustregistry.NewPersistentRegistry(dbPath)
 	if err != nil {
 		log.Fatalf("open registry: %v", err)
 	}
@@ -84,11 +87,13 @@ func main() {
 
 	// ── pledge ─────────────────────────────────────────────────────
 	// Iteration 1: syscall confinement only (security review C4). Promise set is
-	// a small superset of what serving needs: stdio (runtime + rpath for any
-	// runtime file reads), inet (TCP), unix (admin socket), cpath (Go unlinks the
-	// unix socket on listener Close at shutdown). unveil (filesystem confinement)
-	// is added in the next pass once this is proven stable under load.
-	if err := pledge("stdio rpath inet unix cpath"); err != nil {
+	// a small superset of what serving needs: stdio (runtime), rpath (read the
+	// registry file at startup), wpath+cpath (atomic registry persistence —
+	// write temp file, rename into place — plus Go unlinks the unix socket on
+	// listener Close at shutdown), inet (TCP), unix (admin socket). unveil
+	// (filesystem confinement) is added in the next pass once this is proven
+	// stable under load.
+	if err := pledge("stdio rpath wpath cpath inet unix"); err != nil {
 		log.Fatalf("pledge: %v", err)
 	}
 

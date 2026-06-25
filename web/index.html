@@ -597,6 +597,52 @@
     <h2 class="section-title">From a verified human to a single bound transaction.</h2>
     <p class="section-body">Attributes are evaluated once, at issuance; capability is enforced on every token afterward. Identity and PII never travel — only proofs.</p>
 
+    <figure style="margin:2.6rem auto 0.5rem; max-width:780px;">
+      <svg viewBox="0 0 720 432" role="img" aria-labelledby="dc-t dc-d" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
+        <title id="dc-t">SPT-Txn token and delegation chain</title>
+        <desc id="dc-d">A KYC provider issues the user a Compliance Attestation Token (CAT). A platform checks a zero-knowledge proof of the CAT against policy and issues a root Capability Token with a maximum scope. Delegated Capability Tokens for an AI agent or microservice are strict subsets with bounded delegation depth. Each action mints an ephemeral, transaction-bound SPT-Txn token. The humanAnchor is carried immutably through every token and scope can only narrow.</desc>
+        <line x1="30" y1="70" x2="30" y2="396" stroke="#7B2FBE" stroke-width="1.5" stroke-dasharray="2 4"/>
+        <text x="30" y="58" text-anchor="middle" font-family="Space Mono, monospace" font-size="8.5" fill="#9D4EDD">humanAnchor</text>
+        <text x="702" y="232" text-anchor="middle" font-family="Space Mono, monospace" font-size="9" fill="#7B2FBE" transform="rotate(90 702 232)">SCOPE NARROWS ↓</text>
+        <circle cx="120" cy="56" r="9" fill="none" stroke="#C77DFF" stroke-width="1.5"/>
+        <path d="M106 80 a15 13 0 0 1 28 0" fill="none" stroke="#C77DFF" stroke-width="1.5"/>
+        <text x="120" y="98" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#A09AB8">Human</text>
+        <line x1="140" y1="62" x2="300" y2="62" stroke="#9D4EDD" stroke-width="1.5"/>
+        <polygon points="300,57 308,62 300,67" fill="#9D4EDD"/>
+        <text x="224" y="54" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="#A09AB8">KYC issues</text>
+        <rect x="312" y="38" width="180" height="50" rx="5" fill="rgba(123,47,190,0.12)" stroke="#7B2FBE"/>
+        <text x="402" y="60" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" fill="#C77DFF">CAT</text>
+        <text x="402" y="76" text-anchor="middle" font-family="Inter, sans-serif" font-size="9.5" fill="#A09AB8">Compliance Attestation · reusable</text>
+        <line x1="402" y1="88" x2="402" y2="148" stroke="#9D4EDD" stroke-width="1.5"/>
+        <polygon points="397,148 402,156 407,148" fill="#9D4EDD"/>
+        <text x="416" y="123" font-family="Inter, sans-serif" font-size="9" fill="#A09AB8">platform checks ZK proof vs policy</text>
+        <rect x="312" y="158" width="180" height="50" rx="5" fill="rgba(157,78,221,0.12)" stroke="#9D4EDD"/>
+        <text x="402" y="180" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" fill="#C77DFF">CT · root</text>
+        <text x="402" y="196" text-anchor="middle" font-family="Inter, sans-serif" font-size="9.5" fill="#A09AB8">Capability · max scope ≤ $50k/day</text>
+        <line x1="402" y1="208" x2="402" y2="226" stroke="#9D4EDD" stroke-width="1.5"/>
+        <line x1="220" y1="226" x2="584" y2="226" stroke="#9D4EDD" stroke-width="1.5"/>
+        <line x1="220" y1="226" x2="220" y2="268" stroke="#9D4EDD" stroke-width="1.5"/>
+        <polygon points="215,268 220,276 225,268" fill="#9D4EDD"/>
+        <line x1="584" y1="226" x2="584" y2="268" stroke="#9D4EDD" stroke-width="1.5"/>
+        <polygon points="579,268 584,276 589,268" fill="#9D4EDD"/>
+        <rect x="128" y="278" width="184" height="52" rx="5" fill="rgba(199,125,255,0.10)" stroke="#C77DFF"/>
+        <text x="220" y="300" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" fill="#C77DFF">CT · AI agent</text>
+        <text x="220" y="316" text-anchor="middle" font-family="Inter, sans-serif" font-size="9.5" fill="#A09AB8">strict subset · depth-bounded</text>
+        <rect x="492" y="278" width="184" height="52" rx="5" fill="rgba(199,125,255,0.10)" stroke="#C77DFF"/>
+        <text x="584" y="300" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" fill="#C77DFF">CT · microservice</text>
+        <text x="584" y="316" text-anchor="middle" font-family="Inter, sans-serif" font-size="9.5" fill="#A09AB8">strict subset · depth-bounded</text>
+        <line x1="220" y1="330" x2="220" y2="354" stroke="#C77DFF" stroke-width="1.5"/>
+        <line x1="584" y1="330" x2="584" y2="354" stroke="#C77DFF" stroke-width="1.5"/>
+        <line x1="220" y1="354" x2="584" y2="354" stroke="#C77DFF" stroke-width="1.5"/>
+        <line x1="402" y1="354" x2="402" y2="368" stroke="#C77DFF" stroke-width="1.5"/>
+        <polygon points="397,368 402,376 407,368" fill="#C77DFF"/>
+        <rect x="300" y="378" width="204" height="50" rx="5" fill="rgba(224,170,255,0.12)" stroke="#E0AAFF"/>
+        <text x="402" y="400" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" fill="#E0AAFF">SPT-Txn token</text>
+        <text x="402" y="416" text-anchor="middle" font-family="Inter, sans-serif" font-size="9.5" fill="#A09AB8">per transaction · ~30s · tx-bound</text>
+      </svg>
+      <figcaption style="font-family:'Space Mono',monospace; font-size:0.72rem; letter-spacing:1px; color:var(--muted); text-align:center; margin-top:0.9rem;">CAT → CT → SPT-Txn · the humanAnchor propagates unchanged · scope can only narrow</figcaption>
+    </figure>
+
     <div class="arch-stack">
       <div class="arch-layer">
         <div class="arch-label">1 · Verify Once</div>
@@ -701,6 +747,48 @@
     <h2 class="section-title">Privacy-preserving Travel Rule, running today.</h2>
     <p class="section-body">SPT-Txn carries a payload-level zero-knowledge attestation over the inter-VASP Travel Rule Protocol (TRP) — closing the cleartext-PII gap that plain TRP leaves open and that TRISA addresses only with trusted decryption.</p>
 
+    <figure style="margin:2.6rem auto 0.5rem; max-width:780px;">
+      <svg viewBox="0 0 720 320" role="img" aria-labelledby="tr-t tr-d" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
+        <title id="tr-t">Privacy-preserving Travel Rule: traditional cleartext vs SPT-Txn zero-knowledge</title>
+        <desc id="tr-d">Traditional TRP ships originator and beneficiary PII — name, account, amount — in cleartext to the counterparty. SPT-Txn instead carries a zero-knowledge attestation: the beneficiary verifies identity commitment, amount over threshold and VASP registration while only a surname and currency are disclosed; the amount, given name and account stay hidden.</desc>
+        <text x="20" y="32" font-family="Space Mono, monospace" font-size="12" letter-spacing="1.5" fill="#E0A33E">TRADITIONAL TRP</text>
+        <text x="392" y="32" font-family="Space Mono, monospace" font-size="12" letter-spacing="1.5" fill="#C77DFF">SPT-TXN</text>
+        <line x1="360" y1="46" x2="360" y2="288" stroke="rgba(155,78,221,0.20)" stroke-width="1"/>
+        <rect x="20" y="66" width="100" height="48" rx="4" fill="rgba(160,154,184,0.08)" stroke="#6b6480"/>
+        <text x="70" y="94" text-anchor="middle" font-family="Inter, sans-serif" font-size="11.5" fill="#A09AB8">Originator</text>
+        <rect x="240" y="66" width="100" height="48" rx="4" fill="rgba(160,154,184,0.08)" stroke="#6b6480"/>
+        <text x="290" y="94" text-anchor="middle" font-family="Inter, sans-serif" font-size="11.5" fill="#A09AB8">Beneficiary</text>
+        <line x1="120" y1="90" x2="236" y2="90" stroke="#E0A33E" stroke-width="1.5"/>
+        <polygon points="236,85 244,90 236,95" fill="#E0A33E"/>
+        <rect x="138" y="130" width="84" height="80" rx="4" fill="rgba(224,163,62,0.12)" stroke="#E0A33E"/>
+        <text x="180" y="150" text-anchor="middle" font-family="Space Mono, monospace" font-size="9" fill="#E0A33E">CLEARTEXT</text>
+        <text x="180" y="170" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#F8F8FF">Name</text>
+        <text x="180" y="186" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#F8F8FF">Account</text>
+        <text x="180" y="202" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#F8F8FF">Amount</text>
+        <line x1="180" y1="95" x2="180" y2="130" stroke="#E0A33E" stroke-width="1" stroke-dasharray="3 3"/>
+        <text x="20" y="248" font-family="Space Mono, monospace" font-size="11" fill="#E0A33E">Full PII exposed to the counterparty.</text>
+        <rect x="392" y="64" width="120" height="52" rx="4" fill="rgba(123,47,190,0.12)" stroke="#9D4EDD"/>
+        <text x="452" y="86" text-anchor="middle" font-family="Inter, sans-serif" font-size="11.5" fill="#E0AAFF">Originator</text>
+        <text x="452" y="102" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="#A09AB8">proving key</text>
+        <rect x="600" y="64" width="110" height="52" rx="4" fill="rgba(123,47,190,0.12)" stroke="#9D4EDD"/>
+        <text x="655" y="86" text-anchor="middle" font-family="Inter, sans-serif" font-size="11.5" fill="#E0AAFF">Beneficiary</text>
+        <text x="655" y="102" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="#A09AB8">verifying key only</text>
+        <line x1="512" y1="90" x2="596" y2="90" stroke="#C77DFF" stroke-width="1.5"/>
+        <polygon points="596,85 604,90 596,95" fill="#C77DFF"/>
+        <rect x="468" y="130" width="176" height="80" rx="4" fill="rgba(123,47,190,0.14)" stroke="#7B2FBE"/>
+        <text x="556" y="150" text-anchor="middle" font-family="Space Mono, monospace" font-size="9" fill="#C77DFF">ZK ATTESTATION</text>
+        <text x="484" y="170" font-family="Inter, sans-serif" font-size="10.5" fill="#F8F8FF">✓ identity committed</text>
+        <text x="484" y="186" font-family="Inter, sans-serif" font-size="10.5" fill="#F8F8FF">✓ amount ≥ threshold</text>
+        <text x="484" y="202" font-family="Inter, sans-serif" font-size="10.5" fill="#F8F8FF">✓ VASP registered</text>
+        <line x1="556" y1="95" x2="556" y2="130" stroke="#C77DFF" stroke-width="1" stroke-dasharray="3 3"/>
+        <text x="392" y="238" font-family="Inter, sans-serif" font-size="11" fill="#C77DFF">Disclosed: surname · currency</text>
+        <text x="392" y="256" font-family="Inter, sans-serif" font-size="11" fill="#A09AB8">Hidden: amount · given name · account</text>
+        <rect x="20" y="300" width="10" height="10" fill="#E0A33E"/><text x="36" y="309" font-family="Inter, sans-serif" font-size="10" fill="#A09AB8">PII exposed</text>
+        <rect x="150" y="300" width="10" height="10" fill="#7B2FBE"/><text x="166" y="309" font-family="Inter, sans-serif" font-size="10" fill="#A09AB8">zero-knowledge</text>
+      </svg>
+      <figcaption style="font-family:'Space Mono',monospace; font-size:0.72rem; letter-spacing:1px; color:var(--muted); text-align:center; margin-top:0.9rem;">Same compliance obligation · cleartext PII today vs proven, not disclosed</figcaption>
+    </figure>
+
     <div class="token-cards">
       <div class="token-card cat">
         <div class="tk-label">Data Model</div>
@@ -761,7 +849,7 @@
       <div class="arch-layer">
         <div class="arch-label">Cryptographic Root</div>
         <div class="arch-content">
-          <strong>ZK circuits, key generation, randomness.</strong> Groth16 over BN254 for proof generation, with ZK-friendly hashing migrating MiMC → Poseidon. Ed25519 for signing (ML-DSA / Dilithium migration path defined). X25519/ECIES for escrow encapsulation (ML-KEM / Kyber migration path defined). Key generation per NIST SP 800-133. Identity anchored via zkDID commitments; policy bound as a representation-agnostic policy object, instantiable on-chain. Naming and discovery move to <strong>zkDNS</strong> — a capture-resistant, decentralised name→key root (no ICANN dependency, no single seizure point) with private resolution.
+          <strong>ZK circuits, key generation, randomness.</strong> Groth16 over BN254 for proof generation, with ZK-friendly hashing on Poseidon2 (migrated from MiMC). Ed25519 for signing (ML-DSA / Dilithium migration path defined). X25519/ECIES for escrow encapsulation (ML-KEM / Kyber migration path defined). Key generation per NIST SP 800-133. Identity anchored via zkDID commitments; policy bound as a representation-agnostic policy object, instantiable on-chain. Naming and discovery move to <strong>zkDNS</strong> — a capture-resistant, decentralised name→key root (no ICANN dependency, no single seizure point) with private resolution.
         </div>
       </div>
     </div>
@@ -819,7 +907,7 @@
   <div class="section-inner">
     <div class="section-eyebrow">Proof of Concept</div>
     <h2 class="section-title">Reference implementation. OpenBSD. Go. Security by design.</h2>
-    <p class="section-body">The POC validates the protocol architecture end-to-end. Classical cryptography with algorithm-agility dispatch. Pledge and unveil sandbox. SQLite-backed Trust Registry. Two-domain cross-organizational demo.</p>
+    <p class="section-body">The POC validates the protocol architecture end-to-end. Classical cryptography with algorithm-agility dispatch. Pledge and unveil sandbox. File-backed persistent Trust Registry. Two-domain cross-organizational demo.</p>
 
     <div class="milestone-list">
       <div class="milestone">
@@ -832,7 +920,7 @@
       <div class="milestone">
         <div class="ms-id">M1</div>
         <div class="ms-body">
-          <strong>Trust Registry Service</strong> — Go HTTP service · SQLite-backed registry · pledge/unveil sandbox · Unix socket · relayd /tr/* route.<br>
+          <strong>Trust Registry Service</strong> — Go HTTP service · file-backed persistent registry · pledge/unveil sandbox · Unix socket · relayd /tr/* route.<br>
           <span class="ms-status done">Complete</span>
         </div>
       </div>

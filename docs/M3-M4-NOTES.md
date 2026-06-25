@@ -14,7 +14,7 @@ library, EdDSA/Ed25519 compact JWTs, `txn_token_type` discriminator,
   objects recurse. A dimension present in the child but absent in the parent is
   rejected (cannot grant unheld authority). This is the POC stand-in for the v2
   Cedar interop; the `Contains`/`Attenuate` API is what the swap must preserve.
-- `internal/captoken/captoken.go` — verifies the parent CAT, attenuates scope,
+- `internal/cttoken/cttoken.go` — verifies the parent CAT, attenuates scope,
   decrements `delegation_depth_remaining`, references the parent
   (`spt_cat_ref`, `spt_parent_hash`), signs with the `ct_issuer` key.
 

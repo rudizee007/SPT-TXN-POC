@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/violetskysecurity/spt-txn-poc/internal/captoken"
+	"github.com/violetskysecurity/spt-txn-poc/internal/cttoken"
 	"github.com/violetskysecurity/spt-txn-poc/internal/cattoken"
 	"github.com/violetskysecurity/spt-txn-poc/internal/dpop"
 	"github.com/violetskysecurity/spt-txn-poc/internal/ledger"
@@ -55,7 +55,7 @@ type Input struct {
 	TxnToken  string            // the SPT-Txn Token (compact JWT)
 	DPoPProof string            // DPoP proof of possession of the holder key
 	HTM, HTU  string            // HTTP method and URI the DPoP proof must bind
-	CAP       string            // parent Capability Token (for chain + scope)
+	CT       string            // parent Capability Token (for chain + scope)
 	CAT       string            // grandparent CAT (optional; full-chain check)
 	Txn       ledger.TxnContext // the concrete transaction being authorized
 	Audience  string            // this domain's identifier (expected aud)
@@ -124,13 +124,13 @@ func (e *Engine) Verify(ctx context.Context, in Input) Decision {
 	if err := e.step5DPoP(txClaims, in.TxnToken, in.DPoPProof, in.HTM, in.HTU); err != nil {
 		return deny(5, err)
 	}
-	// Step 6 — capability chain CAT -> CAP -> SPT-Txn. Returns CAP claims.
-	capClaims, err := e.step6Chain(ctx, txClaims, in.CAP, in.CAT)
+	// Step 6 — capability chain CAT -> CT -> SPT-Txn. Returns CT claims.
+	ctClaims, err := e.step6Chain(ctx, txClaims, in.CT, in.CAT)
 	if err != nil {
 		return deny(6, err)
 	}
 	// Step 7 — scope containment of the transaction within the capability.
-	if err := step7Scope(capClaims, in.Txn); err != nil {
+	if err := step7Scope(ctClaims, in.Txn); err != nil {
 		return deny(7, err)
 	}
 	// Step 8 — transaction context-hash binding.
@@ -186,9 +186,9 @@ func step3Audience(txClaims map[string]any, expected string) error {
 // step4Revocation confirms the TTS issuer key — the one the SPT-Txn signature
 // was just verified against in step 1 — is still active in the registry.
 //
-// Review H2: the previous version also looked up the CAP issuer using an
-// UNVERIFIED iss field read from the CAP token, making a trust decision on
-// attacker-controllable input. The CAP/CAT issuer active-status is instead
+// Review H2: the previous version also looked up the CT issuer using an
+// UNVERIFIED iss field read from the CT token, making a trust decision on
+// attacker-controllable input. The CT/CAT issuer active-status is instead
 // enforced in step 6, where each key is resolved via Lookup (which returns only
 // active records) and the signature is then verified against it — so the
 // decision is always tied to a signature-bound issuer.
@@ -213,22 +213,22 @@ func (e *Engine) step5DPoP(txClaims map[string]any, token, proof, htm, htu strin
 	return txntoken.CheckSenderConstraint(txClaims, jkt)
 }
 
-// step6Chain verifies the full capability chain CAT -> CAP -> SPT-Txn and
-// returns the CAP claims for the scope check. The executing domain re-derives
+// step6Chain verifies the full capability chain CAT -> CT -> SPT-Txn and
+// returns the CT claims for the scope check. The executing domain re-derives
 // every guarantee from the presented tokens rather than trusting that issuance
 // performed them (review H3): it verifies both signatures against registry keys,
-// checks the jti/anchor linkage, binds the SPT-Txn holder to the CAP holder key,
-// and independently re-enforces scope monotonicity (CAP scope contained in CAT
+// checks the jti/anchor linkage, binds the SPT-Txn holder to the CT holder key,
+// and independently re-enforces scope monotonicity (CT scope contained in CAT
 // scope) and delegation depth. The CAT must be presented — attenuation cannot be
 // verified without the parent.
-func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, capToken, catToken string) (map[string]any, error) {
-	if capToken == "" || catToken == "" {
-		return nil, fmt.Errorf("the full capability chain (CAT and CAP) must be presented")
+func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToken, catToken string) (map[string]any, error) {
+	if ctToken == "" || catToken == "" {
+		return nil, fmt.Errorf("the full capability chain (CAT and CT) must be presented")
 	}
 
-	capClaims, err := e.verifyChainToken(ctx, capToken, captoken.Verify)
+	ctClaims, err := e.verifyChainToken(ctx, ctToken, cttoken.Verify)
 	if err != nil {
-		return nil, fmt.Errorf("CAP: %w", err)
+		return nil, fmt.Errorf("CT: %w", err)
 	}
 	catClaims, err := e.verifyChainToken(ctx, catToken, cattoken.Verify)
 	if err != nil {
@@ -236,47 +236,47 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, capTok
 	}
 
 	// Linkage: jti references and humanAnchor propagation across the chain.
-	if txClaims["spt_ct_ref"] != capClaims["jti"] {
-		return nil, fmt.Errorf("spt_ct_ref does not reference the presented CAP")
+	if txClaims["spt_ct_ref"] != ctClaims["jti"] {
+		return nil, fmt.Errorf("spt_ct_ref does not reference the presented CT")
 	}
-	if capClaims["spt_cat_ref"] != catClaims["jti"] {
-		return nil, fmt.Errorf("CAP spt_cat_ref does not reference the presented CAT")
+	if ctClaims["spt_cat_ref"] != catClaims["jti"] {
+		return nil, fmt.Errorf("CT spt_cat_ref does not reference the presented CAT")
 	}
 	anchor := txClaims["human_anchor"]
-	if anchor == nil || anchor != capClaims["human_anchor"] || anchor != catClaims["human_anchor"] {
+	if anchor == nil || anchor != ctClaims["human_anchor"] || anchor != catClaims["human_anchor"] {
 		return nil, fmt.Errorf("humanAnchor not propagated unchanged across the chain")
 	}
 
-	// Holder binding: the SPT-Txn cnf.jkt must commit to the CAP holder key.
-	if err := checkHolderBinding(txClaims, capClaims); err != nil {
+	// Holder binding: the SPT-Txn cnf.jkt must commit to the CT holder key.
+	if err := checkHolderBinding(txClaims, ctClaims); err != nil {
 		return nil, err
 	}
 
-	// Attenuation monotonicity: CAP scope must be contained in CAT scope.
+	// Attenuation monotonicity: CT scope must be contained in CAT scope.
 	catScope, err := scopeOf(catClaims)
 	if err != nil {
 		return nil, fmt.Errorf("CAT scope: %w", err)
 	}
-	capScope, err := scopeOf(capClaims)
+	ctScope, err := scopeOf(ctClaims)
 	if err != nil {
-		return nil, fmt.Errorf("CAP scope: %w", err)
+		return nil, fmt.Errorf("CT scope: %w", err)
 	}
-	if err := tbac.Contains(catScope, capScope); err != nil {
-		return nil, fmt.Errorf("CAP scope exceeds CAT scope: %w", err)
+	if err := tbac.Contains(catScope, ctScope); err != nil {
+		return nil, fmt.Errorf("CT scope exceeds CAT scope: %w", err)
 	}
 
-	// Delegation depth: CAP remaining must be exactly CAT max minus one, >= 0.
+	// Delegation depth: CT remaining must be exactly CAT max minus one, >= 0.
 	catMax, ok1 := intClaim(catClaims, "delegation_depth_max")
-	capRem, ok2 := intClaim(capClaims, "delegation_depth_remaining")
-	if !ok1 || !ok2 || capRem != catMax-1 || capRem < 0 {
-		return nil, fmt.Errorf("delegation depth violated (cat_max=%d cap_remaining=%d)", catMax, capRem)
+	ctRem, ok2 := intClaim(ctClaims, "delegation_depth_remaining")
+	if !ok1 || !ok2 || ctRem != catMax-1 || ctRem < 0 {
+		return nil, fmt.Errorf("delegation depth violated (cat_max=%d cap_remaining=%d)", catMax, ctRem)
 	}
 
-	return capClaims, nil
+	return ctClaims, nil
 }
 
 // verifyChainToken resolves the token's CT issuer key from the registry and
-// verifies the token's signature against it. verify is captoken.Verify or
+// verifies the token's signature against it. verify is cttoken.Verify or
 // cattoken.Verify.
 func (e *Engine) verifyChainToken(ctx context.Context, token string, verify func(string, ed25519.PublicKey) (map[string]any, error)) (map[string]any, error) {
 	routing, err := unverifiedClaims(token)
@@ -291,19 +291,19 @@ func (e *Engine) verifyChainToken(ctx context.Context, token string, verify func
 	return verify(token, key)
 }
 
-// checkHolderBinding confirms the SPT-Txn cnf.jkt is the thumbprint of the CAP
+// checkHolderBinding confirms the SPT-Txn cnf.jkt is the thumbprint of the CT
 // holder key, tying the sender-constrained token to the capability's holder.
-func checkHolderBinding(txClaims, capClaims map[string]any) error {
-	capHolderHex, _ := capClaims["holder_key"].(string)
-	b, err := hex.DecodeString(capHolderHex)
+func checkHolderBinding(txClaims, ctClaims map[string]any) error {
+	ctHolderHex, _ := ctClaims["holder_key"].(string)
+	b, err := hex.DecodeString(ctHolderHex)
 	if err != nil || len(b) != ed25519.PublicKeySize {
-		return fmt.Errorf("CAP holder_key malformed")
+		return fmt.Errorf("CT holder_key malformed")
 	}
 	want := dpop.Thumbprint(ed25519.PublicKey(b))
 	cnf, _ := txClaims["cnf"].(map[string]any)
 	jkt, _ := cnf["jkt"].(string)
 	if jkt != want {
-		return fmt.Errorf("SPT-Txn cnf.jkt does not commit to the CAP holder key")
+		return fmt.Errorf("SPT-Txn cnf.jkt does not commit to the CT holder key")
 	}
 	return nil
 }
@@ -324,10 +324,10 @@ func intClaim(claims map[string]any, name string) (int, bool) {
 	return int(f), true
 }
 
-func step7Scope(capClaims map[string]any, tc ledger.TxnContext) error {
-	raw, ok := capClaims["capability_scope"].(map[string]any)
+func step7Scope(ctClaims map[string]any, tc ledger.TxnContext) error {
+	raw, ok := ctClaims["capability_scope"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("CAP missing capability_scope")
+		return fmt.Errorf("CT missing capability_scope")
 	}
 	parent := tbac.Scope(raw)
 	txnScope, err := tbac.TxnScope(parent, tc)
