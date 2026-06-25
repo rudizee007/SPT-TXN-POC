@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terms &amp; Conditions · foss.violetskysecurity.com</title>
+<meta name="description" content="Terms and conditions for foss.violetskysecurity.com — use of the SPT-Txn research site and demonstration endpoints, licensing, acceptable use, and disclaimers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0A0612; --bg2:#100A1E; --bg3:#16102A;
+    --violet:#7B2FBE; --violet-m:#9D4EDD; --violet-l:#C77DFF; --violet-xl:#E0AAFF;
+    --white:#F8F8FF; --muted:#A09AB8; --border:rgba(155,78,221,0.18); --glow:rgba(123,47,190,0.35);
+  }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--white); font-family:'Inter',sans-serif; font-size:16px; line-height:1.7; overflow-x:hidden; }
+  a { color: var(--violet-l); text-decoration: none; } a:hover { color: var(--violet-xl); }
+
+  nav {
+    position: fixed; top:0; left:0; right:0; z-index:100;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:1rem 2.5rem; background:rgba(10,6,18,0.85);
+    backdrop-filter: blur(12px); border-bottom:1px solid var(--border);
+  }
+  .nav-brand { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:1rem; color:var(--violet-l); letter-spacing:0.04em; }
+  .nav-brand span { color: var(--white); }
+  .nav-links { display:flex; gap:2rem; list-style:none; }
+  .nav-links a { font-family:'Space Grotesk',sans-serif; font-size:0.82rem; font-weight:500; color:var(--muted); letter-spacing:0.06em; text-transform:uppercase; transition:color .2s; }
+  .nav-links a:hover { color: var(--violet-l); }
+
+  main.legal { max-width: 820px; margin: 0 auto; padding: 9rem 1.6rem 4rem; }
+  .legal-eyebrow { font-family:'Space Mono',monospace; font-size:0.7rem; letter-spacing:0.2em; color:var(--violet-m); text-transform:uppercase; margin-bottom:0.9rem; }
+  .legal h1 { font-family:'Space Grotesk',sans-serif; font-size:clamp(1.9rem,4vw,2.6rem); font-weight:700; line-height:1.2; margin-bottom:0.6rem; }
+  .legal .updated { font-family:'Space Mono',monospace; font-size:0.75rem; color:var(--muted); margin-bottom:2.4rem; }
+  .legal h2 { font-family:'Space Grotesk',sans-serif; font-size:1.15rem; font-weight:600; color:var(--violet-l); margin:2.4rem 0 0.7rem; }
+  .legal p { color:#d9d6e6; margin-bottom:1rem; }
+  .legal ul { margin:0 0 1rem 1.2rem; } .legal li { margin-bottom:0.5rem; color:#d9d6e6; }
+  .legal strong { color: var(--white); font-weight:600; }
+  .legal .callout {
+    border:1px solid var(--border); border-left:3px solid var(--violet);
+    background:var(--bg3); border-radius:6px; padding:1rem 1.2rem; margin:1.4rem 0;
+    font-size:0.95rem; color:#d9d6e6;
+  }
+  .legal .lede { font-size:1.05rem; color:var(--muted); margin-bottom:1.8rem; }
+
+  footer { background:var(--bg2); border-top:1px solid var(--border); padding:3rem 2.5rem 2rem; }
+  .footer-inner { max-width:1080px; margin:0 auto; display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:2rem; }
+  .footer-brand { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:0.95rem; color:var(--violet-l); }
+  .footer-brand span { color:var(--muted); font-weight:400; }
+  .footer-links { display:flex; gap:2rem; flex-wrap:wrap; }
+  .footer-links a { font-family:'Space Grotesk',sans-serif; font-size:0.8rem; color:var(--muted); }
+  .footer-links a:hover { color:var(--violet-l); }
+  .footer-copy { width:100%; margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--border); font-size:0.75rem; color:var(--muted); font-family:'Space Mono',monospace; }
+
+  @media (max-width:680px){ nav{padding:1rem 1.2rem;} .nav-links{display:none;} main.legal{padding-top:6.5rem;} }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="/">SPT&#8209;Txn <span>· foss.violetskysecurity.com</span></a>
+  <ul class="nav-links">
+    <li><a href="/">Home</a></li>
+    <li><a href="/#tokens">Tokens</a></li>
+    <li><a href="/#travelrule">Travel Rule</a></li>
+    <li><a href="/#publications">Publications</a></li>
+    <li><a href="https://www.violetskysecurity.com" target="_blank">Violet Sky ↗</a></li>
+  </ul>
+</nav>
+
+<main class="legal">
+  <div class="legal-eyebrow">Legal</div>
+  <h1>Terms &amp; Conditions</h1>
+  <div class="updated">Last updated: 25 June 2026</div>
+
+  <p class="lede">This Site is an open-source research project and technical proof of concept — not a commercial product or a live compliance service. These terms set out the basis on which you may use it.</p>
+
+  <h2>1. Acceptance</h2>
+  <p>By accessing or using <strong>foss.violetskysecurity.com</strong> (the “Site”) and its demonstration endpoints, you agree to these Terms &amp; Conditions. If you do not agree, do not use the Site. The Site is operated by <strong>Violet Sky Security SEZC</strong>, a Cayman Islands special-economic-zone company (“we”, “us”).</p>
+
+  <h2>2. What the Site is</h2>
+  <p>The Site publishes the Sovereign Policy Token Transactions (SPT-Txn) framework: documentation, specifications, open-source source code, and a running reference implementation with public demonstration endpoints. It is provided for <strong>research, evaluation, and educational purposes</strong> as a <strong>research preview</strong>. It is not a production system, not financial or compliance infrastructure you may rely on, and nothing here constitutes an offer of regulated services.</p>
+
+  <h2>3. Intellectual property &amp; licensing</h2>
+  <ul>
+    <li><strong>Source code</strong> is released under the <strong>Apache License 2.0</strong> — see the <a href="https://github.com/rudizee007/SPT-TXN-POC" target="_blank">repository</a> and its <code>LICENSE</code>. Your use of the code is governed by that licence.</li>
+    <li><strong>Written content</strong> on the Site (text, diagrams, page design) is © 2026 Violet Sky Security SEZC. You may quote and reference it with attribution; you may not republish it wholesale as your own.</li>
+    <li><strong>Publications</strong> (the IETF Internet-Draft and the Zenodo preprints) are governed by their own respective terms and licences.</li>
+    <li><strong>Trademarks and names</strong> — “Violet Sky Security” and associated marks remain ours; these terms grant no trademark licence.</li>
+  </ul>
+
+  <h2>4. Acceptable use</h2>
+  <p>You agree not to:</p>
+  <ul>
+    <li>attack, probe, penetration-test, overload, or attempt to disrupt the Site or its endpoints without our prior written permission;</li>
+    <li>attempt to gain unauthorized access to any system, account, key, or data;</li>
+    <li>use the demonstration endpoints to process real personal data, real customer information, or live regulated transactions;</li>
+    <li>use the Site in violation of any applicable law, sanctions regime, or third-party right.</li>
+  </ul>
+  <p>Automated abuse is rate-limited and may result in your access being blocked.</p>
+
+  <div class="callout"><strong>Demonstration endpoints are “as is”.</strong> The public APIs (including the Travel Rule demonstration endpoint) exist to illustrate the framework. They carry no service-level commitment, may change or be withdrawn at any time, must not be used for production or regulated purposes, and should not be relied upon for any compliance obligation.</div>
+
+  <h2>5. No warranty</h2>
+  <p>The Site, its content, and all software are provided <strong>“AS IS” and “AS AVAILABLE”, without warranties of any kind</strong>, whether express or implied, including (to the maximum extent permitted by law) any implied warranties of merchantability, fitness for a particular purpose, accuracy, or non-infringement. We do not warrant that the Site will be uninterrupted, secure, or error-free, or that any result obtained from it is accurate or reliable.</p>
+
+  <h2>6. Limitation of liability</h2>
+  <p>To the maximum extent permitted by law, Violet Sky Security SEZC and its personnel will not be liable for any indirect, incidental, special, consequential, or exemplary damages, or for any loss of profits, data, or goodwill, arising out of or in connection with your use of (or inability to use) the Site or its content, even if advised of the possibility of such damages.</p>
+
+  <h2>7. No professional advice</h2>
+  <p>Nothing on the Site is legal, regulatory, financial, investment, or compliance advice. The framework discusses regulatory topics (such as the FATF Travel Rule, MiCA, and related regimes) for technical context only. You are responsible for obtaining your own professional advice before relying on any concept presented here.</p>
+
+  <h2>8. Third-party links</h2>
+  <p>The Site links to third-party resources (standards bodies, repositories, preprint archives). We are not responsible for the content, availability, or practices of those sites.</p>
+
+  <h2>9. Changes</h2>
+  <p>We may update the Site and these terms at any time. Continued use after a change constitutes acceptance of the revised terms. Material changes are reflected by the “Last updated” date above.</p>
+
+  <h2>10. Governing law</h2>
+  <p>These terms are governed by the laws of the <strong>Cayman Islands</strong>, and you agree to the exclusive jurisdiction of its courts, without prejudice to any mandatory consumer protections available to you in your place of residence.</p>
+
+  <h2>11. Contact</h2>
+  <p>Questions about these terms: <a href="mailto:rudizee@secbsd.org">rudizee@secbsd.org</a> — Violet Sky Security SEZC, Cayman Islands Special Economic Zone.</p>
+
+  <p style="margin-top:2.4rem;"><a href="/privacy.html">Privacy Policy →</a></p>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <div><div class="footer-brand">SPT-Txn Framework <span>· Violet Sky Security SEZC</span></div></div>
+    <div class="footer-links">
+      <a href="/">Home</a>
+      <a href="/privacy.html">Privacy</a>
+      <a href="/terms.html">Terms</a>
+      <a href="https://www.violetskysecurity.com" target="_blank">Violet Sky Security</a>
+      <a href="https://github.com/rudizee007/SPT-TXN-POC" target="_blank">GitHub</a>
+    </div>
+    <div class="footer-copy">
+      Rudolf Jacobus Coetzee · Violet Sky Security SEZC · Cayman Islands Special Economic Zone ·
+      © 2026 Violet Sky Security SEZC
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
