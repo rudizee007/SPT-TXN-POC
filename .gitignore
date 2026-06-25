@@ -39,3 +39,4 @@ docs/SPT-Txn-XRPL-Pitch.pdf
 *.openbsd
 docs/.~lock.*#
 docs/*.tmp
+docs/XRPL-GRANT-FORM-ANSWERS.md

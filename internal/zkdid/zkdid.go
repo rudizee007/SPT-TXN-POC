@@ -6,10 +6,11 @@
 //
 // The hash H lives in internal/zkhash and is the SAME function the ZK commitment
 // circuit (internal/zkproof) proves in-circuit — so the token's humanAnchor IS
-// the value a holder proves knowledge of, not a separate digest. H is MiMC today
-// (Poseidon is the Section-5 target; swapping it is a change in zkhash + the
-// circuit gadget). Importing this pulls gnark-crypto field arithmetic + the hash
-// only, not the prover.
+// the value a holder proves knowledge of, not a separate digest. H is Poseidon2
+// (migrated from MiMC), domain-separated per use; native and in-circuit hashing
+// are kept identical (swapping H is a coordinated change in zkhash + the circuit
+// gadget + a trusted-setup regen). Importing this pulls gnark-crypto field
+// arithmetic + the hash only, not the prover.
 //
 // The zkDNS resolution layer (Toby Bolton's .zkdid/.zkdns infrastructure) is the
 // intended production provider of zkDID anchors. For the POC, identity material
