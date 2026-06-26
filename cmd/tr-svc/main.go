@@ -184,10 +184,43 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 type partyJSON struct {
-	NamePrimary   string `json:"name_primary"`   // surname / family name
-	NameSecondary string `json:"name_secondary"` // given names
-	Country       string `json:"country"`
-	Account       string `json:"account"`
+	NamePrimary    string `json:"name_primary"`     // surname / family name
+	NameSecondary  string `json:"name_secondary"`   // given names
+	Country        string `json:"country"`          // country of residence
+	Account        string `json:"account"`          // account / wallet identifier
+	NationalID     string `json:"national_id"`      // FATF identifier value (passport / national-ID / etc.)
+	NationalIDType string `json:"national_id_type"` // IVMS101 type: NIDN, CCPT, DRLC, TXID, LEIX (default NIDN)
+}
+
+// natIDOf builds an IVMS101 national identification when an identifier value is
+// supplied. FATF Recommendation 16 requires the ORIGINATOR to carry one of
+// address / national-ID / DOB; a national-ID is the strongest, most portable
+// form, so the demo populates it rather than leaning on country alone.
+func natIDOf(p partyJSON) *ivms101.NationalIdentification {
+	if p.NationalID == "" {
+		return nil
+	}
+	t := ivms101.NationalIdentifierType(p.NationalIDType)
+	if t == "" {
+		t = ivms101.IDNational
+	}
+	return &ivms101.NationalIdentification{
+		NationalIdentifier:     p.NationalID,
+		NationalIdentifierType: t,
+		CountryOfIssue:         p.Country,
+	}
+}
+
+// defaultDiscloseFATF is the FATF Rec-16 minimum data set expressed as SD-JWT
+// disclosure keys — the originator's full name, account/wallet and identifier,
+// plus the beneficiary's name and account. Used when an /trp/originate request
+// does not specify its own disclosure set, so the live demo conveys a
+// FATF-complete set to the counterparty rather than a single field. Keys absent
+// from a given attestation are simply not disclosed (sdjwt.Present skips them).
+var defaultDiscloseFATF = []string{
+	"originator.name.primary", "originator.name.secondary", "originator.account",
+	"originator.natId.id", "originator.natId.type", "originator.natId.country", "originator.country",
+	"beneficiary.name.primary", "beneficiary.name.secondary", "beneficiary.account",
 }
 
 type attestReq struct {
@@ -234,11 +267,11 @@ func buildTransfer(req *attestReq) (travelrule.Transfer, travelrule.Secrets) {
 	transfer := travelrule.Transfer{
 		Identity: ivms101.IdentityPayload{
 			Originator: ivms101.Originator{
-				OriginatorPersons: []ivms101.Person{ivms101.PersonOf(req.Originator.NamePrimary, req.Originator.NameSecondary, req.Originator.Country, nil)},
+				OriginatorPersons: []ivms101.Person{ivms101.PersonOf(req.Originator.NamePrimary, req.Originator.NameSecondary, req.Originator.Country, natIDOf(req.Originator))},
 				AccountNumber:     []string{req.Originator.Account},
 			},
 			Beneficiary: ivms101.Beneficiary{
-				BeneficiaryPersons: []ivms101.Person{ivms101.PersonOf(req.Beneficiary.NamePrimary, req.Beneficiary.NameSecondary, req.Beneficiary.Country, nil)},
+				BeneficiaryPersons: []ivms101.Person{ivms101.PersonOf(req.Beneficiary.NamePrimary, req.Beneficiary.NameSecondary, req.Beneficiary.Country, natIDOf(req.Beneficiary))},
 				AccountNumber:      []string{req.Beneficiary.Account},
 			},
 		},
@@ -282,6 +315,12 @@ func handleOriginate(iss *travelrule.Issuer, client *trp.Client) http.HandlerFun
 		if err != nil {
 			jsonError(w, "attest failed: "+err.Error(), http.StatusBadRequest)
 			return
+		}
+		// Default to the FATF Rec-16 minimum disclosure set when the caller does
+		// not request a specific one, so the counterparty receives the required
+		// fields (name + account + identifier) rather than a single attribute.
+		if len(req.Disclose) == 0 {
+			req.Disclose = defaultDiscloseFATF
 		}
 		treq := &trp.TransferRequest{
 			Asset:  trp.Asset{Symbol: req.Asset},
