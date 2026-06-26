@@ -451,6 +451,7 @@
     <li><a href="#engine">Engine</a></li>
     <li><a href="#verify">Verify</a></li>
     <li><a href="#travelrule">Travel Rule</a></li>
+    <li><a href="#agentic">Agents</a></li>
     <li><a href="#architecture">Architecture</a></li>
     <li><a href="#publications">Publications</a></li>
     <li><a href="#poc">POC</a></li>
@@ -817,12 +818,12 @@
   <div class="section-inner">
     <div class="section-eyebrow">Applied · FATF Travel Rule</div>
     <h2 class="section-title">Privacy-preserving Travel Rule, running today.</h2>
-    <p class="section-body">SPT-Txn carries a payload-level zero-knowledge attestation over the inter-VASP Travel Rule Protocol (TRP) — closing the cleartext-PII gap that plain TRP leaves open and that TRISA addresses only with trusted decryption.</p>
+    <p class="section-body">SPT-Txn carries a payload-level zero-knowledge attestation over the inter-VASP Travel Rule Protocol (TRP). Plain TRP and TRISA encrypt in transit, but still deliver the full originator/beneficiary PII to the counterparty to receive and store. SPT-Txn discloses only the FATF-required fields, proves the rest in zero knowledge, hides the exact amount, and exposes nothing on-ledger or to third parties.</p>
 
     <figure style="margin:2.6rem auto 0.5rem; max-width:780px;">
       <svg viewBox="0 0 720 320" role="img" aria-labelledby="tr-t tr-d" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
-        <title id="tr-t">Privacy-preserving Travel Rule: traditional cleartext vs SPT-Txn zero-knowledge</title>
-        <desc id="tr-d">Traditional TRP ships originator and beneficiary PII — name, account, amount — in cleartext to the counterparty. SPT-Txn instead carries a zero-knowledge attestation: the beneficiary verifies identity commitment, amount over threshold and VASP registration while only a surname and currency are disclosed; the amount, given name and account stay hidden.</desc>
+        <title id="tr-t">Privacy-preserving Travel Rule: full disclosure to the counterparty vs SPT-Txn zero-knowledge</title>
+        <desc id="tr-d">Traditional TRP and TRISA deliver the full originator and beneficiary PII — name, account, amount — to the counterparty to receive and store. SPT-Txn instead carries a zero-knowledge attestation: the beneficiary verifies identity commitment, amount-over-threshold and VASP registration, and receives only the FATF-required identity fields (name, account, an identifier) selectively disclosed; the exact amount stays hidden and nothing is exposed on-ledger or to third parties.</desc>
         <text x="20" y="32" font-family="Space Mono, monospace" font-size="12" letter-spacing="1.5" fill="#E0A33E">TRADITIONAL TRP</text>
         <text x="392" y="32" font-family="Space Mono, monospace" font-size="12" letter-spacing="1.5" fill="#C77DFF">SPT-TXN</text>
         <line x1="360" y1="46" x2="360" y2="288" stroke="rgba(155,78,221,0.20)" stroke-width="1"/>
@@ -833,7 +834,7 @@
         <line x1="120" y1="90" x2="236" y2="90" stroke="#E0A33E" stroke-width="1.5"/>
         <polygon points="236,85 244,90 236,95" fill="#E0A33E"/>
         <rect x="138" y="130" width="84" height="80" rx="4" fill="rgba(224,163,62,0.12)" stroke="#E0A33E"/>
-        <text x="180" y="150" text-anchor="middle" font-family="Space Mono, monospace" font-size="9" fill="#E0A33E">CLEARTEXT</text>
+        <text x="180" y="150" text-anchor="middle" font-family="Space Mono, monospace" font-size="9" fill="#E0A33E">FULL PII</text>
         <text x="180" y="170" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#F8F8FF">Name</text>
         <text x="180" y="186" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#F8F8FF">Account</text>
         <text x="180" y="202" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#F8F8FF">Amount</text>
@@ -853,19 +854,19 @@
         <text x="484" y="186" font-family="Inter, sans-serif" font-size="10.5" fill="#F8F8FF">✓ amount ≥ threshold</text>
         <text x="484" y="202" font-family="Inter, sans-serif" font-size="10.5" fill="#F8F8FF">✓ VASP registered</text>
         <line x1="556" y1="95" x2="556" y2="130" stroke="#C77DFF" stroke-width="1" stroke-dasharray="3 3"/>
-        <text x="392" y="238" font-family="Inter, sans-serif" font-size="11" fill="#C77DFF">Disclosed: surname · currency</text>
-        <text x="392" y="256" font-family="Inter, sans-serif" font-size="11" fill="#A09AB8">Hidden: amount · given name · account</text>
+        <text x="392" y="238" font-family="Inter, sans-serif" font-size="11" fill="#C77DFF">Disclosed: FATF set (name · account · ID)</text>
+        <text x="392" y="256" font-family="Inter, sans-serif" font-size="11" fill="#A09AB8">Hidden: exact amount · on-ledger · 3rd parties</text>
         <rect x="20" y="300" width="10" height="10" fill="#E0A33E"/><text x="36" y="309" font-family="Inter, sans-serif" font-size="10" fill="#A09AB8">PII exposed</text>
         <rect x="150" y="300" width="10" height="10" fill="#7B2FBE"/><text x="166" y="309" font-family="Inter, sans-serif" font-size="10" fill="#A09AB8">zero-knowledge</text>
       </svg>
-      <figcaption style="font-family:'Space Mono',monospace; font-size:0.72rem; letter-spacing:1px; color:var(--muted); text-align:center; margin-top:0.9rem;">Same compliance obligation · cleartext PII today vs proven, not disclosed</figcaption>
+      <figcaption style="font-family:'Space Mono',monospace; font-size:0.72rem; letter-spacing:1px; color:var(--muted); text-align:center; margin-top:0.9rem;">Same compliance obligation · full PII to the counterparty today vs only the required set, the rest proven not disclosed</figcaption>
     </figure>
 
     <div class="token-cards">
       <div class="token-card cat">
         <div class="tk-label">Data Model</div>
         <div class="tk-name">IVMS101 + SD-JWT</div>
-        <p class="tk-body">Originator and beneficiary identity expressed in the interVASP IVMS101 standard and carried as a selectively-disclosable SD-JWT — reveal a surname to a regulator, keep the given name and the amount hidden.</p>
+        <p class="tk-body">Originator and beneficiary identity expressed in the interVASP IVMS101 standard and carried as a selectively-disclosable SD-JWT — disclose exactly the FATF-required fields (name, account, an identifier) to the counterparty, nothing more and nothing on-ledger; the exact amount stays hidden.</p>
         <div class="tk-meta">FATF Recommendation 16</div>
       </div>
       <div class="token-card cap">
@@ -881,6 +882,37 @@
         <div class="tk-meta">OpenVASP TRP · TRISA bridge (designed)</div>
       </div>
     </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- AGENTIC -->
+<section id="agentic">
+  <div class="section-inner">
+    <div class="section-eyebrow">Applied · Agentic authorization</div>
+    <h2 class="section-title">Authorize an AI agent. Scope can only narrow.</h2>
+    <p class="section-body">When a person authorizes an AI agent, SPT-Txn issues the agent a strictly narrower, delegation-depth-bounded Capability Token carrying an immutable humanAnchor back to the accountable person. An agent can only attenuate what it holds, never widen it — and revoking a delegator's key denies its sub-agents while the delegator's own authority stands. Every check runs offline.</p>
+
+    <div class="token-cards">
+      <div class="token-card cat">
+        <div class="tk-label">Least authority</div>
+        <div class="tk-name">Scope can only narrow</div>
+        <p class="tk-body">Each delegated Capability Token is a strict subset of its parent with a bounded delegation depth. An agent literally cannot exceed — or re-delegate beyond — what it was granted.</p>
+      </div>
+      <div class="token-card cap">
+        <div class="tk-label">Accountability</div>
+        <div class="tk-name">Anchored to a person</div>
+        <p class="tk-body">An immutable humanAnchor — a zero-knowledge commitment to the authorizing person — threads every hop unchanged, producible under lawful process, never exposed to intermediaries.</p>
+      </div>
+      <div class="token-card txn">
+        <div class="tk-label">Containment</div>
+        <div class="tk-name">Revoke once, cascade</div>
+        <p class="tk-body">Cut a delegator's key and every capability it handed downstream fails closed — offline, at the chain step — while its own authority is untouched.</p>
+      </div>
+    </div>
+
+    <p class="section-body" style="margin-top:1.6rem; font-size:0.92rem; color:var(--muted);">POC-built and tested: multi-hop CT→CT delegation, an offline N-hop verifier, and a granular revocation cascade, with a live verify endpoint at <a href="https://foss.violetskysecurity.com:4446/agent/health" style="color:var(--violet-l);">:4446/agent/health</a>. Complements agent-to-agent payment rails (e.g. x402): SPT-Txn governs what an agent may do and who is accountable, not how it pays.</p>
   </div>
 </section>
 
