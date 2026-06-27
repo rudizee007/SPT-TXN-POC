@@ -70,3 +70,4 @@ cairo/**/target/
 move/**/build/
 .aptos/
 **/.aptos/
+spt_anchor/
