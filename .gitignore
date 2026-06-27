@@ -62,6 +62,7 @@ docs/STELLAR-TESTNET-ANCHORING-RUNBOOK.md
 docs/STARKNET-SEED-PLAN.md
 docs/STARKNET-SEED-FORM-ANSWERS.md
 docs/APTOS-GRANT-FORM-ANSWERS.md
+docs/ANTHROPIC-FELLOWSHIP-APPLICATION-PREP.md
 *sepolia*.json
 spt-sepolia-key.json
 spt-sepolia-account.json
@@ -70,4 +71,10 @@ cairo/**/target/
 move/**/build/
 .aptos/
 **/.aptos/
+# Solidity / Foundry — build output and local key broadcasts
+solidity/out/
+solidity/cache/
+solidity/broadcast/
+solidity/lib/
+node_modules/
 spt_anchor/
