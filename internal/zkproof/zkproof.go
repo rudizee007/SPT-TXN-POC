@@ -12,6 +12,7 @@ package zkproof
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math/big"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
+	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -86,6 +88,22 @@ func (a *Artifacts) NbConstraints() int { return a.ccs.GetNbConstraints() }
 // on-chain. Export from a PINNED verifying key (Load/LoadVerifier), never a fresh
 // Setup, so the on-chain verifier matches the key the prover actually uses.
 func (a *Artifacts) ExportSolidity(w io.Writer) error { return a.vk.ExportSolidity(w) }
+
+// MarshalProofSolidity re-encodes a BN254 Groth16 proof into the EIP-197 byte
+// layout the gnark-generated Solidity verifier expects (the `bytes` argument of
+// its verifyProof), hex-encoded with a 0x prefix. Pass the ProofBytes returned
+// by a Prove* call.
+func MarshalProofSolidity(p ProofBytes) (string, error) {
+	proof := groth16.NewProof(ecc.BN254)
+	if _, err := proof.ReadFrom(bytes.NewReader(p)); err != nil {
+		return "", fmt.Errorf("read proof: %w", err)
+	}
+	bn, ok := proof.(*groth16_bn254.Proof)
+	if !ok {
+		return "", fmt.Errorf("unexpected proof type %T (want BN254)", proof)
+	}
+	return "0x" + hex.EncodeToString(bn.MarshalSolidity()), nil
+}
 
 // ── persistence ──────────────────────────────────────────────────────────────
 //
