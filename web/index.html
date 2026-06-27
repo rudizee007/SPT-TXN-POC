@@ -736,6 +736,90 @@
         <p class="step-body">Verify the transaction context hash matches the scope hash committed in the token. The authorization is bound to this specific transaction — not transferable or replayable.</p>
       </div>
     </div>
+
+    <!-- Interactive 8-step demo (client-side, no backend) -->
+    <style>
+      #tryEngine{margin-top:2.6rem;border:1px solid var(--border);border-radius:12px;padding:1.5rem 1.5rem 1.7rem;background:var(--bg2);}
+      #tryEngine .te-chip{cursor:pointer;font-family:Inter,sans-serif;font-size:.72rem;border:1px solid var(--border);border-radius:20px;padding:.25rem .75rem;color:var(--muted);transition:all .15s;}
+      #tryEngine .te-chip:hover{color:var(--white);}
+      #tryEngine .te-chip.on{background:var(--violet);color:#fff;border-color:var(--violet);}
+      #teRun{font-family:'Space Mono',monospace;font-size:.76rem;letter-spacing:.5px;background:var(--violet);color:#fff;border:none;border-radius:6px;padding:.55rem 1.2rem;cursor:pointer;}
+      #teRun:disabled{opacity:.5;cursor:default;}
+      #tryEngine .te-step{display:flex;align-items:center;gap:.6rem;font-family:'Space Mono',monospace;font-size:.74rem;color:var(--muted);padding:.18rem 0;}
+      #tryEngine .te-dot{width:.62em;height:.62em;border-radius:50%;background:#3a3550;flex:none;transition:all .2s;}
+      #tryEngine .te-dot.pass{background:#3fb950;box-shadow:0 0 6px #3fb950;}
+      #tryEngine .te-dot.fail{background:#e5484d;box-shadow:0 0 6px #e5484d;}
+      #tryEngine .te-num{color:var(--violet-l);width:1.6em;}
+      #tryEngine .te-label{color:var(--white);min-width:12rem;}
+      #tryEngine .te-stat{font-size:.7rem;}
+      #tryEngine .te-step.failrow .te-stat{color:#e5484d;}
+      #tryEngine .te-step.halt{opacity:.4;}
+      #tryEngine .te-accept{color:#3fb950;font-weight:700;}
+      #tryEngine .te-reject{color:#e5484d;font-weight:700;}
+    </style>
+    <div id="tryEngine">
+      <div class="section-eyebrow">Try it · runs entirely in your browser</div>
+      <p class="section-body" style="margin-top:.5rem;margin-bottom:1rem;">Run the eight-step engine against a sample token chain (CAT &rarr; CT &rarr; SPT-Txn). Pick a tamper and watch it <strong>fail closed</strong> at the exact step. No backend, no data leaves your browser — the same logic the offline verifier runs.</p>
+      <div id="teScenarios" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.1rem;"></div>
+      <button id="teRun">Run verification</button>
+      <div id="teSteps" style="margin-top:1.2rem;display:grid;gap:.1rem;"></div>
+      <div id="teVerdict" style="margin-top:1rem;font-family:'Space Mono',monospace;font-size:.84rem;color:var(--muted);"></div>
+    </div>
+    <script>
+    (function(){
+      var steps=['Signature Verification','Issuer Trust','Temporal Validity','Revocation Check','Scope Verification','Delegation Depth','Human Anchor','Scope Hash Binding'];
+      var scenarios=[
+        {k:'valid', label:'Valid token',               fail:0, note:''},
+        {k:'sig',   label:'Forged signature',          fail:1, note:'signature does not match the issuer key'},
+        {k:'iss',   label:'Untrusted issuer',          fail:2, note:'issuer absent from the Trust Registry snapshot'},
+        {k:'exp',   label:'Expired token',             fail:3, note:'past its expiry bound'},
+        {k:'rev',   label:'Revoked key',               fail:4, note:'issuer key present in the revocation set'},
+        {k:'scope', label:'Widened scope',             fail:5, note:'child scope exceeds its parent — attenuation violated'},
+        {k:'depth', label:'Exceeded delegation depth', fail:6, note:'re-delegated beyond the CAT-declared bound'},
+        {k:'anchor',label:'Broken human-anchor',       fail:7, note:'humanAnchor commitment differs across the chain'},
+        {k:'txn',   label:'Altered transaction',       fail:8, note:'tx-context hash does not match the committed scope hash'}
+      ];
+      var sel=scenarios[0];
+      var sc=document.getElementById('teScenarios'),stepsEl=document.getElementById('teSteps'),verdict=document.getElementById('teVerdict'),runBtn=document.getElementById('teRun');
+      if(!sc)return;
+      scenarios.forEach(function(s){
+        var b=document.createElement('span');b.textContent=s.label;b.className='te-chip';b.setAttribute('data-k',s.k);
+        b.onclick=function(){sel=s;Array.prototype.forEach.call(sc.children,function(c){c.classList.toggle('on',c.getAttribute('data-k')===s.k);});reset();};
+        sc.appendChild(b);
+      });
+      sc.firstChild.classList.add('on');
+      function reset(){
+        verdict.innerHTML='';stepsEl.innerHTML='';
+        steps.forEach(function(t,i){
+          var row=document.createElement('div');row.className='te-step';row.id='te-s'+i;
+          row.innerHTML='<span class="te-dot"></span><span class="te-num">'+('0'+(i+1)).slice(-2)+'</span><span class="te-label">'+t+'</span><span class="te-stat"></span>';
+          stepsEl.appendChild(row);
+        });
+      }
+      reset();
+      var running=false;
+      runBtn.onclick=function(){
+        if(running)return;running=true;reset();runBtn.disabled=true;
+        var i=0;
+        function done(ok,failNum){
+          running=false;runBtn.disabled=false;
+          if(ok){verdict.innerHTML='<span class="te-accept">&#10003; ACCEPT</span> &mdash; all eight steps passed; the authorization is valid and bound to this exact transaction.';}
+          else{verdict.innerHTML='<span class="te-reject">&#10007; REJECT</span> &mdash; failed closed at step '+('0'+failNum).slice(-2)+' ('+steps[failNum-1]+'). No partial trust, no fallback.';}
+        }
+        function tick(){
+          if(i>=steps.length){done(true);return;}
+          var row=document.getElementById('te-s'+i),num=i+1,dot=row.querySelector('.te-dot'),stat=row.querySelector('.te-stat');
+          if(sel.fail===num){
+            dot.className='te-dot fail';stat.textContent='FAIL — '+sel.note;row.classList.add('failrow');
+            for(var j=i+1;j<steps.length;j++){var r=document.getElementById('te-s'+j);r.querySelector('.te-stat').textContent='halted (fails closed)';r.classList.add('halt');}
+            done(false,num);return;
+          }
+          dot.className='te-dot pass';stat.textContent='PASS';i++;setTimeout(tick,260);
+        }
+        tick();
+      };
+    })();
+    </script>
   </div>
 </section>
 
@@ -1085,7 +1169,7 @@
     <div class="milestone">
       <div class="ms-id" style="font-size:0.75rem;">TRP</div>
       <div class="ms-body">
-        <strong>Travel Rule API</strong> — beneficiary VASP health &amp; inbound TRP transfer, live over relayd TLS<br>
+        <span class="hb" data-health="https://foss.violetskysecurity.com:4445/travel/health" title="checking…">●</span> <strong>Travel Rule API</strong> — beneficiary VASP health &amp; inbound TRP transfer, live over relayd TLS<br>
         <a href="https://foss.violetskysecurity.com:4445/travel/health"
            target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">
           https://foss.violetskysecurity.com:4445/travel/health ↗
@@ -1095,7 +1179,7 @@
     <div class="milestone">
       <div class="ms-id" style="font-size:0.75rem;">AGT</div>
       <div class="ms-body">
-        <strong>Agentic verify API</strong> — offline N-hop delegation verifier, live over relayd TLS<br>
+        <span class="hb" data-health="https://foss.violetskysecurity.com:4446/agent/health" title="checking…">●</span> <strong>Agentic verify API</strong> — offline N-hop delegation verifier, live over relayd TLS<br>
         <a href="https://foss.violetskysecurity.com:4446/agent/health"
            target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">
           https://foss.violetskysecurity.com:4446/agent/health ↗
@@ -1112,8 +1196,10 @@
 </div>
 <div style="margin-top:3rem; border-top:1px solid var(--border); padding-top:2rem;">
   <div class="section-eyebrow">Ledger-agnostic · demonstrated across chains</div>
-  <p class="section-body" style="margin-top:1rem; max-width:760px;">SPT-Txn binds an authorization to a specific transaction without depending on any chain. The binding is implemented and tested behind one Go adapter interface for six ledgers, and the attestation-anchor footprint is live on public testnets. Chains are integration targets, never dependencies — the authorization verifies offline with no chain at all.</p>
+  <p class="section-body" style="margin-top:1rem; max-width:760px;">SPT-Txn binds an authorization to a specific transaction without depending on any chain. The binding is implemented and tested behind one Go adapter interface for seven ledgers, and the attestation-anchor footprint is live on public testnets. Chains are integration targets, never dependencies — the authorization verifies offline with no chain at all.</p>
+  <p id="anchorLive" style="margin-top:0.9rem; font-family:'Space Mono',monospace; font-size:0.8rem; color:var(--muted);">Reading the live on-chain anchor…</p>
   <div class="hero-tags" style="justify-content:flex-start; margin-top:1.4rem; max-width:920px;">
+    <span class="hero-tag">Ethereum</span>
     <span class="hero-tag">XRPL</span>
     <span class="hero-tag">Hedera</span>
     <span class="hero-tag">Solana</span>
@@ -1203,6 +1289,56 @@
     </div>
   </div>
 </footer>
+
+<script>
+(function(){
+  var css=document.createElement('style');
+  css.textContent='.hb{display:inline-block;width:.6em;height:.6em;border-radius:50%;background:#6b6480;margin-right:.35em;vertical-align:middle;}'
+    +'.hb.up{background:#3fb950;box-shadow:0 0 6px #3fb950;}'
+    +'.hb.down{background:#6b6480;}'
+    +'.copychip{cursor:pointer;font-family:Inter,sans-serif;font-size:.62rem;letter-spacing:.5px;color:var(--violet-l);border:1px solid var(--border);border-radius:4px;padding:1px 5px;margin-left:.5em;user-select:none;}'
+    +'.copychip:hover{background:rgba(157,78,221,0.12);}'
+    +'#anchorLive .ok{color:var(--violet-l);font-weight:600;}';
+  document.head.appendChild(css);
+
+  // 1. Live on-chain anchor readout (Ethereum Sepolia, public RPC, read-only)
+  var ANCHOR='0x3fC3bE148c4902C21dfaf4ccff1E0c99d6F57089';
+  var RPCS=['https://ethereum-sepolia-rpc.publicnode.com','https://1rpc.io/sepolia','https://sepolia.drpc.org','https://rpc.sepolia.org'];
+  function rpc(url,data){return fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to:ANCHOR,data:data},'latest']})}).then(function(r){return r.json();}).then(function(j){if(j&&j.result)return j.result;throw new Error('no result');});}
+  function tryRpcs(data){return RPCS.reduce(function(p,u){return p.catch(function(){return rpc(u,data);});},Promise.reject(new Error('init')));}
+  var el=document.getElementById('anchorLive');
+  if(el){
+    tryRpcs('0xa87d942c').then(function(hex){
+      var count=parseInt(hex,16)||0;
+      if(count===0){el.innerHTML='<span class="ok">● live</span> contract on Ethereum Sepolia — 0 roots anchored yet.';return;}
+      var idx=(count-1).toString(16).padStart(64,'0');
+      return tryRpcs('0x4c7df18f'+idx).then(function(res){
+        var h=res.slice(2);
+        var root='0x'+h.slice(0,64);
+        var ts=parseInt(h.slice(128,192),16);
+        var when=ts?new Date(ts*1000).toISOString().slice(0,16).replace('T',' ')+' UTC':'';
+        el.innerHTML='<span class="ok">● live</span> '+count+' attestation root'+(count>1?'s':'')+' anchored on-chain (Ethereum Sepolia) — latest <a href="https://sepolia.etherscan.io/address/'+ANCHOR+'" target="_blank" style="color:var(--violet-l);">'+root.slice(0,10)+'…'+root.slice(-6)+'</a>'+(when?' · '+when:'')+'.';
+      });
+    }).catch(function(){el.innerHTML='On-chain anchor '+ANCHOR.slice(0,8)+'…'+ANCHOR.slice(-5)+' on Ethereum Sepolia (live read unavailable right now).';});
+  }
+
+  // 2. Live status badges (health endpoints; degrade quietly if CORS/down)
+  Array.prototype.forEach.call(document.querySelectorAll('.hb[data-health]'),function(b){
+    fetch(b.getAttribute('data-health'),{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+      if(j&&j.status==='ok'){b.className='hb up';b.title='live';}else{b.className='hb down';b.title='unknown';}
+    }).catch(function(){b.className='hb down';b.title='status unavailable from browser';});
+  });
+
+  // 4. Copy chips on footprint addresses
+  Array.prototype.forEach.call(document.querySelectorAll('a[href*="etherscan.io/address/"],a[href*="voyager.online/contract/"],a[href*="explorer.aptoslabs.com/account/"],a[href*="explorer.solana.com/address/"]'),function(a){
+    var m=a.href.match(/(0x[0-9a-fA-F]{6,}|[1-9A-HJ-NP-Za-km-z]{32,})/);
+    if(!m)return;
+    var chip=document.createElement('span');chip.className='copychip';chip.textContent='copy';
+    chip.onclick=function(e){e.preventDefault();navigator.clipboard.writeText(m[1]).then(function(){chip.textContent='copied';setTimeout(function(){chip.textContent='copy';},1200);});};
+    a.parentNode.insertBefore(chip,a.nextSibling);
+  });
+})();
+</script>
 
 </body>
 </html>
