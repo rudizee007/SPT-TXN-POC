@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	tedwards "github.com/consensys/gnark-crypto/ecc/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
 	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	"github.com/consensys/gnark/constraint"
@@ -279,7 +280,13 @@ func (a *Artifacts) VerifyVASPMembership(p ProofBytes, root *big.Int) error {
 type ChainHop struct {
 	MaxAmount uint64
 	Currency  uint64
-	Issuer    []byte // registry member-ID of this hop's issuer (must be in the registry tree)
+	// IssuerPub is the hop issuer's marshaled Baby Jubjub public key
+	// (eddsa.PublicKey.Bytes()); its IssuerLeaf must be in the registry tree.
+	IssuerPub []byte
+	// Sig is the issuer's Baby Jubjub EdDSA signature over this hop's scope
+	// commitment LeafScopeCommitment(MaxAmount, Currency), signed with the
+	// MiMC_BN254 challenge hash (the in-circuit gadget matches).
+	Sig []byte
 }
 
 // ProveChain proves a delegation chain is valid — each hop's ceiling only
@@ -320,11 +327,16 @@ func (a *Artifacts) ProveChain(anchorMaterial, salt []byte, maxDepth uint64, hop
 			full.MaxAmt[i] = new(big.Int).SetUint64(hops[i].MaxAmount)
 			full.Currency[i] = new(big.Int).SetUint64(hops[i].Currency)
 			full.Depth[i] = new(big.Int).SetUint64(maxDepth - uint64(i))
-			leaf, sibs, bits, _, ok := registry.ProofForMember(hops[i].Issuer)
+			leaf, err := IssuerLeaf(hops[i].IssuerPub)
+			if err != nil {
+				return nil, nil, nil, nil, fmt.Errorf("hop %d issuer key: %w", i, err)
+			}
+			_, sibs, bits, _, ok := registry.ProofForMember(leaf.Bytes())
 			if !ok {
 				return nil, nil, nil, nil, fmt.Errorf("hop %d issuer is not in the registered-CT-issuer registry", i)
 			}
-			full.Issuer[i] = leaf
+			full.PubKey[i].Assign(tedwards.BN254, hops[i].IssuerPub)
+			full.Sig[i].Assign(tedwards.BN254, hops[i].Sig)
 			for j := 0; j < VASPTreeDepth; j++ {
 				full.IssuerSib[i][j] = sibs[j]
 				full.IssuerDir[i][j] = bits[j]
@@ -334,9 +346,12 @@ func (a *Artifacts) ProveChain(anchorMaterial, salt []byte, maxDepth uint64, hop
 			full.MaxAmt[i] = 0
 			full.Currency[i] = 0
 			full.Depth[i] = 0
-			// Inactive tail: dummy membership; the circuit compares RegRoot to
-			// itself for Active==0, so any well-formed (zero) path is accepted.
-			full.Issuer[i] = 0
+			// Inactive tail: the circuit gates the signature off and compares
+			// RegRoot to itself when Active==0, so the witness need only be
+			// well-formed. Reuse hop 0's on-curve key/sig (so .Assign succeeds)
+			// and a zero authentication path.
+			full.PubKey[i].Assign(tedwards.BN254, hops[0].IssuerPub)
+			full.Sig[i].Assign(tedwards.BN254, hops[0].Sig)
 			for j := 0; j < VASPTreeDepth; j++ {
 				full.IssuerSib[i][j] = 0
 				full.IssuerDir[i][j] = 0

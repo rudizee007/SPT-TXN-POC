@@ -97,6 +97,27 @@ full closure needs in-circuit signatures (phase 2, issuers dual-key with a
 SNARK-friendly scheme). Recorded in the security review; phase 2 is a cost-informed
 decision.
 
+## F1 phase 2 — in-circuit per-hop issuer signatures (F1 closed)
+
+With the phase-1 cost in hand we did phase 2. First de-risked the gnark EdDSA API with
+a standalone probe (`eddsa_probe_test.go`: native sign → in-circuit verify + tamper
+check) to pin the exact v0.15 surface before touching the big circuit — that probe
+passed first try, then the integration did too. Each active hop now verifies, in
+zero knowledge, a Baby Jubjub **EdDSA signature** (`std/signature/eddsa`, MiMC
+challenge) by the hop's issuer over the hop's scope commitment, and binds the signing
+public key to the membership leaf `H(DomainIssuer, A.X, A.Y)`. So naming a registered
+issuer is no longer enough — the hop must carry that issuer's real signature over its
+actual scope. Three new negative tests cover wrong-signer, unsigned-scope, and
+unregistered-issuer; all reject at prove time.
+
+Cost: 17,945 → 52,001 constraints (~7k/hop for EdDSA), prove 84 → 181 ms; verify
+(~1 ms) and proof (164 B) unchanged. Decisions: signatures are Baby Jubjub (embedded
+in BN254's field, ~7k R1CS/verify) because verifying standard Ed25519 (Edwards25519 +
+SHA-512) in-circuit is impractical; issuers therefore **dual-key** (Ed25519 for
+JWS/VC interop + Baby Jubjub for ZK). The Baby Jubjub key is an auxiliary ZK artifact,
+not the authoritative or PQ signature — that stays the Ed25519/hybrid line. This
+brings ZK mode to parity with cleartext on intermediate-hop issuer trust, closing F1.
+
 ## Scoped-disclosure SDK + schema
 
 `internal/disclosure` — a request → consent → response protocol for time-limited,

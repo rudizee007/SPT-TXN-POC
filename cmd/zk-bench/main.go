@@ -22,7 +22,12 @@ import (
 	"log"
 	"time"
 
+	"crypto/rand"
+
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	eddsabn254 "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
+	gchash "github.com/consensys/gnark-crypto/hash"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -190,13 +195,39 @@ func benchProd() {
 	reportProd("threshold", a.NbConstraints(), st, pt, time.Since(t), len(tp))
 
 	// chain: agentic delegation-chain attenuation, intermediate scopes hidden,
-	// each hop's issuer proven a member of the registered-CT-issuer tree (F1).
+	// each active hop proven to carry a registered CT-issuer's Baby Jubjub
+	// signature over its scope (F1, phase 2).
 	const regSize = 1 << zkproof.VASPTreeDepth
+	type benchIssuer struct {
+		priv *eddsabn254.PrivateKey
+		pub  []byte
+	}
+	mkIssuer := func() benchIssuer {
+		p, e := eddsabn254.GenerateKey(rand.Reader)
+		if e != nil {
+			log.Fatalf("chain keygen: %v", e)
+		}
+		return benchIssuer{priv: p, pub: p.PublicKey.Bytes()}
+	}
+	signHop := func(iss benchIssuer, amt, cur uint64) []byte {
+		var m fr.Element
+		m.SetBigInt(zkproof.LeafScopeCommitment(amt, cur))
+		s, e := iss.priv.Sign(m.Marshal(), gchash.MIMC_BN254.New())
+		if e != nil {
+			log.Fatalf("chain sign: %v", e)
+		}
+		return s
+	}
+	issuers := []benchIssuer{mkIssuer(), mkIssuer(), mkIssuer()}
 	members := make([][]byte, regSize)
-	members[0] = []byte("domain-a.authorg/ct_issuer")
-	members[1] = []byte("domain-b.execorg/ct_issuer")
-	members[2] = []byte("domain-c.agentorg/ct_issuer")
-	for i := 3; i < regSize; i++ {
+	for i, iss := range issuers {
+		leaf, e := zkproof.IssuerLeaf(iss.pub)
+		if e != nil {
+			log.Fatalf("chain issuer leaf: %v", e)
+		}
+		members[i] = leaf.Bytes()
+	}
+	for i := len(issuers); i < regSize; i++ {
 		members[i] = []byte(fmt.Sprintf("pad-%d", i))
 	}
 	reg, err := zkproof.BuildVASPRegistry(members)
@@ -204,9 +235,9 @@ func benchProd() {
 		log.Fatalf("chain registry: %v", err)
 	}
 	hops := []zkproof.ChainHop{
-		{MaxAmount: 10000, Currency: 840, Issuer: members[0]},
-		{MaxAmount: 8000, Currency: 840, Issuer: members[1]},
-		{MaxAmount: 5000, Currency: 840, Issuer: members[2]},
+		{MaxAmount: 10000, Currency: 840, IssuerPub: issuers[0].pub, Sig: signHop(issuers[0], 10000, 840)},
+		{MaxAmount: 8000, Currency: 840, IssuerPub: issuers[1].pub, Sig: signHop(issuers[1], 8000, 840)},
+		{MaxAmount: 5000, Currency: 840, IssuerPub: issuers[2].pub, Sig: signHop(issuers[2], 5000, 840)},
 	}
 	t = time.Now()
 	a, err = zkproof.Setup(zkproof.CircuitChain)

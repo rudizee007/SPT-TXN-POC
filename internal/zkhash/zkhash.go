@@ -43,7 +43,8 @@ import (
 const (
 	DomainAnchor     uint64 = 1 // identity humanAnchor: H(tag, ID, randomness)
 	DomainAmount     uint64 = 2 // amount commitment:    H(tag, amount, blinding)
-	DomainMerkleNode uint64 = 3 // VASP Merkle inner node: H(tag, left, right)
+	DomainMerkleNode uint64 = 3 // VASP/issuer Merkle inner node: H(tag, left, right)
+	DomainIssuer     uint64 = 4 // CT-issuer registry leaf: H(tag, pubkeyX, pubkeyY)
 )
 
 // FeFromBytes reduces arbitrary bytes to a field element (big-endian mod r).

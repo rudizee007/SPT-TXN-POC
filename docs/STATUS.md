@@ -53,14 +53,16 @@ tampered proof reverts.
 
 | circuit | constraints | setup | prove | verify | proof |
 |---|---|---|---|---|---|
-| commitment | 373 | 34 ms | 7 ms | ~1.0 ms | 164 B |
-| threshold | 2,026 | 84 ms | 7 ms | ~0.8 ms | 164 B |
-| chain (4-hop) | 17,945 | 849 ms | 84 ms | ~0.8 ms | 164 B |
+| commitment | 373 | 34 ms | 6 ms | ~1.0 ms | 164 B |
+| threshold | 2,026 | 91 ms | 7 ms | ~0.8 ms | 164 B |
+| chain (4-hop) | 52,001 | 1.88 s | 181 ms | ~1.0 ms | 164 B |
 
 Verify is constant ~1 ms and proofs are a constant 164 B regardless of chain length.
-The chain circuit grew from 5,936 → 17,945 constraints (prove 16 → 84 ms) when F1
-phase 1 added per-hop issuer registry-membership (4 hops × 8-deep Poseidon2 Merkle
-proofs); verify and proof size are unchanged (Groth16 is constant-size).
+The chain circuit grew 5,936 → 17,945 → 52,001 constraints (prove 16 → 84 → 181 ms)
+as F1 was closed in two steps: phase 1 added per-hop issuer registry-membership
+(Poseidon2 Merkle), phase 2 added per-hop in-circuit Baby Jubjub EdDSA signature
+verification (~7k constraints/hop). Verify and proof size are unchanged (Groth16 is
+constant-size), so even a fully signature-checked 4-hop chain verifies in ~1 ms.
 
 ## Build & test
 
@@ -84,11 +86,13 @@ Aptos Payments, Starknet Seed — drafted (need a community/traction step).
 ## Honest boundaries
 
 POC, security-audited, not production. Agentic layer POC-tested, not battle-tested
-at scale. In the opt-in ZK chain mode, each hidden hop's issuer is now proven a
-**member of the registered-CT-issuer tree** (F1 phase 1), but the issuer's
-**signature is still not verified in-circuit** (cleartext mode verifies signatures
-and remains the stronger default — see
-[SECURITY-REVIEW-2026-06-28.md](SECURITY-REVIEW-2026-06-28.md)). On-chain footprints
+at scale. The opt-in ZK chain mode now verifies, in-circuit, that **each hidden hop
+carries a real Baby Jubjub signature from a registered CT-issuer over its actual
+scope** (F1 closed — phases 1+2), reaching parity with the cleartext path's
+issuer-trust check. This requires issuers to dual-key (Ed25519 for JWS/VC interop +
+a Baby Jubjub key for the ZK proof); the Baby Jubjub key is an auxiliary ZK artifact,
+not the authoritative (or PQ) signature. See
+[SECURITY-REVIEW-2026-06-28.md](SECURITY-REVIEW-2026-06-28.md). On-chain footprints
 are testnet. The human-anchor binding in ZK chain mode is a cleartext endpoint
 check (by design — the agent must not hold the human's anchor preimage). The
 offline verifier library is the primary path; hosted endpoints are a convenience.

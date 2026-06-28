@@ -12,6 +12,7 @@ import (
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	eddsabn254 "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 
 	"github.com/violetskysecurity/spt-txn-poc/internal/zkhash"
 )
@@ -35,6 +36,21 @@ func hashNode(left, right fr.Element) fr.Element { return zkhash.HashNode(left, 
 // ProveThreshold) and uses the safe wide field reduction (CR-3).
 func Commit(secret, blinding []byte) *big.Int {
 	return bigOf(hashAnchor(feFromWide(secret), feFromWide(blinding)))
+}
+
+// IssuerLeaf computes the registered-CT-issuer Merkle leaf for a marshaled Baby
+// Jubjub public key: H(DomainIssuer, A.X, A.Y). It is the single source of truth
+// for what a CT-issuer's registry entry is, matched in-circuit by ChainCircuit
+// step 6 (which hashes the in-circuit PubKey.A.X / .A.Y identically). Build the
+// registry over IssuerLeaf(pub).Bytes() values; the chain proof binds each hop's
+// signing key to its leaf, so a valid signature from an UNREGISTERED key cannot
+// pass (F1, phase 2).
+func IssuerLeaf(pubBytes []byte) (*big.Int, error) {
+	var pk eddsabn254.PublicKey
+	if _, err := pk.SetBytes(pubBytes); err != nil {
+		return nil, fmt.Errorf("zkproof: parse Baby Jubjub public key: %w", err)
+	}
+	return bigOf(zkhash.HashCommit(zkhash.DomainIssuer, pk.A.X, pk.A.Y)), nil
 }
 
 // ── registered-VASP Merkle tree ──────────────────────────────────────────────

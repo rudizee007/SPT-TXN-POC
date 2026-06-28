@@ -1,9 +1,14 @@
 package verifier_test
 
 import (
+	"crypto/rand"
 	"fmt"
 	"math/big"
 	"testing"
+
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	eddsabn254 "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
+	gchash "github.com/consensys/gnark-crypto/hash"
 
 	"github.com/violetskysecurity/spt-txn-poc/internal/verifier"
 	"github.com/violetskysecurity/spt-txn-poc/internal/zkproof"
@@ -20,13 +25,39 @@ func TestChainVerifierFunc_Injection(t *testing.T) {
 	}
 	usd := zkproof.CurrencyCode("USD")
 
-	// The verifier's own trusted registered-CT-issuer set (F1, phase 1).
+	// The verifier's own trusted registered-CT-issuer set (F1). Each hop carries
+	// a real Baby Jubjub signature from a registered issuer over its scope.
 	const regSize = 1 << zkproof.VASPTreeDepth
+	type iss struct {
+		priv *eddsabn254.PrivateKey
+		pub  []byte
+	}
+	mk := func() iss {
+		p, e := eddsabn254.GenerateKey(rand.Reader)
+		if e != nil {
+			t.Fatalf("keygen: %v", e)
+		}
+		return iss{priv: p, pub: p.PublicKey.Bytes()}
+	}
+	sign := func(s iss, amt, cur uint64) []byte {
+		var m fr.Element
+		m.SetBigInt(zkproof.LeafScopeCommitment(amt, cur))
+		sig, e := s.priv.Sign(m.Marshal(), gchash.MIMC_BN254.New())
+		if e != nil {
+			t.Fatalf("sign: %v", e)
+		}
+		return sig
+	}
+	issuers := []iss{mk(), mk(), mk()}
 	members := make([][]byte, regSize)
-	members[0] = []byte("domain-a.authorg/ct_issuer")
-	members[1] = []byte("domain-b.execorg/ct_issuer")
-	members[2] = []byte("domain-c.agentorg/ct_issuer")
-	for i := 3; i < regSize; i++ {
+	for i, s := range issuers {
+		leaf, e := zkproof.IssuerLeaf(s.pub)
+		if e != nil {
+			t.Fatalf("issuer leaf: %v", e)
+		}
+		members[i] = leaf.Bytes()
+	}
+	for i := len(issuers); i < regSize; i++ {
 		members[i] = []byte(fmt.Sprintf("pad-%d", i))
 	}
 	reg, err := zkproof.BuildVASPRegistry(members)
@@ -35,9 +66,9 @@ func TestChainVerifierFunc_Injection(t *testing.T) {
 	}
 
 	hops := []zkproof.ChainHop{
-		{MaxAmount: 10000, Currency: usd, Issuer: members[0]},
-		{MaxAmount: 8000, Currency: usd, Issuer: members[1]},
-		{MaxAmount: 5000, Currency: usd, Issuer: members[2]}, // leaf
+		{MaxAmount: 10000, Currency: usd, IssuerPub: issuers[0].pub, Sig: sign(issuers[0], 10000, usd)},
+		{MaxAmount: 8000, Currency: usd, IssuerPub: issuers[1].pub, Sig: sign(issuers[1], 8000, usd)},
+		{MaxAmount: 5000, Currency: usd, IssuerPub: issuers[2].pub, Sig: sign(issuers[2], 5000, usd)}, // leaf
 	}
 	proof, h0, _, regRoot, err := art.ProveChain([]byte("alice-anchor"), []byte("salt"), 3, hops, reg)
 	if err != nil {

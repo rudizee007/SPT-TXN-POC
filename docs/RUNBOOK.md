@@ -97,9 +97,14 @@ eng.ChainVerifier = func(proof []byte, h0 *big.Int, leafMax uint64, leafCur stri
 }
 ```
 Then a presentation with `Input.ChainProof`/`ChainH0` set runs `step6ChainZK`.
-Note (F1, phase 1): the circuit now proves each hidden hop's issuer is a member of
-`regRoot`, but does **not** yet prove the issuer *signed* the hop (see the security
-review). The chain circuit changed — regenerate keys: `go run ./cmd/zk-setup -dir ./zk`.
+
+Note (F1, closed): each active hop now proves, in-circuit, a registered CT-issuer's
+Baby Jubjub EdDSA signature over its scope (+ membership in `regRoot`). Build each
+`ChainHop` with `IssuerPub` (the issuer's `eddsa.PublicKey.Bytes()`) and `Sig` (the
+issuer's signature over `LeafScopeCommitment(MaxAmount, Currency)`, MiMC_BN254
+challenge); build the registry over `zkproof.IssuerLeaf(pub).Bytes()`. Issuers
+dual-key (Ed25519 for JWS/VC + Baby Jubjub for ZK). The chain circuit changed —
+regenerate keys: `go run ./cmd/zk-setup -dir ./zk`.
 
 ## 8. Website deploy (OpenBSD host)
 
