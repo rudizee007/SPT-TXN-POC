@@ -166,6 +166,17 @@ prover to get the range checks and selectors exactly right.)
 - `cmd/zk-bench -prod` reports constraints/setup/prove/verify/size for the
   commitment, threshold, and chain circuits. ✓
 
+**Measured (BN254 / Poseidon2 / Groth16, on the Mac):**
+
+| circuit | constraints | setup | prove | verify | proof |
+|---|---|---|---|---|---|
+| commitment | 373 | 34 ms | 5 ms | ~1.0 ms | 164 B |
+| threshold | 2,026 | 86 ms | 7 ms | ~0.8 ms | 164 B |
+| chain (4-hop) | 5,936 | 230 ms | 16 ms | ~0.8 ms | 164 B |
+
+Verify is constant ~1 ms and the proof is a constant 164 B regardless of chain
+length — the agentic chain proof is cheap to check anywhere, offline or on-chain.
+
 **Remaining (documented seam):** cryptographically bind the ZK public inputs to
 the tokens — migrate the token `human_anchor` to the Poseidon2 commitment (so it
 equals `H0`) and add a leaf-scope commitment claim (so it equals `CLeaf`). Until
