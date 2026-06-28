@@ -1,6 +1,6 @@
 # SPT-Txn ↔ Travel Rule Protocol (TRP) and TRISA Interop
 
-Status: TRP transport **implemented and green on host**; TRISA bridge **designed, deferred**.
+Status: TRP transport **implemented and green on host**; TRISA **payload bridge implemented** (`internal/trisa`, round-trip tested) — only the sealed gRPC **transport** is deferred to a separate module.
 Scope: privacy-preserving FATF Recommendation 16 (the "Travel Rule") for SPT-Txn.
 
 ## 1. The two protocols SPT-Txn must speak to
