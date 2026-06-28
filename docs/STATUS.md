@@ -50,6 +50,11 @@ The on-chain ZK verifier (Ethereum + Arbitrum Sepolia) verifies a threshold
 selective-disclosure proof on-chain and records the root only if it checks out; a
 tampered proof reverts.
 
+All footprints above are **testnet**. A first **mainnet** footprint (Arbitrum One
+or Base, same bytecode) is runbook-ready in [RUNBOOK.md](RUNBOOK.md) §12, pending a
+funded deploy (an operator action — needs a dedicated, funded mainnet key). The
+Hedera HCS footprint is likewise pending an operator anchor (RUNBOOK §11).
+
 ## ZK circuit metrics (BN254 / Poseidon2 / Groth16, `go run ./cmd/zk-bench -prod`)
 
 | circuit | constraints | setup | prove | verify | proof |

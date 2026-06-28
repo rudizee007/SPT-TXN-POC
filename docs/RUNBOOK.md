@@ -149,3 +149,50 @@ HASH=$(cd ../.. && go run ./cmd/anchor -chain hedera | awk '/context_hash/{print
 ./hcs-anchor verify -network testnet -topic 0.0.YYYYY -hash "$HASH"   # keyless mirror-node proof
 ```
 `verify` (and the equivalent mirror-node `curl`) needs no key and no HBAR.
+
+## 12. First mainnet footprint (EVM L2)
+
+Turns the POC from "testnet-only" into "production-touching" with one real,
+permanent anchor. The Solidity is build-once-deploy-many, so this is §3 with a
+mainnet RPC and a **real, funded, dedicated** key. This is YOUR action — Claude
+cannot deploy contracts or move funds.
+
+**Chain choice.** An L2 mainnet keeps fees to roughly cents. Default **Arbitrum
+One** (continuity with the Arbitrum Sepolia work and the Multichain grant); **Base
+mainnet** is a one-line RPC swap. Both reuse the exact bytecode already proven on
+Sepolia.
+
+```
+# Arbitrum One:  RPC=https://arb1.arbitrum.io/rpc
+# Base mainnet:  RPC=https://mainnet.base.org
+export RPC=https://arb1.arbitrum.io/rpc
+export PK=0x<DEDICATED_MAINNET_KEY>      # NEVER a testnet throwaway key; fund with a little real ETH
+
+cast gas-price --rpc-url "$RPC"          # sanity-check current fees BEFORE deploying
+cast balance <ADDR> --rpc-url "$RPC"     # confirm the key is funded
+
+cd solidity && forge build
+# Minimal, cheapest meaningful footprint: the plain append-only anchor.
+forge create src/AttestationAnchor.sol:AttestationAnchor --rpc-url "$RPC" --private-key "$PK" --broadcast
+
+# Anchor ONE real token-derived hash:
+HASH=$(cd .. && go run ./cmd/anchor -chain arbitrum | awk '/context_hash/{print $3}')
+cast send <ANCHOR_ADDR> "anchor(bytes32)" 0x$HASH --rpc-url "$RPC" --private-key "$PK"
+
+# Verify the on-chain root equals the token's hash (read-only, free):
+cd .. && go run ./cmd/anchor -chain arbitrum -onchain <ON_CHAIN_ROOT>   # → MATCH
+```
+
+Then record the address in `docs/STATUS.md` (Live on-chain footprints).
+
+**Safeguards / honesty:**
+- **Never reuse a testnet key on mainnet.** Generate a fresh key used only here,
+  fund it with the minimum, and treat it as disposable-but-real.
+- A mainnet anchor is **permanent and public** — but it is only a 32-byte hash, no
+  PII, no token contents; nothing sensitive is exposed.
+- The append-only anchor is open by design (finding F2): fine for a single
+  footprint, but a production mainnet deployment should add access control or an
+  anti-spam fee first.
+- The on-chain **ZK verifier** (`Groth16Verifier` + `AttestationVerifier`) is
+  heavier gas; deploy it to mainnet only if you specifically want a mainnet ZK
+  demo — the plain anchor is enough for a footprint.
