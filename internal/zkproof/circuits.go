@@ -133,9 +133,10 @@ const MaxHops = 4
 // 2-input Poseidon2 over (maxAmount, currency)) — it is a distinct public input
 // in a distinct circuit, so no cross-predicate confusion arises.
 type ChainCircuit struct {
-	H0    frontend.Variable `gnark:",public"`
-	CLeaf frontend.Variable `gnark:",public"`
-	D     frontend.Variable `gnark:",public"`
+	H0      frontend.Variable `gnark:",public"`
+	CLeaf   frontend.Variable `gnark:",public"`
+	D       frontend.Variable `gnark:",public"`
+	RegRoot frontend.Variable `gnark:",public"` // registered-CT-issuer Merkle root (F1)
 
 	Anchor   frontend.Variable          `gnark:",secret"`
 	Salt     frontend.Variable          `gnark:",secret"`
@@ -143,6 +144,14 @@ type ChainCircuit struct {
 	MaxAmt   [MaxHops]frontend.Variable `gnark:",secret"`
 	Currency [MaxHops]frontend.Variable `gnark:",secret"`
 	Depth    [MaxHops]frontend.Variable `gnark:",secret"`
+
+	// Per-hop issuer registry-membership (F1, phase 1): for each ACTIVE hop, the
+	// hop issuer's registry leaf (Issuer[i]) plus its authentication path
+	// (IssuerSib/IssuerDir) must reconstruct the public RegRoot. Inactive tail
+	// hops are unconstrained (the prover pads them with zeros).
+	Issuer    [MaxHops]frontend.Variable                `gnark:",secret"`
+	IssuerSib [MaxHops][VASPTreeDepth]frontend.Variable `gnark:",secret"`
+	IssuerDir [MaxHops][VASPTreeDepth]frontend.Variable `gnark:",secret"`
 }
 
 func (c *ChainCircuit) Define(api frontend.API) error {
@@ -203,6 +212,31 @@ func (c *ChainCircuit) Define(api frontend.API) error {
 	}
 	hs.Write(zkhash.DomainAmount, leafAmt, leafCur)
 	api.AssertIsEqual(c.CLeaf, hs.Sum())
+
+	// 6) Per-hop issuer trust (F1, phase 1): every ACTIVE hop's issuer key must be
+	//    a member of the registered-CT-issuer tree committed by the public RegRoot
+	//    — proving each hidden hop was issued by a registry-listed issuer key. The
+	//    Merkle node domain/orientation mirror VASPCircuit exactly. This does NOT
+	//    prove the issuer SIGNED the hop (that is the opt-in in-circuit-signature
+	//    phase; the cleartext engine verifies signatures and stays the stronger
+	//    default). Inactive tail hops compare RegRoot to itself, so the prover may
+	//    pad them with zeros.
+	hm, err := circuitposeidon2.New(api)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < MaxHops; i++ {
+		cur := c.Issuer[i]
+		for j := 0; j < VASPTreeDepth; j++ {
+			api.AssertIsBoolean(c.IssuerDir[i][j])
+			left := api.Select(c.IssuerDir[i][j], c.IssuerSib[i][j], cur)
+			right := api.Select(c.IssuerDir[i][j], cur, c.IssuerSib[i][j])
+			hm.Reset()
+			hm.Write(zkhash.DomainMerkleNode, left, right)
+			cur = hm.Sum()
+		}
+		api.AssertIsEqual(api.Select(c.Active[i], cur, c.RegRoot), c.RegRoot)
+	}
 
 	return nil
 }

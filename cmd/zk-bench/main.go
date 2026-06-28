@@ -189,11 +189,24 @@ func benchProd() {
 	}
 	reportProd("threshold", a.NbConstraints(), st, pt, time.Since(t), len(tp))
 
-	// chain: agentic delegation-chain attenuation, intermediate scopes hidden.
+	// chain: agentic delegation-chain attenuation, intermediate scopes hidden,
+	// each hop's issuer proven a member of the registered-CT-issuer tree (F1).
+	const regSize = 1 << zkproof.VASPTreeDepth
+	members := make([][]byte, regSize)
+	members[0] = []byte("domain-a.authorg/ct_issuer")
+	members[1] = []byte("domain-b.execorg/ct_issuer")
+	members[2] = []byte("domain-c.agentorg/ct_issuer")
+	for i := 3; i < regSize; i++ {
+		members[i] = []byte(fmt.Sprintf("pad-%d", i))
+	}
+	reg, err := zkproof.BuildVASPRegistry(members)
+	if err != nil {
+		log.Fatalf("chain registry: %v", err)
+	}
 	hops := []zkproof.ChainHop{
-		{MaxAmount: 10000, Currency: 840},
-		{MaxAmount: 8000, Currency: 840},
-		{MaxAmount: 5000, Currency: 840},
+		{MaxAmount: 10000, Currency: 840, Issuer: members[0]},
+		{MaxAmount: 8000, Currency: 840, Issuer: members[1]},
+		{MaxAmount: 5000, Currency: 840, Issuer: members[2]},
 	}
 	t = time.Now()
 	a, err = zkproof.Setup(zkproof.CircuitChain)
@@ -202,13 +215,13 @@ func benchProd() {
 	}
 	st = time.Since(t)
 	t = time.Now()
-	chp, h0, cleaf, err := a.ProveChain([]byte("alice-anchor"), []byte("salt"), 3, hops)
+	chp, h0, cleaf, regRoot, err := a.ProveChain([]byte("alice-anchor"), []byte("salt"), 3, hops, reg)
 	if err != nil {
 		log.Fatalf("chain prove: %v", err)
 	}
 	pt = time.Since(t)
 	t = time.Now()
-	if err := a.VerifyChain(chp, h0, cleaf, 3); err != nil {
+	if err := a.VerifyChain(chp, h0, cleaf, regRoot, 3); err != nil {
 		log.Fatalf("chain verify: %v", err)
 	}
 	reportProd("chain", a.NbConstraints(), st, pt, time.Since(t), len(chp))

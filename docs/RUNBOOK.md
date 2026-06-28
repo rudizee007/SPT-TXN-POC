@@ -83,16 +83,23 @@ aptos move run --function-id default::attestation_anchor::anchor --args address:
 ## 7. Wire the optional ZK N-hop verifier mode (caller side)
 
 The `verifier` package is gnark-free; inject a `ChainVerifierFunc` that derives the
-leaf-scope commitment from the presented leaf scope:
+leaf-scope commitment from the presented leaf scope and binds the proof to the
+operator's OWN trusted registered-CT-issuer root (`regRoot`, captured in the
+closure — not carried in the proof). The prover builds the proof with
+`ProveChain(..., registry)` where each `ChainHop.Issuer` is a registry member:
 
 ```go
 art, _ := zkproof.Load(zkproof.CircuitChain, "./zk")
+regRoot := myIssuerRegistry.Root() // *big.Int — the operator's trusted CT-issuer set
 eng.ChainVerifier = func(proof []byte, h0 *big.Int, leafMax uint64, leafCur string, d uint64) error {
     cleaf := zkproof.LeafScopeCommitment(leafMax, zkproof.CurrencyCode(leafCur))
-    return art.VerifyChain(proof, h0, cleaf, d)
+    return art.VerifyChain(proof, h0, cleaf, regRoot, d)
 }
 ```
 Then a presentation with `Input.ChainProof`/`ChainH0` set runs `step6ChainZK`.
+Note (F1, phase 1): the circuit now proves each hidden hop's issuer is a member of
+`regRoot`, but does **not** yet prove the issuer *signed* the hop (see the security
+review). The chain circuit changed — regenerate keys: `go run ./cmd/zk-setup -dir ./zk`.
 
 ## 8. Website deploy (OpenBSD host)
 

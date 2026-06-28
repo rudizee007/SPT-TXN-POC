@@ -22,29 +22,41 @@ go test ./...                          # full suite, incl. ZK + verifier + discl
 
 | # | Severity | Finding |
 |---|---|---|
-| F1 | Medium (by-design) | ZK chain mode does not verify intermediate-hop issuer signatures in-circuit |
+| F1 | Medium (by-design) | ZK chain mode proves per-hop issuer registry-membership (phase 1) but does not yet verify intermediate-hop issuer signatures in-circuit |
 | F2 | Low | Open append-only anchoring (anyone can anchor) — spam/storage growth on mainnet |
 | F3 | Low | Shape-only address validation in adapters (POC) |
 | F4 | Low (process) | Throwaway testnet deployer keys in shell history; one EVM key lost |
 | F5 | Info | Human-anchor binding in ZK chain mode is a cleartext endpoint check (intentional) |
 
-### F1 — ZK chain mode: intermediate signatures not proven in-circuit (Medium, by design)
+### F1 — ZK chain mode: per-hop membership proven (phase 1); signatures not yet in-circuit (Medium, by design)
 The cleartext `step6Chain` verifies **every** hop's signature against a registered
-issuer key, the parent-hash binding, jti linkage, scope monotonicity, and depth. The
-opt-in ZK mode (`step6ChainZK`) proves only **scope attenuation + depth** over the
-hidden intermediates; it does **not** prove that each intermediate CT was signed by a
-registered CT-issuer (Ed25519 verification is deliberately kept out of the circuit
-for cost). Consequence: in ZK mode a prover could, in principle, present an
-attenuating scope chain whose hidden intermediate hops were not issued by trusted
-issuers — the proof would still verify.
+issuer key, the parent-hash binding, jti linkage, scope monotonicity, and depth.
+
+**Phase 1 (implemented 2026-06-28):** `ChainCircuit` now also proves, for each
+*active* hop, that the hop's issuer key is a **member of the registered-CT-issuer
+Merkle tree** (public `RegRoot`), reusing the matched Poseidon2 Merkle gadget. So a
+ZK-mode proof now demonstrates scope attenuation + depth + human-anchor **and** that
+every hidden hop names a registry-listed issuer. Cost: chain circuit 5,936 → 17,945
+constraints, prove 16 → 84 ms; verify (~0.8 ms) and proof size (164 B) unchanged.
+Negative tests cover an unregistered issuer (rejected at prove) and a wrong registry
+root (rejected at verify).
+
+**Residual gap (the honest limitation):** membership proves the hop *names* a
+registered issuer, not that the issuer **signed** it. Registry leaves are issuer IDs,
+which are not secret — so a malicious prover who knows them could still name
+registered issuers it does not control. Closing this needs **in-circuit signatures**
+(phase 2): issuers dual-key (keep Ed25519 for JWS/VC interop, add a SNARK-friendly
+EdDSA key, e.g. Baby Jubjub) and the circuit verifies each hop's signature against a
+registry-member key. Estimated cost (4 hops): roughly +20–40k constraints on top of
+phase 1, prove in the few-hundred-ms range, verify still ~1 ms.
 - **Mitigations in place:** ZK mode is strictly opt-in (requires an injected
-  `ChainVerifier`); the **cleartext mode is the default and the stronger path**; the
-  CAT and leaf CT endpoints are still signature-verified; `CLeaf`/`D` are bound to the
-  presented tokens; the limitation is documented in the engine and the plan doc.
-- **Recommendation:** for full parity, extend `ChainCircuit` to prove each hop's
-  signature (or a registry-membership proof of each issuer key) in-circuit — costly;
-  scope it as funded work. Until then, treat ZK mode as a privacy enhancement for
-  *scope* hiding, not a replacement for issuer-trust verification of intermediates.
+  `ChainVerifier`); the **cleartext mode is the default and the stronger path** (it
+  verifies signatures); the CAT and leaf CT endpoints are still signature-verified;
+  `CLeaf`/`D`/`RegRoot` are bound to the verifier's trusted context; documented in the
+  engine, RUNBOOK §7, and the plan doc.
+- **Recommendation:** decide phase 2 (in-circuit signatures) with the phase-1 cost in
+  hand. Until then, ZK mode = scope-privacy + registry-membership, not a replacement
+  for cleartext issuer-signature verification of intermediates.
 
 ### F2 — Open append-only anchoring (Low)
 `AttestationAnchor`/`AttestationVerifier` (Solidity), the Cairo contract, and the

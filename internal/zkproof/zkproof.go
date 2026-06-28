@@ -271,12 +271,15 @@ func (a *Artifacts) VerifyVASPMembership(p ProofBytes, root *big.Int) error {
 
 // ── Delegation-chain predicate (agentic) ─────────────────────────────────────
 
-// ChainHop is one capability in a delegation chain: a spending ceiling and a
-// currency code. hops[0] is the root CAT ceiling; the last hop is the leaf the
-// agent acts under. Each hop must narrow (or equal) its parent's ceiling.
+// ChainHop is one capability in a delegation chain: a spending ceiling, a
+// currency code, and the registry member-ID of the issuer that signed this hop.
+// hops[0] is the root CAT ceiling; the last hop is the leaf the agent acts
+// under. Each hop must narrow (or equal) its parent's ceiling, and each hop's
+// Issuer must be a member of the registered-CT-issuer tree (F1).
 type ChainHop struct {
 	MaxAmount uint64
 	Currency  uint64
+	Issuer    []byte // registry member-ID of this hop's issuer (must be in the registry tree)
 }
 
 // ProveChain proves a delegation chain is valid — each hop's ceiling only
@@ -285,14 +288,18 @@ type ChainHop struct {
 // WITHOUT revealing the intermediate scopes. It returns the proof plus the two
 // public commitments: h0 (human-anchor) and cleaf (the leaf's effective scope).
 // maxDepth is the root delegation depth D.
-func (a *Artifacts) ProveChain(anchorMaterial, salt []byte, maxDepth uint64, hops []ChainHop) (proof ProofBytes, h0, cleaf *big.Int, err error) {
+func (a *Artifacts) ProveChain(anchorMaterial, salt []byte, maxDepth uint64, hops []ChainHop, registry *MerkleTree) (proof ProofBytes, h0, cleaf, regRoot *big.Int, err error) {
 	n := len(hops)
 	if n < 1 || n > MaxHops {
-		return nil, nil, nil, fmt.Errorf("chain length %d out of range [1,%d]", n, MaxHops)
+		return nil, nil, nil, nil, fmt.Errorf("chain length %d out of range [1,%d]", n, MaxHops)
 	}
 	if maxDepth+1 < uint64(n) {
-		return nil, nil, nil, fmt.Errorf("maxDepth %d too small for a %d-hop chain", maxDepth, n)
+		return nil, nil, nil, nil, fmt.Errorf("maxDepth %d too small for a %d-hop chain", maxDepth, n)
 	}
+	if registry == nil {
+		return nil, nil, nil, nil, fmt.Errorf("a registered-CT-issuer registry is required (F1 per-hop membership)")
+	}
+	regRoot = registry.Root()
 	anc := feFromWide(anchorMaterial)
 	slt := feFromWide(salt)
 	h0fe := hashAnchor(anc, slt)
@@ -304,6 +311,7 @@ func (a *Artifacts) ProveChain(anchorMaterial, salt []byte, maxDepth uint64, hop
 	full.H0 = bigOf(h0fe)
 	full.CLeaf = bigOf(cleaffe)
 	full.D = new(big.Int).SetUint64(maxDepth)
+	full.RegRoot = regRoot
 	full.Anchor = bigOf(anc)
 	full.Salt = bigOf(slt)
 	for i := 0; i < MaxHops; i++ {
@@ -312,15 +320,31 @@ func (a *Artifacts) ProveChain(anchorMaterial, salt []byte, maxDepth uint64, hop
 			full.MaxAmt[i] = new(big.Int).SetUint64(hops[i].MaxAmount)
 			full.Currency[i] = new(big.Int).SetUint64(hops[i].Currency)
 			full.Depth[i] = new(big.Int).SetUint64(maxDepth - uint64(i))
+			leaf, sibs, bits, _, ok := registry.ProofForMember(hops[i].Issuer)
+			if !ok {
+				return nil, nil, nil, nil, fmt.Errorf("hop %d issuer is not in the registered-CT-issuer registry", i)
+			}
+			full.Issuer[i] = leaf
+			for j := 0; j < VASPTreeDepth; j++ {
+				full.IssuerSib[i][j] = sibs[j]
+				full.IssuerDir[i][j] = bits[j]
+			}
 		} else {
 			full.Active[i] = 0
 			full.MaxAmt[i] = 0
 			full.Currency[i] = 0
 			full.Depth[i] = 0
+			// Inactive tail: dummy membership; the circuit compares RegRoot to
+			// itself for Active==0, so any well-formed (zero) path is accepted.
+			full.Issuer[i] = 0
+			for j := 0; j < VASPTreeDepth; j++ {
+				full.IssuerSib[i][j] = 0
+				full.IssuerDir[i][j] = 0
+			}
 		}
 	}
 	proof, err = a.prove(&full)
-	return proof, bigOf(h0fe), bigOf(cleaffe), err
+	return proof, bigOf(h0fe), bigOf(cleaffe), regRoot, err
 }
 
 // CurrencyCode maps a currency string (e.g. "USD") to a stable field code used
@@ -342,8 +366,11 @@ func LeafScopeCommitment(maxAmount, currencyCode uint64) *big.Int {
 }
 
 // VerifyChain checks a delegation-chain proof against the human-anchor commitment
-// (e.g. the human_anchor token claim), the leaf-scope commitment, and the
-// declared maximum delegation depth the verifier independently knows.
-func (a *Artifacts) VerifyChain(p ProofBytes, h0, cleaf *big.Int, maxDepth uint64) error {
-	return a.verify(p, &ChainCircuit{H0: h0, CLeaf: cleaf, D: new(big.Int).SetUint64(maxDepth)})
+// (e.g. the human_anchor token claim), the leaf-scope commitment, the declared
+// maximum delegation depth, and the registered-CT-issuer Merkle root — all of
+// which the verifier independently knows from its own trusted context. The
+// regRoot binds the proof to the verifier's trusted issuer set, so a chain whose
+// hops were not issued by registered issuers will not verify (F1, phase 1).
+func (a *Artifacts) VerifyChain(p ProofBytes, h0, cleaf, regRoot *big.Int, maxDepth uint64) error {
+	return a.verify(p, &ChainCircuit{H0: h0, CLeaf: cleaf, D: new(big.Int).SetUint64(maxDepth), RegRoot: regRoot})
 }

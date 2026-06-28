@@ -1,6 +1,7 @@
 package verifier_test
 
 import (
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -18,20 +19,37 @@ func TestChainVerifierFunc_Injection(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	usd := zkproof.CurrencyCode("USD")
-	hops := []zkproof.ChainHop{
-		{MaxAmount: 10000, Currency: usd},
-		{MaxAmount: 8000, Currency: usd},
-		{MaxAmount: 5000, Currency: usd}, // leaf
+
+	// The verifier's own trusted registered-CT-issuer set (F1, phase 1).
+	const regSize = 1 << zkproof.VASPTreeDepth
+	members := make([][]byte, regSize)
+	members[0] = []byte("domain-a.authorg/ct_issuer")
+	members[1] = []byte("domain-b.execorg/ct_issuer")
+	members[2] = []byte("domain-c.agentorg/ct_issuer")
+	for i := 3; i < regSize; i++ {
+		members[i] = []byte(fmt.Sprintf("pad-%d", i))
 	}
-	proof, h0, _, err := art.ProveChain([]byte("alice-anchor"), []byte("salt"), 3, hops)
+	reg, err := zkproof.BuildVASPRegistry(members)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+
+	hops := []zkproof.ChainHop{
+		{MaxAmount: 10000, Currency: usd, Issuer: members[0]},
+		{MaxAmount: 8000, Currency: usd, Issuer: members[1]},
+		{MaxAmount: 5000, Currency: usd, Issuer: members[2]}, // leaf
+	}
+	proof, h0, _, regRoot, err := art.ProveChain([]byte("alice-anchor"), []byte("salt"), 3, hops, reg)
 	if err != nil {
 		t.Fatalf("prove: %v", err)
 	}
 
-	// Exactly what a Domain B operator injects: derive CLeaf from the leaf scope.
+	// Exactly what a Domain B operator injects: derive CLeaf from the leaf scope,
+	// and bind the proof to the operator's OWN trusted registry root (regRoot is
+	// captured from the operator's registry, not carried in the proof).
 	var cv verifier.ChainVerifierFunc = func(p []byte, anchor *big.Int, leafMax uint64, leafCur string, d uint64) error {
 		cleaf := zkproof.LeafScopeCommitment(leafMax, zkproof.CurrencyCode(leafCur))
-		return art.VerifyChain(p, anchor, cleaf, d)
+		return art.VerifyChain(p, anchor, cleaf, regRoot, d)
 	}
 
 	// Bound to the real leaf scope (5000 USD, depth 3) → verifies.

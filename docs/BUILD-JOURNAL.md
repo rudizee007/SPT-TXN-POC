@@ -79,6 +79,24 @@ Decisions:
   (`verifier.ChainVerifierFunc`), so the lightweight offline verifier never imports
   gnark; ZK verification is strictly opt-in.
 
+## F1 phase 1 — per-hop issuer registry-membership in the chain circuit
+
+The first review's F1 finding was that ZK chain mode proved scope/depth/anchor but
+nothing about issuer trust. Phase 1 (chosen over a full in-circuit-signature rewrite,
+to measure cost first) adds a public `RegRoot` and, for each active hop, a Poseidon2
+Merkle inclusion proof of the hop's issuer key against the registered-CT-issuer tree —
+reusing the exact gadget and orientation the `VASPCircuit` already uses, so native and
+in-circuit hashing stay matched. `ProveChain` takes the registry and returns the root;
+`VerifyChain` takes it; the verifier seam is unchanged (the operator's trusted root is
+captured in the injected closure, so the verifier package stays gnark-free).
+
+Measured cost: 5,936 → 17,945 constraints, prove 16 → 84 ms; verify and proof size
+unchanged. Honest limitation carried forward: membership proves a hop *names* a
+registered issuer, not that the issuer *signed* it (registry leaves are public IDs) —
+full closure needs in-circuit signatures (phase 2, issuers dual-key with a
+SNARK-friendly scheme). Recorded in the security review; phase 2 is a cost-informed
+decision.
+
 ## Scoped-disclosure SDK + schema
 
 `internal/disclosure` — a request → consent → response protocol for time-limited,
