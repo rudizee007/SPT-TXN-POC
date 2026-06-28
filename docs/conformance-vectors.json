@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "note": "Deterministic SPT-Txn conformance vectors: spt_txn_context_hash per chain (canonical preimage, SHA-256) and humanAnchor = zkhash.Commit(secret, blinding) hex. Signatures/timestamps in real tokens are not covered here.",
+  "context_hashes": [
+    {
+      "chain": "xrpl",
+      "originator": "rPdvC6ccq8hCdPKSPJkPmyZ4Mi1oG2FFkT",
+      "beneficiary": "rsA2LpzuawewSBQXkiju3YQTMzW13pAAdW",
+      "amount": "5000.00",
+      "currency": "USD",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "b91913f380e18e3a82fef69b92ae191a55dcae7d37fd05d766b12ebbb3991128"
+    },
+    {
+      "chain": "ethereum",
+      "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "ETH",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "537d44521507cc881c32db2af3e963698baf5b0de7b0e162e4f22f279f1384bc"
+    },
+    {
+      "chain": "arbitrum",
+      "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "ETH",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "a7efd681177e60d16ee15ee04f6d548828b69431b2d12b5d2b3b63c1cafb5826"
+    },
+    {
+      "chain": "optimism",
+      "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "ETH",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "bbc0ae6698d2584097f11f3b81b6d2119847fa192dfb1dc7334a91cc612efcdb"
+    },
+    {
+      "chain": "base",
+      "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "ETH",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "1b26b985cb78490b3cba43c397094aa87c87b023017f5acb16d2aa57b4f782bf"
+    },
+    {
+      "chain": "avalanche",
+      "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "AVAX",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "ea9bff31283ced7edbdb589792e32d68468268a09f9295002f75f6e38d1075a6"
+    },
+    {
+      "chain": "xdc",
+      "originator": "xdc0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "xdcfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "XDC",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "ceeaef90662e6326a5f622e98a5b8efdee7ad41f2d0e9ce02a4cb7ec80c54406"
+    },
+    {
+      "chain": "starknet",
+      "originator": "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "beneficiary": "0xffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
+      "amount": "5000.00",
+      "currency": "STRK",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "115bbc3a6ebe79ddb098fc7c98d8d4764993f987a9df76af1a2c5a81e9da535e"
+    },
+    {
+      "chain": "aptos",
+      "originator": "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "beneficiary": "0xffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
+      "amount": "5000.00",
+      "currency": "APT",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "d63c721473baea097b7c367cd84a9bf65d75cb16e1cc1c33ba6e4823502d47a5"
+    },
+    {
+      "chain": "sui",
+      "originator": "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "beneficiary": "0xffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
+      "amount": "5000.00",
+      "currency": "SUI",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "12644544f71afeb00ed4c0449df00a654c49f0a0a74e97a5c73e650f75f1ab4c"
+    },
+    {
+      "chain": "solana",
+      "originator": "BeWdnfiJ52LpaGudU6ZhGLVcpeBEYxHYewZC4DZopVi4",
+      "beneficiary": "HiHP5wBk1iVLMPM42MviMqBirdSbaaQ9Szida8tGwVR2",
+      "amount": "5000.00",
+      "currency": "SOL",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "b602433e6d0dab3596b8b37f8a6e9da73b2186c53527be0834e0be194eec142c"
+    },
+    {
+      "chain": "stellar",
+      "originator": "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW",
+      "beneficiary": "G234567ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQ",
+      "amount": "5000.00",
+      "currency": "XLM",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "704b96ddcc18ea41bca983287faae1b122a61f1f79037a0da58d9661851a7f2f"
+    },
+    {
+      "chain": "hedera",
+      "originator": "0.0.1001",
+      "beneficiary": "0.0.2002",
+      "amount": "5000.00",
+      "currency": "HBAR",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "ab05564af690d688fb05586b995bf215b9ed56031936a27e6ff3a9437c25d817"
+    },
+    {
+      "chain": "algorand",
+      "originator": "KNTKMJFYXI2B43M7G4LJ3KU5I452GORN3FCDDMFUEHF7Q3OBNND3OQENZE",
+      "beneficiary": "IGIOJAQMOL2F42RGONSM6ONMYZ2M22TNDZODKIOT7TK7IRXGCZXQMHEKQY",
+      "amount": "5000.00",
+      "currency": "ALGO",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "34820e2143e6003f1e67c85df1b9d4689453ecb9968e23b5eb1a605fe32dec03"
+    },
+    {
+      "chain": "polkadot",
+      "originator": "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5",
+      "beneficiary": "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5",
+      "amount": "5000.00",
+      "currency": "DOT",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "977f5cbd801f10f73c42b8e010733e704f13f21c28c63a2920c093bfd99e04fb"
+    }
+  ],
+  "human_anchors": [
+    {
+      "secret": "alice@example.org",
+      "blinding": "randomness-0001",
+      "human_anchor": "55cc320d970db0da5c4fda7ffcd95b753990c7778e33d74731ea35a90254403"
+    },
+    {
+      "secret": "bob@example.org",
+      "blinding": "randomness-0002",
+      "human_anchor": "2377fcf777f4578eac236b312e5b5e57ffe78e9335feb94a792ea2a18307d6f0"
+    }
+  ]
+}

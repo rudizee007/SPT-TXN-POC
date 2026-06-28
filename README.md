@@ -80,6 +80,10 @@ token; blockchain-agnostic (XRPL is the primary integration target).
 - [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — **authoritative** terminology + the
   CAT/attribute model + standards mapping.
 - [`docs/CBOM.md`](docs/CBOM.md) / [`docs/cbom.json`](docs/cbom.json) — Cryptographic Bill of Materials.
+- [`docs/ZK-CIRCUIT-SPEC.md`](docs/ZK-CIRCUIT-SPEC.md) — auditor-facing spec of every circuit (inputs, constraints, soundness arguments) to de-risk an independent ZK audit.
+- [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) — STRIDE + LINDDUN threat model with mitigations and residual risks.
+- [`docs/SCALING-AND-SUBSTRATE.md`](docs/SCALING-AND-SUBSTRATE.md) — how it scales beyond one host (stateless verifier / per-participant issuer / off-hot-path registry) + the storage-substrate decision (on-chain Merkle root + signed Go snapshots; DWN as inspiration only).
+- [`docs/conformance-vectors.json`](docs/conformance-vectors.json) — deterministic conformance vectors (per-chain context hash, humanAnchor); regenerate/check with `cmd/conformance`. Independently verify an audit log with `cmd/auditverify`.
 - [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) — full security review (FAIL=0; roadmap items noted); [`docs/SECURITY-REVIEW-2026-06-28.md`](docs/SECURITY-REVIEW-2026-06-28.md) — review of the new surface (adapters, contracts, ZK chain, verifier seam); [`docs/SECURITY-REVIEW-2026-06-28-extended.md`](docs/SECURITY-REVIEW-2026-06-28-extended.md) — extended surface (Sui Move anchor, Hedera HCS/DID, more adapters, x402 gate).
 - [`docs/TRP-TRISA-INTEROP.md`](docs/TRP-TRISA-INTEROP.md) — Travel Rule transport + TRISA bridge design.
 - [`docs/V2-TOPICS-CHECKLIST.md`](docs/V2-TOPICS-CHECKLIST.md) / [`docs/V2-RESEARCH-NOTES.md`](docs/V2-RESEARCH-NOTES.md) — v2 coverage + research.
