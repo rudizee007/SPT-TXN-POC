@@ -65,6 +65,15 @@ contract AttestationVerifier {
    confirm a tampered proof reverts.
 This is the ESP "verify without revealing" deliverable end-to-end.
 
+**Scoped-disclosure SDK + schema — BUILT (2026-06-28).** `internal/disclosure`
+(Go reference) + `docs/DISCLOSURE-SCHEMA.md` (language-agnostic JSON): a
+request → consent → response protocol for time-limited, scope-selected selective
+disclosure over SD-JWT — discloses only `requested ∩ consented`, rejects
+out-of-scope/expired/mismatched responses, reports withheld fields. Tests in
+`internal/disclosure/disclosure_test.go`. This is the second of the two ESP
+deliverables (the on-chain ZK verifier being the first); ZK predicates attach via
+`internal/zkproof`/`internal/travelrule`.
+
 ---
 
 ## 2. Agentic ZK chain proof ("prove the chain without revealing it")
