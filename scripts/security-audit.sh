@@ -61,7 +61,14 @@ fi
 # ── 3. Network exposure: what is actually listening ─────────────────────────
 hdr "Listening sockets"
 listen=$(netstat -an -f inet 2>/dev/null | grep LISTEN)
-echo "$listen" | grep -q '\*\.443\|0\.0\.0\.0\.443\|\.443 ' && P "TLS terminator listening on :443" || W "nothing listening on :443 (relayd down?)"
+listen6=$(netstat -an -f inet6 2>/dev/null | grep LISTEN)
+if echo "$listen$listen6" | grep -qE '\.443[[:space:]]'; then
+  P "TLS terminator listening on :443"
+elif rcctl check relayd >/dev/null 2>&1; then
+  W "relayd is running but :443 is not bound — the :443 relay may have failed to bind (check the keypair/cert in relayd.conf)"
+else
+  W "nothing listening on :443 (relayd down?)"
+fi
 # Any service bound to a non-loopback address other than 80/443 is suspicious.
 bad=$(echo "$listen" | awk '{print $4}' | grep -v '^127\.0\.0\.1' | grep -v '\.443$' | grep -v '\.22$' | grep -v '\.80$')
 if [ -z "$bad" ]; then P "no app service bound to a public interface (only loopback + 22/80/443)"; else W "non-loopback listeners (review): $bad"; fi
@@ -173,11 +180,17 @@ done
 hdr "Trust registry contents (C2)"
 list=$(curl -s --max-time 5 "http://$TR_TCP/tr/list" 2>/dev/null)
 if [ -n "$list" ]; then
-  # Flag any record whose public_key is 64 zeros AND status active.
-  if echo "$list" | tr ',' '\n' | grep -q '"public_key": *"0\{64\}"'; then
-    if echo "$list" | grep -q '"status": *"active"' && echo "$list" | grep -q '0\{64\}'; then
-      W "registry contains an all-zero key; confirm it is NOT status=active"
-    fi
+  # Correlate PER RECORD: an all-zero public_key is only a risk if that SAME
+  # record is status=active. Revoked all-zero entries are the seeded placeholders
+  # (trsvc seedIfEmpty seeds domain-a/domain-b slots StatusRevoked) — benign, and
+  # the verifier refuses all-zero keys regardless (engine.go isAllZero, review C2).
+  # Put each record object on its own line so the active+all-zero test is joint,
+  # not "some key is active" AND "some key is all-zero" (the old false positive).
+  recs=$(echo "$list" | tr -d ' \n' | awk '{gsub(/\},\{/,"}\n{"); print}')
+  if echo "$recs" | grep '"public_key":"0\{64\}"' | grep -q '"status":"active"'; then
+    F "registry has an ACTIVE all-zero key — a placeholder issuer was never replaced with its real key (run regkey) or must be revoked"
+  elif echo "$recs" | grep -q '"public_key":"0\{64\}"'; then
+    I "registry has revoked all-zero placeholder key(s) (seeded by seedIfEmpty) — benign; verifier also refuses all-zero keys"
   else
     P "no all-zero public keys in registry listing"
   fi

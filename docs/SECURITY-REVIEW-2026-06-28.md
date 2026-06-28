@@ -102,10 +102,21 @@ FAIL=0.** Target (FAIL=0) met. WARN triage:
 - Tradeoffs (production hardening, fine for POC): 5× signify keys unencrypted at
   rest (perms-only protection — always-on service; production = HSM/KMS or boot
   unlock); `doas permit nopass` (review scope).
-- Act: confirm the registry's all-zero placeholder key is NOT `status=active`
-  (verifier already refuses all-zero keys via `resolveKey`/`isAllZero`, so it is
-  defense-in-depth, but remove the placeholder); verify `:443` is bound
-  (`netstat -an -f inet | grep '\.443'`) — site is live, so likely a probe race.
+- Resolved (audit-check precision, 2026-06-28): both remaining WARNs were
+  `scripts/security-audit.sh` **false positives**, now fixed at the source.
+  - *All-zero key:* the check warned whenever the registry held *any* active key
+    **and** *any* all-zero key, without testing they were the **same** record.
+    The all-zero entries are the `seedIfEmpty` placeholders (`domain-a`/`domain-b`
+    slots), seeded `StatusRevoked` by construction, and the verifier refuses
+    all-zero keys regardless (`engine.go isAllZero`). The check now correlates per
+    record: `FAIL` only on an **active** all-zero key (the genuine risk — a
+    placeholder slot left active / never `regkey`-replaced), `INFO` on revoked
+    placeholders. Confirm live (expect every match `"status":"revoked"`):
+    `curl -s http://127.0.0.1:8081/tr/list | tr -d ' \n' | awk '{gsub(/\},\{/,"}\n{");print}' | grep '"public_key":"0\{64\}"'`
+  - *`:443`:* the check probed IPv4 only; it now checks IPv4+IPv6 and, when relayd
+    is up but `:443` is unbound, says so explicitly (keypair/cert) rather than the
+    generic "relayd down?". Confirm live: `doas netstat -an | grep '\.443 '`
+    (expect a `LISTEN` row — the site is serving, so this was a probe race).
 
 The new adapter/ZK/contract code is NOT deployed to the host; it is covered by
 `go test ./...` (full suite green on the Mac, 2026-06-28) + the source review above.
