@@ -45,15 +45,19 @@ EVM L2.
 | Starknet Sepolia | attestation_anchor (Cairo) | `0x0620fe8ccb9c19fe9acce44dccc6a6a3d851974dcd97f05949982453de853de1` | real token-derived root |
 | Aptos testnet | attestation_anchor (Move) | `0x0b1f35b54e92d49d21d1badca271b9ab5686f22f82d6f88c6731cac20cbe0aa2` | real token-derived root |
 | Solana devnet | SPL-memo anchor wallet | `BeWdnfiJ52LpaGudU6ZhGLVcpeBEYxHYewZC4DZopVi4` | memo anchor |
+| Hedera testnet | HCS topic (attestation anchor) | `0.0.9357269` (seq 1) | real token-derived ctx hash `9448…7581`; keyless mirror-node verify; milestone A1 |
 
 The on-chain ZK verifier (Ethereum + Arbitrum Sepolia) verifies a threshold
 selective-disclosure proof on-chain and records the root only if it checks out; a
 tampered proof reverts.
 
-All footprints above are **testnet**. A first **mainnet** footprint (Arbitrum One
-or Base, same bytecode) is runbook-ready in [RUNBOOK.md](RUNBOOK.md) §12, pending a
-funded deploy (an operator action — needs a dedicated, funded mainnet key). The
-Hedera HCS footprint is likewise pending an operator anchor (RUNBOOK §11).
+The Hedera HCS footprint is **live on testnet** (topic `0.0.9357269`, sequence 1,
+consensus timestamp `1782658058.681753330`) — a real `cmd/anchor -chain hedera`
+context hash anchored via `clients/hcs-anchor` and confirmed keyless on the public
+mirror node. All footprints are **testnet**. A first **mainnet** footprint
+(Arbitrum One or Base, same bytecode) is runbook-ready in [RUNBOOK.md](RUNBOOK.md)
+§12, pending a funded deploy (an operator action — needs a dedicated, funded
+mainnet key).
 
 ## ZK circuit metrics (BN254 / Poseidon2 / Groth16, `go run ./cmd/zk-bench -prod`)
 
