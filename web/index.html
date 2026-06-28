@@ -997,6 +997,10 @@
     </div>
 
     <p class="section-body" style="margin-top:1.6rem; font-size:0.92rem; color:var(--muted);">POC-built and tested: multi-hop CT→CT delegation, an offline N-hop verifier, and a granular revocation cascade — and now provable in zero-knowledge, a Groth16 chain proof that verifies each hidden hop's registered-issuer signature in-circuit (Baby Jubjub EdDSA), with a live verify endpoint at <a href="https://foss.violetskysecurity.com:4446/agent/health" style="color:var(--violet-l);">:4446/agent/health</a>. Complements agent-to-agent payment rails (e.g. x402): SPT-Txn governs what an agent may do and who is accountable, not how it pays.</p>
+    <div style="margin-top:1.4rem; border:1px solid var(--border); border-radius:10px; padding:1rem 1.2rem;">
+      <div class="section-eyebrow" style="color:var(--violet-l);">Composes with x402 on XRPL</div>
+      <p class="tk-body" style="margin-top:0.5rem; margin-bottom:0;">XRPL supports <strong>x402</strong> (the HTTP-native agent-payment protocol) for paying API/model calls in XRP or RLUSD. x402 settles the payment; SPT-Txn gates it: before the agent pays, it proves — in zero knowledge — that it holds a human-anchored capability whose scope covers the spend, and the <strong>humanAnchor</strong> rides in the Payment <em>Memo</em> (reusing XRPL's native Memo/SourceTag attribution) so every agent payment is accountable and, for regulated transfers, Travel-Rule compliant — no PII on-ledger. An x402 <strong>payer-gate</strong> for XRPL is a scoped, fundable roadmap milestone.</p>
+    </div>
   </div>
 </section>
 
