@@ -92,6 +92,24 @@ circuit would be wrong. Recorded as a deliberate boundary, not a gap.
 - **No new edge-exposed mutating endpoints;** contracts hold no funds, no owner, no
   upgrade path; `agentsvc` verify-role holds no key (`pledge "stdio rpath inet"`).
 
+## Host audit result (2026-06-28 run)
+
+`scripts/security-audit.sh` on the deployed OpenBSD host (stale checkout — audits
+the running services/configs, not the new Mac-side code): **PASS=29, WARN=9,
+FAIL=0.** Target (FAIL=0) met. WARN triage:
+- By design: `*.4445`/`*.4446` public API listeners (relayd deny-by-default); sshd
+  password auth (pf brute-force throttled — operator's standing choice).
+- Tradeoffs (production hardening, fine for POC): 5× signify keys unencrypted at
+  rest (perms-only protection — always-on service; production = HSM/KMS or boot
+  unlock); `doas permit nopass` (review scope).
+- Act: confirm the registry's all-zero placeholder key is NOT `status=active`
+  (verifier already refuses all-zero keys via `resolveKey`/`isAllZero`, so it is
+  defense-in-depth, but remove the placeholder); verify `:443` is bound
+  (`netstat -an -f inet | grep '\.443'`) — site is live, so likely a probe race.
+
+The new adapter/ZK/contract code is NOT deployed to the host; it is covered by
+`go test ./...` (full suite green on the Mac, 2026-06-28) + the source review above.
+
 ## Recommendations (priority order)
 
 1. Run `scripts/security-audit.sh` on the host over the new files; confirm FAIL=0.
