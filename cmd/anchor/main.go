@@ -43,7 +43,7 @@ const (
 )
 
 func main() {
-	chain := flag.String("chain", "ethereum", "ledger adapter: ethereum, arbitrum, xdc, starknet, aptos, sui, solana, stellar, hedera, algorand, polkadot, xrpl")
+	chain := flag.String("chain", "ethereum", "ledger adapter: ethereum, arbitrum, avalanche, xdc, starknet, aptos, sui, solana, stellar, hedera, algorand, polkadot, xrpl")
 	amount := flag.String("amount", "4000", "transfer amount (must be within the capability ceiling)")
 	onchain := flag.String("onchain", "", "optional: an on-chain anchored root (64 hex) to compare against the computed hash")
 	flag.Parse()
@@ -135,7 +135,7 @@ func main() {
 // printCalldata renders the anchor arguments for each chain's CLI.
 func printCalldata(chain, hexHash string) {
 	switch chain {
-	case "ethereum", "xdc":
+	case "ethereum", "xdc", "avalanche", "arbitrum":
 		fmt.Printf("  anchor calldata (EVM, bytes32):\n    cast send <ADDR> \"anchor(bytes32)\" 0x%s\n", hexHash)
 	case "starknet":
 		low, high := "0x"+hexHash[32:64], "0x"+hexHash[0:32]
@@ -162,6 +162,8 @@ func chainContext(chain, amount string) (ledger.TxnContext, string, error) {
 		return mk("0x0102030405060708090a0b0c0d0e0f1011121314", "0xfFEEdDcCBbAa99887766554433221100ffEEddCc", "ETH", nil)
 	case "xdc":
 		return mk("xdc0102030405060708090a0b0c0d0e0f1011121314", "xdcfFEEdDcCBbAa99887766554433221100ffEEddCc", "XDC", nil)
+	case "avalanche":
+		return mk("0x0102030405060708090a0b0c0d0e0f1011121314", "0xfFEEdDcCBbAa99887766554433221100ffEEddCc", "AVAX", nil)
 	case "starknet":
 		return mk("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20", "0xffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100", "STRK", nil)
 	case "aptos":

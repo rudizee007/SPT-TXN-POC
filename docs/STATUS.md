@@ -16,7 +16,7 @@ and [BUILD-JOURNAL.md](BUILD-JOURNAL.md) (how we got here).
 | On-chain ZK verifier (Solidity) | `solidity/src/{Groth16Verifier,AttestationVerifier}.sol`, `cmd/zk-export-solidity`, `cmd/zk-solcalldata` | live on 2 L2s |
 | Scoped-disclosure SDK + schema | `internal/disclosure`, `docs/DISCLOSURE-SCHEMA.md` | built + tested |
 | Travel Rule (IVMS101 + SD-JWT + ZK) | `internal/travelrule`, `internal/sdjwt`, `internal/trp`, `internal/ivms101`, `cmd/tr-svc` | live (2-party) |
-| Ledger adapters (12 chains) | `internal/ledger` | tested |
+| Ledger adapters (13 chains) | `internal/ledger` | tested |
 | On-chain anchor contracts | `cairo/attestation_anchor`, `move/attestation_anchor`, `solidity/src/AttestationAnchor.sol`, `sui/attestation_anchor` | live on 5 chains (ETH, Arbitrum, Starknet, Aptos, Sui) |
 | End-to-end anchoring tool | `cmd/anchor` | tested |
 | Hedera HCS anchoring client (A1) | `clients/hcs-anchor` (separate module) | built; keyless mirror-node verify; anchoring is an operator action |
@@ -24,11 +24,11 @@ and [BUILD-JOURNAL.md](BUILD-JOURNAL.md) (how we got here).
 | CI | `.github/workflows/ci.yml` | build + vet + test on push/PR |
 | Site | `web/` → foss.violetskysecurity.com | live |
 
-## Ledger adapters (12)
+## Ledger adapters (13)
 
 `xrpl`, `hedera`, `solana`, `stellar`, `starknet`, `aptos`, `sui`, `ethereum`
-(covers all EVM L2s), `xdc`, `algorand`, `arbitrum`, `polkadot`. Each:
-`Name`/`Validate`/`Canonicalize`,
+(covers all EVM L2s), `xdc`, `algorand`, `arbitrum`, `avalanche`, `polkadot`.
+Each: `Name`/`Validate`/`Canonicalize`,
 chain-tagged preimage (no cross-chain hash collision), shape-only address checks
 (POC). One EVM adapter + one Solidity contract set cover Ethereum L1 and every
 EVM L2.
