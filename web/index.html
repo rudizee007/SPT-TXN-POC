@@ -996,7 +996,7 @@
       </div>
     </div>
 
-    <p class="section-body" style="margin-top:1.6rem; font-size:0.92rem; color:var(--muted);">POC-built and tested: multi-hop CT→CT delegation, an offline N-hop verifier, and a granular revocation cascade, with a live verify endpoint at <a href="https://foss.violetskysecurity.com:4446/agent/health" style="color:var(--violet-l);">:4446/agent/health</a>. Complements agent-to-agent payment rails (e.g. x402): SPT-Txn governs what an agent may do and who is accountable, not how it pays.</p>
+    <p class="section-body" style="margin-top:1.6rem; font-size:0.92rem; color:var(--muted);">POC-built and tested: multi-hop CT→CT delegation, an offline N-hop verifier, and a granular revocation cascade — and now provable in zero-knowledge, a Groth16 chain proof that verifies each hidden hop's registered-issuer signature in-circuit (Baby Jubjub EdDSA), with a live verify endpoint at <a href="https://foss.violetskysecurity.com:4446/agent/health" style="color:var(--violet-l);">:4446/agent/health</a>. Complements agent-to-agent payment rails (e.g. x402): SPT-Txn governs what an agent may do and who is accountable, not how it pays.</p>
   </div>
 </section>
 
@@ -1095,7 +1095,7 @@
   <div class="section-inner">
     <div class="section-eyebrow">Proof of Concept</div>
     <h2 class="section-title">Reference implementation. OpenBSD. Go. Security by design.</h2>
-    <p class="section-body">The POC validates the protocol architecture end-to-end. Classical cryptography with algorithm-agility dispatch. Pledge and unveil sandbox. File-backed persistent Trust Registry. Two-domain cross-organizational demo. A single ledger-adapter interface binds the authorization to a transaction across six chains, and the agentic layer adds multi-hop CT→CT delegation with an offline N-hop verifier.</p>
+    <p class="section-body">The POC validates the protocol architecture end-to-end. Classical cryptography with algorithm-agility dispatch. Pledge and unveil sandbox. File-backed persistent Trust Registry. Two-domain cross-organizational demo. A single ledger-adapter interface binds the authorization to a transaction across ten chains, and the agentic layer adds multi-hop CT→CT delegation with an offline N-hop verifier — now also provable in zero-knowledge.</p>
 
     <div class="milestone-list">
       <div class="milestone">
@@ -1213,7 +1213,7 @@
 
   <div style="margin-top:1.8rem; border:1px solid var(--violet-m); border-radius:10px; background:rgba(123,47,190,0.08); padding:1.1rem 1.2rem;">
     <div class="section-eyebrow" style="color:var(--violet-l);">Live · zero-knowledge verified on-chain</div>
-    <p class="section-body" style="margin-top:0.5rem; margin-bottom:0.7rem; max-width:720px;">A selective-disclosure proof — <strong>amount ≥ threshold, with the amount itself hidden</strong> — is verified on Ethereum Sepolia by a gnark Groth16 verifier (BN254), and the attestation is anchored <strong>only if the proof checks out</strong>. A tampered proof reverts and anchors nothing. Verify a predicate without revealing the data, enforced on-chain.</p>
+    <p class="section-body" style="margin-top:0.5rem; margin-bottom:0.7rem; max-width:720px;">A selective-disclosure proof — <strong>amount ≥ threshold, with the amount itself hidden</strong> — is verified on Ethereum and Arbitrum Sepolia by a gnark Groth16 verifier (BN254), and the attestation is anchored <strong>only if the proof checks out</strong>. A tampered proof reverts and anchors nothing. Verify a predicate without revealing the data, enforced on-chain.</p>
     <a href="https://sepolia.etherscan.io/address/0x311612c4E2D7E93CF5d80C0138B55C8A723B95ef" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">verifier 0x311612…95ef ↗</a>
     &nbsp;·&nbsp;
     <a href="https://sepolia.etherscan.io/tx/0x57dc3614ccb0fd882ce66d4c060345804ec56c686c1eee131ea68ce62eecd76c" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">verified-anchor tx ↗</a>
@@ -1226,6 +1226,13 @@
       <div class="ms-body">
         <strong>Ethereum Sepolia</strong> — attestation-anchor contract (Solidity), live; same bytecode deploys on every EVM L2<br>
         <a href="https://sepolia.etherscan.io/address/0x3fC3bE148c4902C21dfaf4ccff1E0c99d6F57089" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">0x3fC3bE…57089 ↗</a>
+      </div>
+    </div>
+    <div class="milestone">
+      <div class="ms-id" style="font-size:0.72rem;">ARB</div>
+      <div class="ms-body">
+        <strong>Arbitrum Sepolia</strong> — attestation-anchor + the on-chain ZK verifier, live (same Solidity as Ethereum, a second L2)<br>
+        <a href="https://sepolia.arbiscan.io/address/0x349edc056b6A3809a5B7FCFC8f260539aB0e13D8" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">verifier 0x349edc…13D8 ↗</a>
       </div>
     </div>
     <div class="milestone">
@@ -1245,8 +1252,15 @@
     <div class="milestone">
       <div class="ms-id" style="font-size:0.72rem;">HBAR</div>
       <div class="ms-body">
-        <strong>Hedera testnet</strong> — a real token-derived context hash anchored to a Hedera Consensus Service topic; verifiable keyless on the public mirror node<br>
+        <strong>Hedera testnet</strong> — a real token-derived context hash anchored to a Hedera Consensus Service topic; verifiable keyless on the public mirror node <em>(milestone A1)</em><br>
         <a href="https://hashscan.io/testnet/topic/0.0.9357269" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">topic 0.0.9357269 ↗</a>
+      </div>
+    </div>
+    <div class="milestone">
+      <div class="ms-id" style="font-size:0.72rem;">DID</div>
+      <div class="ms-body">
+        <strong>Hedera testnet · did:hedera</strong> — an issuer DID document with the bound humanAnchor, published over HCS and resolved keyless from the mirror node <em>(milestone A2)</em><br>
+        <a href="https://hashscan.io/testnet/topic/0.0.9357387" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">topic 0.0.9357387 ↗</a>
       </div>
     </div>
     <div class="milestone">
