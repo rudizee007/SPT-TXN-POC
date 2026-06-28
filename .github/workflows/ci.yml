@@ -34,3 +34,63 @@ jobs:
 
       - name: Test
         run: go test ./... -count=1
+
+      - name: Conformance vectors (no drift)
+        run: go run ./cmd/conformance -check
+
+  fips:
+    name: fips-mode (auth/token crypto path)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          check-latest: true
+
+      # Run the trust-critical signing/verification path under the FIPS 140-3
+      # Go Cryptographic Module (Ed25519 / SHA-256 — both FIPS-approved).
+      # The ZK packages are intentionally excluded: BN254 / Poseidon2 / Baby
+      # Jubjub are research-grade, NOT FIPS-approved primitives, so the FIPS
+      # claim is scoped to the token/auth crypto path.
+      # See docs/PLATFORM-AND-OSS-STRATEGY.md §2a for the exact boundary.
+      - name: Test auth path under fips140=on
+        env:
+          GODEBUG: fips140=on
+        run: >
+          go test -count=1
+          ./internal/verifier/...
+          ./internal/cattoken/...
+          ./internal/dpop/...
+          ./internal/sdjwt/...
+          ./internal/trustregistry/...
+
+  security:
+    name: govulncheck · fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          check-latest: true
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)"/bin/govulncheck ./...
+
+      # Short fuzz run on the two fail-closed surfaces: the chain-tagged canonical
+      # encoder and the eight-step verifier. -run=^$ skips unit tests so only the
+      # fuzz target executes; seed corpus + 30s of generated inputs each.
+      - name: Fuzz canonical encoder (30s)
+        run: go test ./internal/ledger/ -run=^$ -fuzz=FuzzCanonicalEncode -fuzztime=30s
+
+      - name: Fuzz verifier (30s)
+        run: go test ./internal/verifier/ -run=^$ -fuzz=FuzzVerify_NeverAllowsGarbage -fuzztime=30s

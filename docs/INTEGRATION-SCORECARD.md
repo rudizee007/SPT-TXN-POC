@@ -12,14 +12,14 @@ questionnaire answers in [VASP-SECURITY-QUESTIONNAIRE.md](VASP-SECURITY-QUESTION
 | Real zero-knowledge (F1 closed: in-circuit issuer signatures) | 🟢 | Groth16/BN254, Poseidon2, ~1 ms verify, 164 B |
 | Multi-chain neutrality | 🟢 | 15 adapters, one interface; chain is anchor, not dependency |
 | Open source (Apache-2.0) | 🟢 | Auditable, no lock-in; embed-don't-host model |
-| Offline / embeddable verifier (not a data processor) | 🟢 | Shrinks the whole TPRM surface — verification runs in *your* infra |
+| Offline / embeddable verifier (not a data processor) | 🟢 | Shipped as `pkg/verify` — embed the eight-step engine; verification runs in *your* infra |
 | IVMS101 | 🔵 | Implemented |
 | Travel Rule protocol coverage | 🟡 | TRP live; TRISA **payload bridge built**, sealed-gRPC transport scoped |
 | On-chain footprints | 🟡 | 6 live testnets; mainnet runbook ready, not deployed |
 | CBOM / post-quantum plan | 🔵 | Published CBOM + hybrid-PQ plan (EO-14409-aligned) |
 | Audit trail | 🔵 | Hash-chained + signed Merkle roots; keyless re-verify tool |
 | Adversarial testing | 🔵 | Fuzzing (millions of execs, fails-closed) + host audit FAIL=0 |
-| FIPS 140-3 | 🟡 | App crypto via Go FIPS module; full-OS = optional Linux profile |
+| FIPS 140-3 | 🟡 | App crypto via Go FIPS module (CI runs auth path under `fips140=on`); full-OS = optional Linux profile |
 | Independent ZK + protocol audit | 🔴 | **Requested, not done** — the #1 gate; audit-prep spec ready |
 | SOC 2 Type II / ISO 27001 | 🔴 | Not yet (funded maturity step; N/A scope in embedded model) |
 | Third-party pen test | 🔴 | Not yet (internal hardening strong; external test pending) |

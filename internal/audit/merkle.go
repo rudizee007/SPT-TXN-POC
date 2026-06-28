@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"time"
 )
 
@@ -110,3 +111,71 @@ func VerifyRoot(sr SignedRoot, auditPub ed25519.PublicKey) bool {
 
 // RootHex is the hex encoding of the root, convenient for publishing to a file.
 func (sr SignedRoot) RootHex() string { return hex.EncodeToString(sr.Root) }
+
+// MerkleProof returns the audit path (sibling hashes, bottom-up) proving that
+// the entry at index is included in MerkleRoot(entries). Levels where the node
+// is promoted unpaired (last node of an odd layer) contribute no sibling,
+// matching MerkleRoot's promote-unchanged rule. Pair with VerifyInclusion. This
+// lets a single audit entry be proven to a published, signed root WITHOUT
+// revealing the rest of the log — the basis for minimal regulator disclosure.
+func MerkleProof(entries []Entry, index int) ([][]byte, error) {
+	n := len(entries)
+	if index < 0 || index >= n {
+		return nil, fmt.Errorf("audit: proof index %d out of range [0,%d)", index, n)
+	}
+	layer := make([][]byte, n)
+	for i, e := range entries {
+		layer[i] = hashLeaf(e.Hash)
+	}
+	var path [][]byte
+	idx := index
+	for len(layer) > 1 {
+		next := make([][]byte, 0, (len(layer)+1)/2)
+		for i := 0; i < len(layer); i += 2 {
+			if i+1 < len(layer) {
+				next = append(next, hashInterior(layer[i], layer[i+1]))
+				if i == idx {
+					path = append(path, layer[i+1]) // our right sibling
+				} else if i+1 == idx {
+					path = append(path, layer[i]) // our left sibling
+				}
+			} else {
+				next = append(next, layer[i]) // promote unpaired (no sibling)
+			}
+		}
+		idx /= 2
+		layer = next
+	}
+	return path, nil
+}
+
+// VerifyInclusion recomputes the root from a leaf entry hash and its audit path
+// and reports whether it equals root. count is the number of entries the root
+// covers (so the promotion rule can be replayed deterministically).
+func VerifyInclusion(entryHash []byte, index, count int, path [][]byte, root []byte) bool {
+	if index < 0 || index >= count || count == 0 {
+		return false
+	}
+	h := hashLeaf(entryHash)
+	idx := index
+	layerLen := count
+	pi := 0
+	for layerLen > 1 {
+		promoted := idx == layerLen-1 && layerLen%2 == 1
+		if !promoted {
+			if pi >= len(path) {
+				return false
+			}
+			sib := path[pi]
+			pi++
+			if idx%2 == 0 {
+				h = hashInterior(h, sib)
+			} else {
+				h = hashInterior(sib, h)
+			}
+		}
+		idx /= 2
+		layerLen = (layerLen + 1) / 2
+	}
+	return pi == len(path) && equal(h, root)
+}
