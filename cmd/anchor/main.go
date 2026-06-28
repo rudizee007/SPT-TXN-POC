@@ -43,7 +43,7 @@ const (
 )
 
 func main() {
-	chain := flag.String("chain", "ethereum", "ledger adapter: ethereum, xdc, starknet, aptos, solana, stellar, hedera, algorand, xrpl")
+	chain := flag.String("chain", "ethereum", "ledger adapter: ethereum, arbitrum, xdc, starknet, aptos, sui, solana, stellar, hedera, algorand, polkadot, xrpl")
 	amount := flag.String("amount", "4000", "transfer amount (must be within the capability ceiling)")
 	onchain := flag.String("onchain", "", "optional: an on-chain anchored root (64 hex) to compare against the computed hash")
 	flag.Parse()
@@ -166,6 +166,10 @@ func chainContext(chain, amount string) (ledger.TxnContext, string, error) {
 		return mk("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20", "0xffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100", "STRK", nil)
 	case "aptos":
 		return mk("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20", "0xffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100", "APT", nil)
+	case "sui":
+		return mk("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20", "0xffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100", "SUI", nil)
+	case "polkadot":
+		return mk("15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5", "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5", "DOT", nil)
 	case "solana":
 		return mk("BeWdnfiJ52LpaGudU6ZhGLVcpeBEYxHYewZC4DZopVi4", "HiHP5wBk1iVLMPM42MviMqBirdSbaaQ9Szida8tGwVR2", "SOL", nil)
 	case "stellar":
