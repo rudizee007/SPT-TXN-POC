@@ -1,5 +1,8 @@
 # SPT-Txn — Privacy-Preserving Compliance & Travel Rule Authorization (Reference POC)
 
+[![CI](https://github.com/rudizee007/SPT-TXN-POC/actions/workflows/ci.yml/badge.svg)](https://github.com/rudizee007/SPT-TXN-POC/actions/workflows/ci.yml)
+&nbsp;Apache-2.0 · Go 1.25 / gnark v0.15 · OpenBSD · live demo: <https://foss.violetskysecurity.com>
+
 SPT-Txn verifies compliance **once** and proves it **everywhere**, in zero
 knowledge — so regulated institutions and VASPs can transact, tokenise, and settle
 on-chain without exposing PII. A user holds a **Compliance Attestation Token
@@ -12,7 +15,12 @@ token; blockchain-agnostic (XRPL is the primary integration target).
 
 > **Status: working, security-audited reference implementation** — not a skeleton,
 > and not yet production. Deployed and running on a hardened OpenBSD host with a
-> live two-party Travel Rule demo. See the roadmap below for what production needs.
+> live two-party Travel Rule demo. Ten chain adapters; attestation-anchor contracts
+> live on four public testnets; an **on-chain ZK verifier** live on two L2s; the
+> agentic delegation layer is **POC-built, tested, and now provable in zero
+> knowledge**. See [`docs/STATUS`](docs/STATUS.md) for the current-state map,
+> [`docs/RUNBOOK.md`](docs/RUNBOOK.md) to reproduce the deployments, and the roadmap
+> below for what production still needs.
 
 ## What's built and running
 
@@ -36,26 +44,55 @@ token; blockchain-agnostic (XRPL is the primary integration target).
 - **EO-14409 ready** — a CycloneDX **Cryptographic Bill of Materials**
   (`docs/cbom.json`, `docs/CBOM.md`) and a lifetime-triaged hybrid post-quantum
   migration plan.
+- **Blockchain-agnostic, multi-chain** — one `Ledger` adapter interface binds an
+  authorization to a transaction across **ten chains** (XRPL, Hedera, Solana,
+  Stellar, Starknet, Aptos, Ethereum, XDC, Algorand, Arbitrum), all tested.
+  `internal/ledger`. Chains are integration targets, never dependencies.
+- **Live on-chain footprints** — attestation-anchor contracts on Ethereum Sepolia,
+  Starknet Sepolia, Aptos testnet, and Arbitrum Sepolia (plus a Solana devnet memo
+  anchor), each holding a genuine token-derived `ContextHash`. `cairo/`, `move/`,
+  `solidity/`, `cmd/anchor`.
+- **On-chain ZK verification** — a gnark Groth16 verifier + `AttestationVerifier`
+  wrapper verify a selective-disclosure proof (amount ≥ threshold, amount hidden)
+  **on-chain** and anchor only if it checks out — live on Ethereum and Arbitrum
+  Sepolia. `cmd/zk-export-solidity`, `cmd/zk-solcalldata`, `solidity/src/`.
+- **Agentic authorization (POC-tested) + ZK chain proof** — multi-hop CT→CT
+  delegation, an offline N-hop verifier, a granular revocation cascade, and a
+  Groth16 `ChainCircuit` that proves a delegation chain valid (attenuation, depth,
+  human-anchor) **without revealing intermediate scopes**, with an opt-in,
+  gnark-free verifier seam. `internal/cttoken`, `internal/verifier`,
+  `internal/zkproof`, `cmd/agentdemo`, `cmd/agentsvc`.
+- **Scoped-disclosure SDK + schema** — a request → consent → response protocol for
+  time-limited, scope-selected selective disclosure (discloses only requested ∩
+  consented). `internal/disclosure`, `docs/DISCLOSURE-SCHEMA.md`.
 
 ## Documentation
 
+- [`docs/STATUS.md`](docs/STATUS.md) — current-state map: every component, where it lives, live on-chain addresses, ZK metrics, how to build/test.
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — reproducible ops: ZK setup, deploy contracts to a chain, generate + verify an on-chain proof, website deploy.
+- [`docs/BUILD-JOURNAL.md`](docs/BUILD-JOURNAL.md) — chronological build log + the key engineering decisions and their rationale.
+- [`docs/ZK-ONCHAIN-AND-AGENTIC-PLAN.md`](docs/ZK-ONCHAIN-AND-AGENTIC-PLAN.md) — on-chain ZK verifier + agentic ZK chain proof design (built) and metrics.
+- [`docs/DISCLOSURE-SCHEMA.md`](docs/DISCLOSURE-SCHEMA.md) — the language-agnostic scoped-disclosure request/response schema.
 - [`docs/WORKING-PAPER-v2.md`](docs/WORKING-PAPER-v2.md) — the framework paper
   (architecture, zkDID, zkDNS + alternatives, measured crypto, PQ, Travel Rule).
 - [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — **authoritative** terminology + the
   CAT/attribute model + standards mapping.
 - [`docs/CBOM.md`](docs/CBOM.md) / [`docs/cbom.json`](docs/cbom.json) — Cryptographic Bill of Materials.
-- [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) — full security review (FAIL=0; roadmap items noted).
+- [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) — full security review (FAIL=0; roadmap items noted); [`docs/SECURITY-REVIEW-2026-06-28.md`](docs/SECURITY-REVIEW-2026-06-28.md) — review of the new surface (adapters, contracts, ZK chain, verifier seam).
 - [`docs/TRP-TRISA-INTEROP.md`](docs/TRP-TRISA-INTEROP.md) — Travel Rule transport + TRISA bridge design.
 - [`docs/V2-TOPICS-CHECKLIST.md`](docs/V2-TOPICS-CHECKLIST.md) / [`docs/V2-RESEARCH-NOTES.md`](docs/V2-RESEARCH-NOTES.md) — v2 coverage + research.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/OPENBSD-SETUP.md`](docs/OPENBSD-SETUP.md) — design + provisioning (some sections predate the current deployment).
 
 ## Repository layout
 
-`cmd/` services + tools (tr-svc, catsvc, trsvc, zk-setup, zk-bench, regkey,
-mksubject) · `internal/` libraries (zkproof, zkhash, zkdid, travelrule, trp,
-ivms101, vaspregistry, sdjwt, dpop, escrow, verifier, trustregistry, tbac, …) ·
-`docs/` · `scripts/` (security-audit, rc services, register-issuers) · `configs/`
-· `web/` (the foss.violetskysecurity.com site source).
+`cmd/` services + tools (tr-svc, agentsvc, catsvc, trsvc, agentdemo, anchor,
+zk-setup, zk-export-solidity, zk-solcalldata, zk-bench, regkey, mksubject) ·
+`internal/` libraries (ledger, zkproof, zkhash, zkdid, disclosure, travelrule,
+trp, ivms101, vaspregistry, sdjwt, dpop, escrow, verifier, trustregistry,
+cattoken, cttoken, txntoken, tbac, …) · `cairo/`, `move/`, `solidity/` (on-chain
+attestation-anchor + ZK verifier contracts) · `docs/` · `scripts/`
+(security-audit, rc services, register-issuers) · `configs/` · `web/` (the
+foss.violetskysecurity.com site source).
 
 ## Standards & links
 
@@ -73,13 +110,20 @@ keys via `cmd/zk-setup`.
 
 ## Roadmap (honest)
 
-Not production-ready. Agentic AI authorization is **designed (humanAnchor +
-delegation-depth + attenuation) but not yet tested end-to-end**. Production needs:
-XRPL-native anchoring + XRPL Credentials integration; biometric uniqueness (fuzzy
-extractor + nullifier, currently a placeholder); the `.zkdid`/`.zkdns` production
-identity/naming layer (integrated behind an adapter — interim works today);
-persistent Trust Registry; hybrid PQ key migration; and an independent ZK-circuit +
-protocol audit. See `docs/XRPL-GRANT-PROPOSAL.md` for the funded plan.
+Not production-ready. Agentic AI authorization is now **POC-built and tested**
+(multi-hop delegation, offline N-hop verification, granular revocation cascade)
+and **provable in zero knowledge** (the `ChainCircuit`), but not battle-tested at
+scale. Honest gaps that remain: in the **opt-in ZK chain mode**, intermediate-hop
+issuer **signatures are not verified in-circuit** (only scope/depth are — the
+cleartext mode verifies every hop's signature, so it remains the stronger default;
+see the security review); **on-chain footprints are testnet** (mainnet anchoring +
+the on-chain ZK verifier on mainnet are the next step); the open append-only
+anchor contracts would want access control or a fee on mainnet; biometric
+uniqueness is a placeholder; the `.zkdid`/`.zkdns` production identity/naming layer
+is an integration (interim works today); hybrid PQ key migration is designed, not
+implemented; and an **independent ZK-circuit + protocol audit** is wanted (the
+Arbitrum Audit Fund can subsidize). See [`docs/STATUS.md`](docs/STATUS.md) and the
+grant docs for the funded plan.
 
 ## License
 
