@@ -26,9 +26,14 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	hiero "github.com/hiero-ledger/hiero-sdk-go/v2/sdk"
@@ -61,6 +66,19 @@ func main() {
 		hash := fs.String("hash", "", "32-byte hash in hex to look for")
 		_ = fs.Parse(os.Args[2:])
 		err = cmdVerify(*network, *topic, *hash)
+	case "did-create":
+		fs := flag.NewFlagSet("did-create", flag.ExitOnError)
+		network := fs.String("network", "testnet", "testnet|mainnet|previewnet")
+		topic := fs.String("topic", "", "existing HCS topic id; empty creates a new one")
+		issuerPub := fs.String("issuer-pub", "", "issuer Ed25519 public key hex (32 bytes); empty generates a demo key")
+		anchor := fs.String("anchor", "", "humanAnchor commitment hex (32 bytes) to bind into the DID document")
+		_ = fs.Parse(os.Args[2:])
+		err = cmdDIDCreate(*network, *topic, *issuerPub, *anchor)
+	case "did-resolve":
+		fs := flag.NewFlagSet("did-resolve", flag.ExitOnError)
+		did := fs.String("did", "", "did:hedera identifier to resolve")
+		_ = fs.Parse(os.Args[2:])
+		err = cmdDIDResolve(*did)
 	default:
 		usage()
 		os.Exit(2)
@@ -75,11 +93,13 @@ func usage() {
 	fmt.Fprint(os.Stderr, `hcs-anchor — anchor SPT-Txn hashes to Hedera Consensus Service (milestone A1)
 
   hcs-anchor create-topic [-network testnet]
-  hcs-anchor anchor  -topic 0.0.X -type ctx -hash <64hex> [-network testnet]
-  hcs-anchor verify  -topic 0.0.X -hash <64hex>           [-network testnet]   (keyless)
+  hcs-anchor anchor      -topic 0.0.X -type ctx -hash <64hex> [-network testnet]
+  hcs-anchor verify      -topic 0.0.X -hash <64hex>           [-network testnet]   (keyless)
+  hcs-anchor did-create  [-topic 0.0.X] [-issuer-pub <64hex>] [-anchor <64hex>] [-network testnet]   (A2)
+  hcs-anchor did-resolve -did did:hedera:testnet:..._0.0.X                                            (keyless)
 
-create-topic / anchor read HEDERA_OPERATOR_ID and HEDERA_OPERATOR_KEY from the environment.
-verify uses only the public mirror node (no key, no cost).
+create-topic / anchor / did-create read HEDERA_OPERATOR_ID and HEDERA_OPERATOR_KEY from the environment.
+verify and did-resolve use only the public mirror node (no key, no cost).
 `)
 }
 
@@ -189,5 +209,100 @@ func cmdVerify(network, topic, hash string) error {
 	fmt.Printf("  topic               : %s\n", proof.TopicID)
 	fmt.Printf("  sequence number     : %d\n", proof.SequenceNumber)
 	fmt.Printf("  consensus timestamp : %s\n", proof.ConsensusTimestamp)
+	return nil
+}
+
+// cmdDIDCreate builds a did:hedera DID document for an issuer key (binding the
+// humanAnchor), publishes it as a create event to an HCS topic, and prints the
+// resulting DID. Milestone A2.
+func cmdDIDCreate(network, topic, issuerPubHex, anchorHex string) error {
+	var pub ed25519.PublicKey
+	if issuerPubHex != "" {
+		b, err := hex.DecodeString(strings.TrimPrefix(issuerPubHex, "0x"))
+		if err != nil || len(b) != ed25519.PublicKeySize {
+			return fmt.Errorf("-issuer-pub must be a 32-byte Ed25519 public key in hex")
+		}
+		pub = ed25519.PublicKey(b)
+	} else {
+		p, s, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return err
+		}
+		pub = p
+		fmt.Println("generated a demo issuer Ed25519 key (bind your real CT-issuer key with -issuer-pub):")
+		fmt.Printf("  public : %s\n", hex.EncodeToString(p))
+		fmt.Printf("  private: %s\n", hex.EncodeToString(s))
+	}
+	if anchorHex != "" {
+		b, err := hex.DecodeString(strings.TrimPrefix(anchorHex, "0x"))
+		if err != nil || len(b) != 32 {
+			return fmt.Errorf("-anchor must be a 32-byte humanAnchor commitment in hex")
+		}
+		anchorHex = strings.ToLower(strings.TrimPrefix(anchorHex, "0x"))
+	}
+
+	client, err := newClient(network)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	topicID := topic
+	if topicID == "" {
+		resp, err := hiero.NewTopicCreateTransaction().SetTopicMemo("spt-txn did:hedera topic").Execute(client)
+		if err != nil {
+			return fmt.Errorf("create DID topic: %w", err)
+		}
+		rcpt, err := resp.GetReceipt(client)
+		if err != nil {
+			return fmt.Errorf("create DID topic receipt: %w", err)
+		}
+		if rcpt.TopicID == nil {
+			return fmt.Errorf("no topic id in receipt (status %s)", rcpt.Status)
+		}
+		topicID = rcpt.TopicID.String()
+	}
+
+	did, doc, err := BuildIssuerDID(network, topicID, pub, anchorHex)
+	if err != nil {
+		return err
+	}
+	event := DIDEvent{V: DIDEventVersion, Op: "create", DID: did, Document: &doc, Ts: time.Now().Unix()}
+	msg, err := event.Bytes()
+	if err != nil {
+		return err
+	}
+	tid, err := hiero.TopicIDFromString(topicID)
+	if err != nil {
+		return fmt.Errorf("topic id %q: %w", topicID, err)
+	}
+	resp, err := hiero.NewTopicMessageSubmitTransaction().SetTopicID(tid).SetMessage(msg).Execute(client)
+	if err != nil {
+		return fmt.Errorf("publish DID create event: %w", err)
+	}
+	rcpt, err := resp.GetReceipt(client)
+	if err != nil {
+		return fmt.Errorf("DID create receipt: %w", err)
+	}
+	fmt.Printf("created DID (status %s):\n  %s\n  topic: %s\n", rcpt.Status, did, topicID)
+	fmt.Printf("resolve (keyless): hcs-anchor did-resolve -did %s\n", did)
+	return nil
+}
+
+// cmdDIDResolve resolves a did:hedera from the public mirror node (keyless) and
+// prints the DID document.
+func cmdDIDResolve(did string) error {
+	if did == "" {
+		return fmt.Errorf("-did is required")
+	}
+	doc, err := resolveDID(did, 25*time.Second)
+	if err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
 	return nil
 }

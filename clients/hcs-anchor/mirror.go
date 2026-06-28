@@ -51,6 +51,43 @@ type AnchorProof struct {
 	ConsensusTimestamp string
 }
 
+// fetchTopicMessages returns every message body on a topic (base64-decoded, in
+// consensus order) from the public mirror node — no key, no cost. Used by DID
+// resolution to fold the topic's events.
+func fetchTopicMessages(network, topicID string, timeout time.Duration) ([][]byte, error) {
+	base, err := mirrorBase(network)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Timeout: timeout}
+	var out [][]byte
+	next := fmt.Sprintf("/api/v1/topics/%s/messages?limit=100&order=asc", url.PathEscape(topicID))
+	for pages := 0; next != "" && pages < 100; pages++ {
+		resp, err := client.Get(base + next)
+		if err != nil {
+			return nil, fmt.Errorf("mirror GET: %w", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("mirror node HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		var page mirrorPage
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("decode mirror response: %w", err)
+		}
+		for _, m := range page.Messages {
+			raw, err := base64.StdEncoding.DecodeString(m.Message)
+			if err != nil {
+				continue
+			}
+			out = append(out, raw)
+		}
+		next = page.Links.Next
+	}
+	return out, nil
+}
+
 // VerifyOnMirror scans a topic's messages on the public mirror node (no key, no
 // cost) for an anchor envelope carrying the given hash, returning the consensus
 // timestamp + sequence number that prove WHEN it was anchored. It pages through

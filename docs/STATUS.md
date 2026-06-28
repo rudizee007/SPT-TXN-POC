@@ -46,6 +46,7 @@ EVM L2.
 | Aptos testnet | attestation_anchor (Move) | `0x0b1f35b54e92d49d21d1badca271b9ab5686f22f82d6f88c6731cac20cbe0aa2` | real token-derived root |
 | Solana devnet | SPL-memo anchor wallet | `BeWdnfiJ52LpaGudU6ZhGLVcpeBEYxHYewZC4DZopVi4` | memo anchor |
 | Hedera testnet | HCS topic (attestation anchor) | `0.0.9357269` (seq 1) | real token-derived ctx hash `9448…7581`; keyless mirror-node verify; milestone A1 |
+| Hedera testnet | `did:hedera` DID document (HCS) | `0.0.9357387` | issuer DID + bound humanAnchor; keyless mirror-node resolve; milestone A2 |
 
 The on-chain ZK verifier (Ethereum + Arbitrum Sepolia) verifies a threshold
 selective-disclosure proof on-chain and records the root only if it checks out; a

@@ -1195,7 +1195,7 @@
 </div>
 <div style="margin-top:3rem; border-top:1px solid var(--border); padding-top:2rem;">
   <div class="section-eyebrow">Ledger-agnostic · demonstrated across chains</div>
-  <p class="section-body" style="margin-top:1rem; max-width:760px;">SPT-Txn binds an authorization to a specific transaction without depending on any chain. The binding is implemented and tested behind one Go adapter interface for nine ledgers, and the attestation-anchor footprint is live on public testnets. Chains are integration targets, never dependencies — the authorization verifies offline with no chain at all.</p>
+  <p class="section-body" style="margin-top:1rem; max-width:760px;">SPT-Txn binds an authorization to a specific transaction without depending on any chain. The binding is implemented and tested behind one Go adapter interface for ten ledgers, and the attestation-anchor footprint is live on five public testnets. Chains are integration targets, never dependencies — the authorization verifies offline with no chain at all.</p>
   <p id="anchorLive" style="margin-top:0.9rem; font-family:'Space Mono',monospace; font-size:0.8rem; color:var(--muted);">Reading the live on-chain anchor…</p>
   <div class="hero-tags" style="justify-content:flex-start; margin-top:1.4rem; max-width:920px;">
     <span class="hero-tag">Ethereum</span>
@@ -1207,6 +1207,7 @@
     <span class="hero-tag">Aptos</span>
     <span class="hero-tag">XDC</span>
     <span class="hero-tag">Algorand</span>
+    <span class="hero-tag">Arbitrum</span>
   </div>
   <p style="font-family:'Space Mono',monospace; font-size:0.72rem; letter-spacing:1px; color:var(--muted); margin-top:0.7rem;">transaction-binding implemented &amp; tested · one adapter interface</p>
 
@@ -1216,6 +1217,7 @@
     <a href="https://sepolia.etherscan.io/address/0x311612c4E2D7E93CF5d80C0138B55C8A723B95ef" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">verifier 0x311612…95ef ↗</a>
     &nbsp;·&nbsp;
     <a href="https://sepolia.etherscan.io/tx/0x57dc3614ccb0fd882ce66d4c060345804ec56c686c1eee131ea68ce62eecd76c" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">verified-anchor tx ↗</a>
+    <p class="section-body" style="margin-top:0.8rem; margin-bottom:0; max-width:720px; font-size:0.92rem;">Beyond on-chain proofs, the <strong>agentic delegation chain is itself provable in zero-knowledge</strong>: a Groth16 proof that every hidden hop carries a <strong>registered issuer's signature over its scope</strong>, verified in-circuit (Baby Jubjub EdDSA) — so an AI agent proves its authority chain is valid without revealing the intermediate scopes.</p>
   </div>
 
   <div style="margin-top:1.6rem;">
@@ -1238,6 +1240,13 @@
       <div class="ms-body">
         <strong>Aptos testnet</strong> — attestation-anchor module (Move), live with anchored roots<br>
         <a href="https://explorer.aptoslabs.com/account/0x0b1f35b54e92d49d21d1badca271b9ab5686f22f82d6f88c6731cac20cbe0aa2?network=testnet" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">0x0b1f35…0aa2 ↗</a>
+      </div>
+    </div>
+    <div class="milestone">
+      <div class="ms-id" style="font-size:0.72rem;">HBAR</div>
+      <div class="ms-body">
+        <strong>Hedera testnet</strong> — a real token-derived context hash anchored to a Hedera Consensus Service topic; verifiable keyless on the public mirror node<br>
+        <a href="https://hashscan.io/testnet/topic/0.0.9357269" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">topic 0.0.9357269 ↗</a>
       </div>
     </div>
     <div class="milestone">

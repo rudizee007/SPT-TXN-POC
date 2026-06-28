@@ -42,6 +42,21 @@ export HEDERA_OPERATOR_KEY=302e0201...        # operator private key
 # → ANCHORED  ... consensus timestamp : 1750000000.123456789
 ```
 
+### DID binding (milestone A2)
+
+Anchor an issuer `did:hedera` whose document carries the CT-issuer key and binds
+the humanAnchor, then resolve it keyless from the mirror node. Design:
+[`../../docs/HEDERA-A2-DID-BINDING.md`](../../docs/HEDERA-A2-DID-BINDING.md).
+
+```
+# create a DID (generates a demo issuer key unless -issuer-pub is given; binds the humanAnchor)
+./hcs-anchor did-create -network testnet -anchor <64hex-humanAnchor>
+# → created DID: did:hedera:testnet:<key>_0.0.ZZZZZ
+
+# resolve it — keyless, public mirror node
+./hcs-anchor did-resolve -did did:hedera:testnet:<key>_0.0.ZZZZZ
+```
+
 Verify with no Go at all (pure mirror-node REST):
 
 ```
