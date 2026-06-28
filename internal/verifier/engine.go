@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -61,13 +62,34 @@ type Input struct {
 	CAT       string            // root CAT (required; full-chain check)
 	Txn       ledger.TxnContext // the concrete transaction being authorized
 	Audience  string            // this domain's identifier (expected aud)
+
+	// Optional privacy-preserving N-hop mode. Instead of presenting the cleartext
+	// intermediate CT chain, the holder presents a ZK proof that a valid
+	// attenuating, depth-bounded chain links the CAT to the leaf CT — so the
+	// intermediate delegation scopes stay hidden. The CAT (root) and leaf CT
+	// (CT field) are still presented so the SPT-Txn binds to the leaf. Active only
+	// when ChainProof != nil AND Engine.ChainVerifier is set.
+	ChainProof []byte   // serialized ChainCircuit Groth16 proof
+	ChainH0    *big.Int // human-anchor commitment the proof was made against
+	ChainCLeaf *big.Int // leaf-scope commitment the proof was made against
+	ChainDepth uint64   // declared maximum delegation depth (D)
 }
+
+// ChainVerifierFunc plugs a ZK delegation-chain verifier (e.g.
+// zkproof.Artifacts.VerifyChain) into the engine WITHOUT this package importing
+// gnark — the caller injects it. The lightweight offline verifier stays
+// gnark-free; ZK chain verification is strictly opt-in.
+type ChainVerifierFunc func(proof []byte, h0, cleaf *big.Int, maxDepth uint64) error
 
 // Engine runs the eight-step enforcement using a Trust Registry for key
 // resolution and revocation.
 type Engine struct {
 	Registry trustregistry.Registry
 	replay   *replayCache
+
+	// ChainVerifier, if set, enables the optional ZK N-hop mode (Input.ChainProof).
+	// Left nil, the engine is gnark-free and uses the cleartext chain walk only.
+	ChainVerifier ChainVerifierFunc
 }
 
 // New returns an engine bound to a registry.
@@ -127,7 +149,14 @@ func (e *Engine) Verify(ctx context.Context, in Input) Decision {
 		return deny(5, err)
 	}
 	// Step 6 — capability chain CAT -> CT[…] -> SPT-Txn. Returns leaf CT claims.
-	ctClaims, err := e.step6Chain(ctx, txClaims, in.CT, in.CAT, in.CTChain)
+	// A presented ZK chain proof selects the privacy-preserving variant; otherwise
+	// the cleartext chain walk runs (unchanged).
+	var ctClaims map[string]any
+	if in.ChainProof != nil {
+		ctClaims, err = e.step6ChainZK(ctx, txClaims, in)
+	} else {
+		ctClaims, err = e.step6Chain(ctx, txClaims, in.CT, in.CAT, in.CTChain)
+	}
 	if err != nil {
 		return deny(6, err)
 	}
@@ -359,6 +388,69 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 		return nil, err
 	}
 
+	return leaf, nil
+}
+
+// step6ChainZK is the privacy-preserving variant of step 6: the intermediate
+// delegation chain is proven in zero knowledge (Input.ChainProof) instead of
+// being presented in clear, so the verifier never sees the intermediate scopes.
+// The CAT (root) and the leaf CT (Input.CT) are still presented so the SPT-Txn
+// can be bound to the leaf and the human-anchor checked end to end. The ZK proof
+// attests the hidden middle: a valid attenuating, depth-bounded chain links the
+// CAT's authority to the leaf's scope.
+//
+// Integration seam: H0/CLeaf are the public inputs the proof was made against.
+// Cryptographically binding H0 to the CAT's human_anchor and CLeaf to the leaf
+// CT's declared scope requires the token format to carry the Poseidon2
+// commitments (the planned human_anchor migration). Until then this path proves
+// such a chain EXISTS for (H0, CLeaf, D) and verifies the endpoints in clear; it
+// is gated behind an explicit, operator-opted-in ChainVerifier.
+func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in Input) (map[string]any, error) {
+	if e.ChainVerifier == nil {
+		return nil, fmt.Errorf("a ZK chain proof was presented but no ChainVerifier is configured")
+	}
+	if in.ChainH0 == nil || in.ChainCLeaf == nil {
+		return nil, fmt.Errorf("ZK chain mode requires the H0 and CLeaf public inputs")
+	}
+	if in.CAT == "" || in.CT == "" {
+		return nil, fmt.Errorf("ZK chain mode still requires the root CAT and the leaf CT to be presented")
+	}
+
+	// Endpoints: verify the CAT and the leaf CT signatures against the registry.
+	catClaims, err := e.verifyChainToken(ctx, in.CAT, cattoken.Verify)
+	if err != nil {
+		return nil, fmt.Errorf("CAT: %w", err)
+	}
+	anchor, ok := catClaims["human_anchor"].(string)
+	if !ok || anchor == "" {
+		return nil, fmt.Errorf("CAT missing humanAnchor")
+	}
+	leaf, err := e.verifyChainToken(ctx, in.CT, cttoken.Verify)
+	if err != nil {
+		return nil, fmt.Errorf("leaf CT: %w", err)
+	}
+
+	// ZK proof: a valid attenuating, depth-bounded chain links CAT -> leaf.
+	if err := e.ChainVerifier(in.ChainProof, in.ChainH0, in.ChainCLeaf, in.ChainDepth); err != nil {
+		return nil, fmt.Errorf("ZK chain proof invalid: %w", err)
+	}
+
+	// Endpoint human-anchor consistency: CAT == leaf == SPT-Txn.
+	la, ok := leaf["human_anchor"].(string)
+	if !ok || la != anchor {
+		return nil, fmt.Errorf("humanAnchor not propagated to the leaf CT")
+	}
+	// Bind the SPT-Txn to the leaf CT (jti reference, humanAnchor, holder key).
+	if txClaims["spt_ct_ref"] != leaf["jti"] {
+		return nil, fmt.Errorf("spt_ct_ref does not reference the leaf CT")
+	}
+	txAnchor, ok := txClaims["human_anchor"].(string)
+	if !ok || txAnchor == "" || txAnchor != anchor {
+		return nil, fmt.Errorf("SPT-Txn humanAnchor does not match the chain")
+	}
+	if err := checkHolderBinding(txClaims, leaf); err != nil {
+		return nil, err
+	}
 	return leaf, nil
 }
 

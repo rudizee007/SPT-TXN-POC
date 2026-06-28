@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
@@ -27,6 +28,8 @@ import (
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/std/hash/mimc"
 	"github.com/consensys/gnark/std/hash/poseidon2"
+
+	"github.com/violetskysecurity/spt-txn-poc/internal/zkproof"
 )
 
 // hashBench computes a chain of Iters two-input hashes and constrains the result
@@ -126,11 +129,93 @@ func run(curveName string, curve ecc.ID, useP2 bool, iters int) {
 
 func main() {
 	iters := flag.Int("iters", 200, "number of sequential 2-input hashes in the bench circuit")
+	prod := flag.Bool("prod", false, "benchmark the production circuits (commitment, threshold, chain) instead of the hash comparison")
 	flag.Parse()
+
+	if *prod {
+		benchProd()
+		return
+	}
 
 	fmt.Printf("=== zk-bench: %d sequential 2-input hashes · Groth16 ===\n", *iters)
 	for _, useP2 := range []bool{false, true} {
 		run("BN254", ecc.BN254, useP2, *iters)
 		run("BLS12-381", ecc.BLS12_381, useP2, *iters)
 	}
+}
+
+// benchProd reports real metrics (constraints / setup / prove / verify / proof
+// size) for the production circuits, including the agentic delegation-chain
+// proof — the empirical table for a paper/grant. Each does a representative
+// Setup + Prove + Verify on Poseidon2/BN254 (the deployed configuration).
+func benchProd() {
+	fmt.Println("=== zk-bench: production circuits · Groth16 / BN254 / Poseidon2 ===")
+
+	// commitment: knowledge of (id, randomness) behind a humanAnchor.
+	t := time.Now()
+	a, err := zkproof.Setup(zkproof.CircuitCommitment)
+	if err != nil {
+		log.Fatalf("commitment setup: %v", err)
+	}
+	st := time.Since(t)
+	t = time.Now()
+	cp, anc, err := a.ProveCommitment([]byte("id-material"), []byte("randomness"))
+	if err != nil {
+		log.Fatalf("commitment prove: %v", err)
+	}
+	pt := time.Since(t)
+	t = time.Now()
+	if err := a.VerifyCommitment(cp, anc); err != nil {
+		log.Fatalf("commitment verify: %v", err)
+	}
+	reportProd("commitment", a.NbConstraints(), st, pt, time.Since(t), len(cp))
+
+	// threshold: amount >= threshold, amount hidden.
+	t = time.Now()
+	a, err = zkproof.Setup(zkproof.CircuitThreshold)
+	if err != nil {
+		log.Fatalf("threshold setup: %v", err)
+	}
+	st = time.Since(t)
+	t = time.Now()
+	tp, commit, err := a.ProveThreshold(5000, []byte("blinding"), 1000)
+	if err != nil {
+		log.Fatalf("threshold prove: %v", err)
+	}
+	pt = time.Since(t)
+	t = time.Now()
+	if err := a.VerifyThreshold(tp, commit, 1000); err != nil {
+		log.Fatalf("threshold verify: %v", err)
+	}
+	reportProd("threshold", a.NbConstraints(), st, pt, time.Since(t), len(tp))
+
+	// chain: agentic delegation-chain attenuation, intermediate scopes hidden.
+	hops := []zkproof.ChainHop{
+		{MaxAmount: 10000, Currency: 840},
+		{MaxAmount: 8000, Currency: 840},
+		{MaxAmount: 5000, Currency: 840},
+	}
+	t = time.Now()
+	a, err = zkproof.Setup(zkproof.CircuitChain)
+	if err != nil {
+		log.Fatalf("chain setup: %v", err)
+	}
+	st = time.Since(t)
+	t = time.Now()
+	chp, h0, cleaf, err := a.ProveChain([]byte("alice-anchor"), []byte("salt"), 3, hops)
+	if err != nil {
+		log.Fatalf("chain prove: %v", err)
+	}
+	pt = time.Since(t)
+	t = time.Now()
+	if err := a.VerifyChain(chp, h0, cleaf, 3); err != nil {
+		log.Fatalf("chain verify: %v", err)
+	}
+	reportProd("chain", a.NbConstraints(), st, pt, time.Since(t), len(chp))
+}
+
+func reportProd(name string, cons int, setup, prove, verify time.Duration, size int) {
+	fmt.Printf("%-12s cons=%-6d setup=%-9s prove=%-9s verify=%-9s proof=%dB\n",
+		name, cons, setup.Round(time.Millisecond), prove.Round(time.Millisecond),
+		verify.Round(time.Microsecond), size)
 }

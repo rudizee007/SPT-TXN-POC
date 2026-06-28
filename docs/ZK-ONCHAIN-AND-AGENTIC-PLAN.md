@@ -155,12 +155,22 @@ func (c *ChainCircuit) Define(api frontend.API) error {
 and the Poseidon2 wrapper come from `internal/zkhash`. Expect iteration with the
 prover to get the range checks and selectors exactly right.)
 
-### Integration
-- Add `CircuitChain` to `internal/zkproof` with `ProveChain` / `VerifyChain`,
-  mirroring the existing three circuits.
-- Add an optional verifier input so the eight-step engine can accept a ZK chain
-  proof in place of the cleartext chain (privacy-preserving N-hop verification).
-- Bench it in `cmd/zk-bench` alongside the others.
+### Integration — DONE (2026-06-28)
+- `CircuitChain` + `ProveChain` / `VerifyChain` + `ChainHop` in `internal/zkproof`. ✓
+- Optional verifier seam: `verifier.ChainVerifierFunc` (injection — the verifier
+  package stays gnark-free) + `Engine.ChainVerifier` + `Input.{ChainProof,ChainH0,
+  ChainCLeaf,ChainDepth}` + an additive `step6ChainZK` branch that replaces the
+  cleartext intermediate-chain walk with a ZK proof while still verifying the CAT
+  and leaf-CT endpoints. The proven cleartext `step6Chain` is untouched.
+  Injection tested in `internal/verifier/chainzk_test.go`. ✓
+- `cmd/zk-bench -prod` reports constraints/setup/prove/verify/size for the
+  commitment, threshold, and chain circuits. ✓
+
+**Remaining (documented seam):** cryptographically bind the ZK public inputs to
+the tokens — migrate the token `human_anchor` to the Poseidon2 commitment (so it
+equals `H0`) and add a leaf-scope commitment claim (so it equals `CLeaf`). Until
+then `step6ChainZK` verifies the endpoints in clear + proves the hidden middle,
+gated behind an operator-opted-in `ChainVerifier`.
 
 ### Why it matters
 It's the privacy upgrade to the agentic layer: a verifier confirms an agent acted
