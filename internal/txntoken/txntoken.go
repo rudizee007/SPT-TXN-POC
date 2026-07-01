@@ -38,6 +38,7 @@
 package txntoken
 
 import (
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -98,7 +99,7 @@ type TXN struct {
 
 // Issue verifies the parent CT, binds the transaction, and signs a 30-second
 // SPT-Txn Token. signingKey is the tts_issuer Ed25519 private key.
-func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*TXN, error) {
+func Issue(req IssueRequest, signingKey crypto.Signer) (*TXN, error) {
 	if req.Issuer == "" || req.Audience == "" {
 		return nil, fmt.Errorf("issuer and audience required")
 	}
@@ -265,7 +266,7 @@ func CheckSenderConstraint(claims map[string]any, dpopThumbprint string) error {
 
 // ── shared JWT helpers (EdDSA, stdlib) ───────────────────────────────────────
 
-func signJWT(claims map[string]any, key ed25519.PrivateKey) (string, error) {
+func signJWT(claims map[string]any, key crypto.Signer) (string, error) {
 	header := map[string]string{"alg": "EdDSA", "typ": "JWT"}
 	hb, err := json.Marshal(header)
 	if err != nil {
@@ -276,7 +277,10 @@ func signJWT(claims map[string]any, key ed25519.PrivateKey) (string, error) {
 		return "", err
 	}
 	signingInput := b64(hb) + "." + b64(cb)
-	sig := ed25519.Sign(key, []byte(signingInput))
+	sig, err := key.Sign(rand.Reader, []byte(signingInput), crypto.Hash(0))
+	if err != nil {
+		return "", err
+	}
 	return signingInput + "." + b64(sig), nil
 }
 

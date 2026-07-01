@@ -34,6 +34,7 @@
 package cttoken
 
 import (
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -88,7 +89,7 @@ type CT struct {
 
 // Issue verifies the parent CAT, attenuates scope, and signs a Capability
 // Token. signingKey is the ct_issuer Ed25519 private key.
-func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*CT, error) {
+func Issue(req IssueRequest, signingKey crypto.Signer) (*CT, error) {
 	if req.Issuer == "" {
 		return nil, fmt.Errorf("issuer required")
 	}
@@ -218,7 +219,7 @@ type DelegateRequest struct {
 // jti (spt_parent_ref), and carries the root CAT reference (spt_cat_ref) and the
 // humanAnchor forward unchanged, so a verifier can re-walk the whole chain
 // offline from the root CAT to the leaf without contacting any issuer.
-func Delegate(req DelegateRequest, signingKey ed25519.PrivateKey) (*CT, error) {
+func Delegate(req DelegateRequest, signingKey crypto.Signer) (*CT, error) {
 	if req.Issuer == "" {
 		return nil, fmt.Errorf("issuer required")
 	}
@@ -335,7 +336,7 @@ func Verify(tokenStr string, issuerPublicKey ed25519.PublicKey) (map[string]any,
 
 // ── shared JWT helpers (EdDSA, stdlib) ───────────────────────────────────────
 
-func signJWT(claims map[string]any, key ed25519.PrivateKey) (string, error) {
+func signJWT(claims map[string]any, key crypto.Signer) (string, error) {
 	header := map[string]string{"alg": "EdDSA", "typ": "JWT"}
 	headerJSON, err := json.Marshal(header)
 	if err != nil {
@@ -346,7 +347,10 @@ func signJWT(claims map[string]any, key ed25519.PrivateKey) (string, error) {
 		return "", err
 	}
 	signingInput := base64url(headerJSON) + "." + base64url(claimsJSON)
-	sig := ed25519.Sign(key, []byte(signingInput))
+	sig, err := key.Sign(rand.Reader, []byte(signingInput), crypto.Hash(0))
+	if err != nil {
+		return "", err
+	}
 	return signingInput + "." + base64url(sig), nil
 }
 

@@ -25,6 +25,7 @@
 package cattoken
 
 import (
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -91,7 +92,7 @@ type CAT struct {
 // signingKey is the Ed25519 private key of the registered ct_issuer.
 // The corresponding public key must be registered in the Trust Registry
 // for the issuer identifier in req.Issuer.
-func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*CAT, error) {
+func Issue(req IssueRequest, signingKey crypto.Signer) (*CAT, error) {
 	if err := validateRequest(req); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
@@ -147,7 +148,10 @@ func Issue(req IssueRequest, signingKey ed25519.PrivateKey) (*CAT, error) {
 	claimsB64 := base64url(claimsJSON)
 	signingInput := headerB64 + "." + claimsB64
 
-	sig := ed25519.Sign(signingKey, []byte(signingInput))
+	sig, err := signingKey.Sign(rand.Reader, []byte(signingInput), crypto.Hash(0))
+	if err != nil {
+		return nil, fmt.Errorf("sign CAT: %w", err)
+	}
 	token := signingInput + "." + base64url(sig)
 
 	return &CAT{

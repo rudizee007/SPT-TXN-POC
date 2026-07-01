@@ -30,6 +30,11 @@ import (
 	"github.com/miekg/pkcs11"
 )
 
+// ckmEDDSA is CKM_EDDSA from the PKCS#11 v3.0 spec (0x00001057). miekg/pkcs11
+// v1.1.2 does not export it, so define it here. SoftHSM2 and cloud HSMs use this
+// mechanism for pure Ed25519 signing.
+const ckmEDDSA = 0x00001057
+
 // Config selects the module, token, and key.
 type Config struct {
 	ModulePath string // e.g. /usr/local/lib/softhsm/libsofthsm2.so
@@ -106,7 +111,7 @@ func (s *Signer) Sign(_ io.Reader, message []byte, opts crypto.SignerOpts) ([]by
 	if s.closed {
 		return nil, errors.New("hsm: signer closed")
 	}
-	m := []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_EDDSA, nil)}
+	m := []*pkcs11.Mechanism{pkcs11.NewMechanism(ckmEDDSA, nil)}
 	if err := s.ctx.SignInit(s.session, m, s.priv); err != nil {
 		return nil, fmt.Errorf("hsm: SignInit: %w", err)
 	}
