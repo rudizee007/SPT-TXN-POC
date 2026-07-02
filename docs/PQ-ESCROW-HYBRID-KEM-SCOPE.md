@@ -14,8 +14,14 @@
 > hybrid keypair and emits the two public halves + a 96-byte private key (`escrow.Bytes`/
 > `ParseKey`). Issuers rebuild the pub with `escrow.NewPublicKey(rec.PublicKey, rec.MlkemEncapKey)`.
 >
+> **Live deanon service DONE (2026-07-02):** `cmd/deanonsvc` loads the hybrid key via
+> `escrow.ParseKey`, loads `escrow_req` signers from the Trust Registry, and serves
+> `/escrow/store` + `/escrow/deanonymize` on an owner-only Unix socket (never TCP; pledge
+> without `inet`). Fail-closed on missing key / no signers; httptest coverage for the
+> happy path + unauthorized + no-lawful-basis refusals.
+>
 > Remaining: (a) threshold-PQ custody (§5); (b) one-time re-seal of any stored v1 envelopes;
-> (c) wire the deanon `Handler` into a live service that loads the escrow key via `ParseKey`.
+> (c) persistent encrypted vault (deanonsvc vault is in-memory in the POC).
 
 
 > The one PQ change worth doing before the standards timelines force it. The escrow
