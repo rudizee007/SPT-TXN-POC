@@ -12,7 +12,6 @@ package escrow
 // require a threshold of escrow-request signers.
 
 import (
-	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
@@ -65,7 +64,7 @@ func (r *Request) Sign(key ed25519.PrivateKey) {
 // signers, which in production come from the Trust Registry's escrow_req role.
 type Handler struct {
 	vault      *Vault
-	escrowPriv *ecdh.PrivateKey
+	escrowPriv *Key
 	signers    map[string]ed25519.PublicKey
 	maxAge     time.Duration
 
@@ -73,8 +72,9 @@ type Handler struct {
 	seen map[string]time.Time // request fingerprint -> expiry (replay guard)
 }
 
-// NewHandler creates a deanonymization handler over a vault and escrow key.
-func NewHandler(vault *Vault, escrowPriv *ecdh.PrivateKey) *Handler {
+// NewHandler creates a deanonymization handler over a vault and the hybrid
+// escrow key.
+func NewHandler(vault *Vault, escrowPriv *Key) *Handler {
 	return &Handler{
 		vault:      vault,
 		escrowPriv: escrowPriv,

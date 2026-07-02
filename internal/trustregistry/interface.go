@@ -51,6 +51,21 @@ const (
 	RoleAudit Role = "audit"
 )
 
+// Key types accepted in a Record.KeyType. Classical roles use a single
+// 32-byte key; the escrow role MAY instead use the hybrid type, which pairs
+// the 32-byte X25519 key (in PublicKey) with the ML-KEM-768 encapsulation key
+// (in MlkemEncapKey) so escrow envelopes can be sealed with the post-quantum
+// hybrid KEM (see internal/escrow, Scheme 2).
+const (
+	KeyTypeEd25519        = "Ed25519"
+	KeyTypeX25519         = "X25519"
+	KeyTypeX25519MLKEM768 = "X25519+ML-KEM-768"
+)
+
+// MlkemEncapKeySize is the byte length of an ML-KEM-768 encapsulation key
+// (FIPS 203).
+const MlkemEncapKeySize = 1184
+
 // IsValid reports whether r is a recognised role.
 func (r Role) IsValid() bool {
 	switch r {
@@ -91,10 +106,20 @@ type Record struct {
 	Role Role
 
 	// PublicKey is the raw key material. For Ed25519, 32 bytes. For
-	// X25519 (escrow), 32 bytes.
+	// X25519 (escrow), 32 bytes. For the hybrid escrow type this holds the
+	// X25519 half; the ML-KEM half is in MlkemEncapKey.
 	PublicKey []byte
 
-	// KeyType identifies the algorithm. Currently "Ed25519" or "X25519".
+	// MlkemEncapKey is the ML-KEM-768 encapsulation key (1184 bytes) for a
+	// hybrid escrow record (KeyType == KeyTypeX25519MLKEM768). It is empty for
+	// every other record. An issuer rebuilds the hybrid escrow public key from
+	// PublicKey (X25519) + this field via escrow.NewPublicKey, then seals a
+	// Scheme 2 envelope. Persisted as base64 JSON; omitted when empty so
+	// classical records are unchanged on disk.
+	MlkemEncapKey []byte `json:"MlkemEncapKey,omitempty"`
+
+	// KeyType identifies the algorithm: KeyTypeEd25519, KeyTypeX25519, or
+	// KeyTypeX25519MLKEM768 (hybrid escrow).
 	KeyType string
 
 	// ValidFrom is the inclusive start of the validity period.

@@ -254,7 +254,7 @@ func handleList(reg trustregistry.Registry) http.HandlerFunc {
 // ── Helpers ────────────────────────────────────────────────────────────
 
 func recordJSON(rec *trustregistry.Record) map[string]any {
-	return map[string]any{
+	m := map[string]any{
 		"iss":         rec.Iss,
 		"role":        string(rec.Role),
 		"key_type":    rec.KeyType,
@@ -264,6 +264,12 @@ func recordJSON(rec *trustregistry.Record) map[string]any {
 		"status":      string(rec.Status),
 		"metadata":    rec.Metadata,
 	}
+	// Emit the ML-KEM-768 encapsulation key for hybrid escrow records so an
+	// issuer can rebuild both escrow public halves (escrow.NewPublicKey).
+	if len(rec.MlkemEncapKey) > 0 {
+		m["mlkem_encap_key"] = hex.EncodeToString(rec.MlkemEncapKey)
+	}
+	return m
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -351,10 +357,11 @@ func handleRegister(reg trustregistry.Mutable) http.HandlerFunc {
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // cap body (review M5)
 		var body struct {
-			Iss       string `json:"iss"`
-			Role      string `json:"role"`
-			KeyType   string `json:"key_type"`
-			PublicKey string `json:"public_key"`
+			Iss           string `json:"iss"`
+			Role          string `json:"role"`
+			KeyType       string `json:"key_type"`
+			PublicKey     string `json:"public_key"`
+			MlkemEncapKey string `json:"mlkem_encap_key"` // hybrid escrow only
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			// Don't echo the decoder error to the client — it can leak parser
@@ -375,17 +382,44 @@ func handleRegister(reg trustregistry.Mutable) http.HandlerFunc {
 			jsonError(w, "unknown role", http.StatusBadRequest)
 			return
 		}
-		// Reject malformed or degenerate keys at the registrar (review C1/C2):
-		// the only supported key types (Ed25519 for signing roles, X25519 for
-		// escrow) are 32-byte public keys, and must never be all-zero. PQ key
-		// types are not yet supported (see trustregistry validKeyTypes), so this
-		// fixed 32-byte check matches the registry's own validation (SVC-6).
+		// Reject malformed or degenerate keys at the registrar (review C1/C2).
+		// The X25519 half is always 32 bytes and must never be all-zero. The
+		// registry's validateRecord re-checks lengths per KeyType; this gate is
+		// the network-facing first line (SVC-6).
 		if len(pubBytes) != 32 {
 			jsonError(w, "public_key must be 32 bytes", http.StatusBadRequest)
 			return
 		}
 		if allZeroBytes(pubBytes) {
 			jsonError(w, "refusing degenerate all-zero key", http.StatusBadRequest)
+			return
+		}
+		// Hybrid escrow (KeyTypeX25519MLKEM768) additionally carries a
+		// 1184-byte ML-KEM-768 encapsulation key; it is permitted only for the
+		// escrow role. Classical key types must not supply one.
+		var mlkemBytes []byte
+		if body.MlkemEncapKey != "" {
+			mlkemBytes, err = hex.DecodeString(body.MlkemEncapKey)
+			if err != nil {
+				jsonError(w, "invalid mlkem_encap_key hex", http.StatusBadRequest)
+				return
+			}
+		}
+		if body.KeyType == trustregistry.KeyTypeX25519MLKEM768 {
+			if role != trustregistry.RoleEscrow {
+				jsonError(w, "hybrid key type is escrow-only", http.StatusBadRequest)
+				return
+			}
+			if len(mlkemBytes) != trustregistry.MlkemEncapKeySize {
+				jsonError(w, "mlkem_encap_key must be 1184 bytes for hybrid escrow", http.StatusBadRequest)
+				return
+			}
+			if allZeroBytes(mlkemBytes) {
+				jsonError(w, "refusing degenerate all-zero mlkem_encap_key", http.StatusBadRequest)
+				return
+			}
+		} else if len(mlkemBytes) != 0 {
+			jsonError(w, "mlkem_encap_key allowed only with key_type "+trustregistry.KeyTypeX25519MLKEM768, http.StatusBadRequest)
 			return
 		}
 		if body.Iss == "" {
@@ -395,11 +429,12 @@ func handleRegister(reg trustregistry.Mutable) http.HandlerFunc {
 		now    := time.Now().UTC()
 		oneYear := now.Add(365 * 24 * time.Hour)
 		rec := &trustregistry.Record{
-			Iss:       body.Iss,
-			Role:      role,
-			KeyType:   body.KeyType,
-			PublicKey: pubBytes,
-			ValidFrom: now, ValidUntil: oneYear,
+			Iss:           body.Iss,
+			Role:          role,
+			KeyType:       body.KeyType,
+			PublicKey:     pubBytes,
+			MlkemEncapKey: mlkemBytes,
+			ValidFrom:     now, ValidUntil: oneYear,
 			Status:   trustregistry.StatusActive,
 			Metadata: map[string]string{"note": "registered via regkey tool (socket)"},
 		}

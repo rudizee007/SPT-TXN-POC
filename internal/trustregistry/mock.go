@@ -146,19 +146,19 @@ func (r *MockRegistry) Close() error { return nil }
 
 // ── helpers ────────────────────────────────────────────────────────────
 
-// validKeyTypes is the set of key types accepted by this implementation.
-// Both currently-supported types are 32-byte keys, which is what
-// validateRecord length-checks below.
+// validKeyTypes is the set of key types accepted by this implementation, with
+// their per-type validation rules applied in validateRecord.
 //
-// PQ types (ML-DSA-44/65, ML-KEM-768) are NOT yet supported and are
-// deliberately omitted: their public keys are 1312/1952/1184 bytes, not 32,
-// so accepting them here would either be rejected by the length check anyway
-// or — if the length check were relaxed — admit malformed keys. Re-add them
-// with the correct per-type length checks when PQ signing/escrow is actually
-// implemented (PQ migration path per Section 11 of the draft).
+// The classical types (Ed25519 signing, X25519 escrow) are 32-byte keys. The
+// hybrid escrow type (X25519+ML-KEM-768) additionally carries a 1184-byte
+// ML-KEM-768 encapsulation key in MlkemEncapKey and is permitted ONLY for the
+// escrow role — it is the post-quantum harvest-now-decrypt-later fix for stored
+// escrow envelopes (internal/escrow, Scheme 2). PQ *signature* types
+// (ML-DSA-44/65) remain deliberately unsupported until token signing migrates.
 var validKeyTypes = map[string]bool{
-	"Ed25519": true,
-	"X25519":  true,
+	KeyTypeEd25519:        true,
+	KeyTypeX25519:         true,
+	KeyTypeX25519MLKEM768: true,
 }
 
 func validateRecord(rec *Record) error {
@@ -168,13 +168,25 @@ func validateRecord(rec *Record) error {
 	if !rec.Role.IsValid() {
 		return ErrInvalidRecord
 	}
-	// Both supported key types (Ed25519, X25519) are 32-byte public keys.
-	// When PQ types are added to validKeyTypes this must become a per-KeyType
-	// length check (see the validKeyTypes comment).
-	if len(rec.PublicKey) != 32 {
+	if !validKeyTypes[rec.KeyType] {
 		return ErrInvalidRecord
 	}
-	if !validKeyTypes[rec.KeyType] {
+	// Per-KeyType shape checks. The X25519 half is always 32 bytes; the hybrid
+	// type adds a 1184-byte ML-KEM-768 key and is escrow-only. Classical types
+	// must NOT carry an ML-KEM key (reject stray/confused material).
+	switch rec.KeyType {
+	case KeyTypeEd25519, KeyTypeX25519:
+		if len(rec.PublicKey) != 32 || len(rec.MlkemEncapKey) != 0 {
+			return ErrInvalidRecord
+		}
+	case KeyTypeX25519MLKEM768:
+		if rec.Role != RoleEscrow {
+			return ErrInvalidRecord
+		}
+		if len(rec.PublicKey) != 32 || len(rec.MlkemEncapKey) != MlkemEncapKeySize {
+			return ErrInvalidRecord
+		}
+	default:
 		return ErrInvalidRecord
 	}
 	if !rec.ValidUntil.After(rec.ValidFrom) {
@@ -187,6 +199,10 @@ func copyRecord(src *Record) *Record {
 	dst := *src
 	dst.PublicKey = make([]byte, len(src.PublicKey))
 	copy(dst.PublicKey, src.PublicKey)
+	if src.MlkemEncapKey != nil {
+		dst.MlkemEncapKey = make([]byte, len(src.MlkemEncapKey))
+		copy(dst.MlkemEncapKey, src.MlkemEncapKey)
+	}
 	if src.Metadata != nil {
 		dst.Metadata = make(map[string]string, len(src.Metadata))
 		for k, v := range src.Metadata {
