@@ -81,9 +81,12 @@ jobs:
           go-version: '1.25.x'
           check-latest: true
 
+      # Pinned, not @latest: an unpinned tool install in CI is a mutable
+      # dependency, which contradicts the pinned-dependencies commitment this
+      # very job exists to enforce.
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           "$(go env GOPATH)"/bin/govulncheck ./...
 
       # Short fuzz run on the two fail-closed surfaces: the chain-tagged canonical

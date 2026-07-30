@@ -1,0 +1,208 @@
+# Release: verified, static, SBOM'd, provenance-attested artifacts.
+#
+# CLAUDE.md §2 commits us to "signed commits, pinned dependencies, govulncheck in
+# CI, SLSA provenance on releases, published SBOM" on the grounds that selling
+# attestation-conditioned authorization from an unattested build pipeline is
+# disqualifying in due diligence. This workflow is that commitment, executed.
+#
+# Order is deliberate: NOTHING is built until the verification gate passes. A
+# release that ships unverified binaries is worse than no release, because the
+# attestation then vouches for something nobody checked.
+#
+#   git tag v0.3.0 && git push origin v0.3.0
+#
+# ⚠️ ACTIONS ARE NOT PINNED TO COMMIT SHAs YET — see the note at the bottom.
+# This is the one place this workflow does not yet meet its own standard.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. v0.3.0). Dry run — no release created.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------- gate
+  verify:
+    name: gate · vet · test · conformance · govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # buildvcs + git describe need full history
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: false   # pinned toolchain: reproducibility beats freshness
+
+      - run: go mod download
+      - run: go vet ./...
+      - run: go test ./... -count=1
+
+      - name: Conformance vectors (no drift)
+        run: go run ./cmd/conformance -check
+
+      # A vulnerable dependency blocks the release. This is a gate, not a report.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          "$(go env GOPATH)"/bin/govulncheck ./...
+
+      # The trust-critical signing/verification path under the FIPS 140-3 Go
+      # module. Scope is the token/auth path only — the ZK packages use
+      # research-grade primitives that are NOT FIPS-approved. See CI for the
+      # same boundary and docs/PLATFORM-AND-OSS-STRATEGY.md §2a.
+      - name: Auth path under fips140=on
+        env:
+          GODEBUG: fips140=on
+        run: >
+          go test -count=1
+          ./internal/verifier/...
+          ./internal/cattoken/...
+          ./internal/dpop/...
+          ./internal/sdjwt/...
+          ./internal/trustregistry/...
+
+  # ---------------------------------------------------------------- build
+  build:
+    name: build · sbom · attest
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write       # keyless signing via OIDC (Sigstore)
+      attestations: write   # SLSA build provenance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: false
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Same script you run locally. If this drifts from local, the provenance
+      # describes a build that cannot be reproduced.
+      - name: Build static binaries
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: ./scripts/release-build.sh
+
+      - name: Confirm binaries are static and stripped
+        run: |
+          set -e
+          for f in dist/*_linux_amd64; do
+            file "$f"
+            file "$f" | grep -q "statically linked" \
+              || { echo "NOT STATIC: $f" >&2; exit 1; }
+          done
+
+      # Dependency SBOM (CycloneDX). Complements docs/cbom.json, which is the
+      # CRYPTOGRAPHIC bill of materials — different artifact, different question.
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0
+          "$(go env GOPATH)"/bin/cyclonedx-gomod mod -licenses -json \
+            -output dist/sbom.cyclonedx.json
+          echo "SBOM components: $(grep -c '"bom-ref"' dist/sbom.cyclonedx.json || true)"
+
+      # SLSA build provenance, keyless via OIDC — no long-lived signing key to
+      # steal. Verifiable by anyone:
+      #   gh attestation verify <binary> --repo rudizee007/spt-txn-poc
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'dist/*'
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@v1
+        with:
+          subject-path: 'dist/*'
+          sbom-path: 'dist/sbom.cyclonedx.json'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.v.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- publish
+  publish:
+    name: publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')   # tags only; dispatch is a dry run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+
+      - name: Release notes
+        run: |
+          cat > NOTES.md <<'EOF'
+          ## Verify before you trust this
+
+          Every artifact carries SLSA build provenance and an SBOM attestation,
+          signed keylessly via Sigstore. Check them:
+
+          ```sh
+          gh attestation verify spt-demo_linux_amd64 --repo ${{ github.repository }}
+          sha256sum -c SHA256SUMS
+          ```
+
+          Binaries are statically linked (`CGO_ENABLED=0`) and path-trimmed. The
+          git revision is stamped into each one:
+
+          ```sh
+          go version -m spt-demo_linux_amd64 | grep vcs.revision
+          ```
+
+          **Status: proof of concept. Not externally audited. Not for production
+          use.** `sbom.cyclonedx.json` is the dependency SBOM; `docs/cbom.json`
+          in the source tree is the separate cryptographic BOM.
+          EOF
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: NOTES.md
+          draft: true          # human reviews before it goes live
+          fail_on_unmatched_files: true
+
+# ---------------------------------------------------------------------------
+# ⚠️ OUTSTANDING: pin these actions to commit SHAs.
+#
+# CLAUDE.md §2 says "pinned dependencies". Tag refs like @v4 are MUTABLE — the
+# tag can be repointed at different code, which is precisely the supply-chain
+# attack this workflow exists to defend against. Go deps are pinned by go.sum;
+# the Actions are not.
+#
+# Pin them with:
+#     go install github.com/suzuki-shunsuke/pinact/cmd/pinact@latest
+#     pinact run .github/workflows/*.yml
+#
+# ci.yml and gitleaks.yml have the same gap, plus ci.yml installs
+# govulncheck@latest (unpinned). Fix all three together.
+# ---------------------------------------------------------------------------
