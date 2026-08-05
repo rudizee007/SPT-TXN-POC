@@ -26,6 +26,18 @@ jobs:
       - name: Download modules
         run: go mod download
 
+      # gofmt -l lists offending files but exits 0, so it must be asserted
+      # explicitly — otherwise unformatted code sails through any && chain
+      # unnoticed. Two files in a sibling repo had drifted for exactly this reason.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::not gofmt-clean:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
       - name: Vet
         run: go vet ./...
 
