@@ -1,6 +1,6 @@
 // Package receipt implements the SPT-Txn Transaction Receipt: a compact
 // signed record emitted at decision time, appended to the transparency log
-// (internal/audit). Spec: docs/spec/RECEIPT-FORMAT.md.
+// (pkg/audit). Spec: docs/spec/RECEIPT-FORMAT.md.
 //
 // The receipt is the artifact that lets an auditor VERIFY a chain instead of
 // sampling controls: "this control was enforced at the moment of this
@@ -209,7 +209,7 @@ func (r *Receipt) Hash() (string, error) {
 }
 
 // AuditDetail renders the receipt as a flat detail map for the transparency
-// log (internal/audit.Log.Append). Hashes and enums only — the audit
+// log (pkg/audit.Log.Append). Hashes and enums only — the audit
 // package's no-PII gate stays intact.
 func (r *Receipt) AuditDetail() (map[string]string, error) {
 	rh, err := r.Hash()

@@ -15,6 +15,7 @@ package verify
 
 import (
 	"context"
+	"crypto/ed25519"
 
 	"github.com/rudizee007/spt-txn-poc/internal/ledger"
 	"github.com/rudizee007/spt-txn-poc/internal/trustregistry"
@@ -55,7 +56,10 @@ type Decision struct {
 
 // Verifier runs the offline eight-step enforcement engine against a locally held
 // Trust Registry snapshot. Safe for concurrent use.
-type Verifier struct{ eng *verifier.Engine }
+type Verifier struct {
+	eng *verifier.Engine
+	reg trustregistry.Registry
+}
 
 // FromSnapshot loads a Trust Registry snapshot (the locally-cached JSON
 // distributed to verifiers) and returns a ready Verifier. Verification then runs
@@ -65,7 +69,41 @@ func FromSnapshot(path string) (*Verifier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Verifier{eng: verifier.New(reg)}, nil
+	return &Verifier{eng: verifier.New(reg), reg: reg}, nil
+}
+
+// IssuerKeys returns the Ed25519 public keys of every token-issuance authority
+// in the snapshot — all CT-issuer and TTS-issuer records, active or not.
+// Rotated, revoked and superseded keys are included on purpose: a receipt/log
+// signing key MUST NOT reuse an issuance key, not even a retired one.
+//
+// This exists so a PEP that emits signed Transaction Receipts can cross-check
+// its dedicated log key against the issuance keys — the draft requires the log
+// signing key to be SEPARATE from the token issuance key. Escrow (encryption)
+// keys and audit keys are deliberately excluded: escrow keys are X25519, not
+// signing keys, and the audit role is exactly what a log/receipt key legitimately
+// is. The returned slice is freshly allocated; callers may retain it.
+func (v *Verifier) IssuerKeys(ctx context.Context) ([]ed25519.PublicKey, error) {
+	var out []ed25519.PublicKey
+	for _, role := range []trustregistry.Role{trustregistry.RoleCTIssuer, trustregistry.RoleTTSIssuer} {
+		recs, err := v.reg.List(ctx, role)
+		if err != nil {
+			return nil, err
+		}
+		for _, rec := range recs {
+			// Any 32-byte key in an issuer role, regardless of the KeyType label: a
+			// reused Ed25519 key carrying a wrong or blank KeyType would still be 32
+			// bytes, and the key-separation guard must still catch it (the snapshot
+			// is loaded without per-record validation, so a malformed-but-trusted
+			// record is possible). Issuer roles are Ed25519 today; a future PQC
+			// issuance key would not be 32 bytes and would need a matching change
+			// here and in the receipt key type.
+			if len(rec.PublicKey) == ed25519.PublicKeySize {
+				out = append(out, ed25519.PublicKey(append([]byte(nil), rec.PublicKey...)))
+			}
+		}
+	}
+	return out, nil
 }
 
 // Verify runs the eight steps and returns the decision.

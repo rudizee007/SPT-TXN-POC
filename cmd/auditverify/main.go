@@ -16,7 +16,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rudizee007/spt-txn-poc/internal/audit"
+	"github.com/rudizee007/spt-txn-poc/pkg/audit"
 )
 
 func main() {

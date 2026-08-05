@@ -39,11 +39,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/rudizee007/spt-txn-poc/internal/audit"
 	"github.com/rudizee007/spt-txn-poc/internal/decision"
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
 	"github.com/rudizee007/spt-txn-poc/internal/receiptlog"
 	"github.com/rudizee007/spt-txn-poc/internal/txntoken"
+	"github.com/rudizee007/spt-txn-poc/pkg/audit"
 )
 
 // TokenHeader carries the SPT-Txn token on the guarded request.

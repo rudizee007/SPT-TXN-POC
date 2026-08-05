@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rudizee007/spt-txn-poc/internal/audit"
 	"github.com/rudizee007/spt-txn-poc/internal/receiptlog"
+	"github.com/rudizee007/spt-txn-poc/pkg/audit"
 	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 

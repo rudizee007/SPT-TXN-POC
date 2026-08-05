@@ -1,7 +1,7 @@
 package receiptlog
 
 // Package receiptlog is glue between receipt emission and the transparency log
-// (internal/audit). This is the reference Emitter used by the decision core:
+// (pkg/audit). This is the reference Emitter used by the decision core:
 // sign with the log key, append to the hash-chained log, and only then report
 // success. An error anywhere means "not durably logged", and the decision
 // core converts that into DENY (unavailable).
@@ -10,7 +10,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 
-	"github.com/rudizee007/spt-txn-poc/internal/audit"
+	"github.com/rudizee007/spt-txn-poc/pkg/audit"
 	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 

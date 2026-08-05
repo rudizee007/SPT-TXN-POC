@@ -36,7 +36,6 @@ import (
 	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/attest"
-	"github.com/rudizee007/spt-txn-poc/internal/audit"
 	"github.com/rudizee007/spt-txn-poc/internal/cattoken"
 	"github.com/rudizee007/spt-txn-poc/internal/civicpass"
 	"github.com/rudizee007/spt-txn-poc/internal/controlmap"
@@ -51,6 +50,7 @@ import (
 	"github.com/rudizee007/spt-txn-poc/internal/trustregistry"
 	"github.com/rudizee007/spt-txn-poc/internal/txntoken"
 	"github.com/rudizee007/spt-txn-poc/internal/verifier"
+	"github.com/rudizee007/spt-txn-poc/pkg/audit"
 	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
