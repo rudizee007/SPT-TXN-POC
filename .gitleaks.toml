@@ -45,8 +45,21 @@ paths = [
   '''(^|/)go\.sum$''',
 ]
 # Public identifiers that are safe by construction.
+#
+# Listed EXACTLY, never as a pattern. A regex like 0x[0-9a-fA-F]{64} would
+# suppress every 32-byte hex string in the tree — including a real key — and the
+# whole point of this scanner is that it fires on high-entropy strings. Each
+# entry below is a deliberate, reviewed exception; adding one should require
+# looking at it.
 regexes = [
   '''spt_txn_context_hash''',
   '''0009-0009-6557-8843''',          # ORCID (public)
   '''10\.5281/zenodo\.''',            # DOI (public)
+
+  # Ledger adapter test fixtures — published on-chain contract identifiers, not
+  # credentials. Flagged by the default generic-api-key rule on 2026-08-05
+  # because a hex address is indistinguishable from a key by entropy alone.
+  # Verified public before allowlisting.
+  '''0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48''',                          # USDC contract, Ethereum mainnet
+  '''0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7''',  # Starknet token identifier
 ]
