@@ -19,13 +19,13 @@
 //
 // Example Envoy wiring (http_filters):
 //
-//	- name: envoy.filters.http.ext_authz
-//	  typed_config:
-//	    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
-//	    http_service:
-//	      server_uri: {uri: http://127.0.0.1:9191, cluster: spt_txn_authz, timeout: 0.050s}
-//	      authorization_request: {allowed_headers: {patterns: [{exact: x-spt-txn-token}]}}
-//	    failure_mode_allow: false
+//   - name: envoy.filters.http.ext_authz
+//     typed_config:
+//     "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+//     http_service:
+//     server_uri: {uri: http://127.0.0.1:9191, cluster: spt_txn_authz, timeout: 0.050s}
+//     authorization_request: {allowed_headers: {patterns: [{exact: x-spt-txn-token}]}}
+//     failure_mode_allow: false
 package main
 
 import (
@@ -42,7 +42,7 @@ import (
 	"github.com/rudizee007/spt-txn-poc/internal/audit"
 	"github.com/rudizee007/spt-txn-poc/internal/decision"
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/internal/receiptlog"
 	"github.com/rudizee007/spt-txn-poc/internal/txntoken"
 )
 
@@ -82,7 +82,7 @@ func main() {
 		log.Fatalf("audit log: %v", err)
 	}
 	defer auditLog.Close()
-	emitter, err := receipt.NewLogEmitter(auditLog, ed25519.PrivateKey(logKey))
+	emitter, err := receiptlog.NewLogEmitter(auditLog, ed25519.PrivateKey(logKey))
 	if err != nil {
 		log.Fatalf("emitter: %v", err)
 	}
@@ -130,7 +130,7 @@ func main() {
 	srv := &http.Server{
 		Addr:              *listen,
 		Handler:           mux,
-		ReadHeaderTimeout: 2 * time.Second,  // slowloris guard
+		ReadHeaderTimeout: 2 * time.Second, // slowloris guard
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
 	}

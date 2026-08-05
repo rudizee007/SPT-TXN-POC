@@ -335,9 +335,9 @@ func Delegate(req DelegateRequest, signingKey crypto.Signer) (*CT, error) {
 		"capability_scope":           map[string]any(attenuated),
 		"delegation_depth_remaining": remaining,
 		"holder_key":                 hex.EncodeToString(req.HolderPublicKey),
-		"spt_cat_ref":                rootCATRef,                // root CAT, unchanged
-		"spt_parent_ref":             parentJTI,                 // immediate parent CT
-		"spt_parent_hash":            base64url(parentHash[:]),  // hash of immediate parent
+		"spt_cat_ref":                rootCATRef,               // root CAT, unchanged
+		"spt_parent_ref":             parentJTI,                // immediate parent CT
+		"spt_parent_hash":            base64url(parentHash[:]), // hash of immediate parent
 	}
 	if req.Status != nil {
 		claims["status"] = req.Status

@@ -5,6 +5,7 @@
 // in-scope, bound to THIS merchant, and signed by a known issuer.
 //
 // Flow:
+//
 //	GET  /resource            -> 402 + payment requirements (unpaid)
 //	POST /resource/redeem      { "tx_hash": "...", "bundle": <gate.Decision> }
 //	   1. the attestation must authorize a payment to THIS merchant for the price

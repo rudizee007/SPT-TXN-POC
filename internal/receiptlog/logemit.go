@@ -1,6 +1,6 @@
-package receipt
+package receiptlog
 
-// logemit.go — glue between receipt emission and the transparency log
+// Package receiptlog is glue between receipt emission and the transparency log
 // (internal/audit). This is the reference Emitter used by the decision core:
 // sign with the log key, append to the hash-chained log, and only then report
 // success. An error anywhere means "not durably logged", and the decision
@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"github.com/rudizee007/spt-txn-poc/internal/audit"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 // EventType is the audit log event type for transaction receipts.
@@ -26,10 +27,10 @@ type LogEmitter struct {
 // NewLogEmitter wires a signing key and an open audit log.
 func NewLogEmitter(log *audit.Log, logKey ed25519.PrivateKey) (*LogEmitter, error) {
 	if log == nil {
-		return nil, errors.New("receipt: nil audit log")
+		return nil, errors.New("receiptlog: nil audit log")
 	}
 	if len(logKey) != ed25519.PrivateKeySize {
-		return nil, errors.New("receipt: bad log key size")
+		return nil, errors.New("receiptlog: bad log key size")
 	}
 	return &LogEmitter{log: log, key: logKey}, nil
 }
@@ -37,7 +38,7 @@ func NewLogEmitter(log *audit.Log, logKey ed25519.PrivateKey) (*LogEmitter, erro
 // Emit signs r, appends it to the log, and returns the receipt hash. The
 // subject of the log entry is the receipt hash; the detail map carries only
 // hashes and enums (audit's no-PII gate applies).
-func (e *LogEmitter) Emit(r *Receipt) (string, error) {
+func (e *LogEmitter) Emit(r *receipt.Receipt) (string, error) {
 	if err := r.Sign(e.key); err != nil {
 		return "", err
 	}

@@ -8,7 +8,7 @@
 // build a dashboard.
 //
 // The receipts here come from the audit log's per-entry Detail (written by
-// receipt.LogEmitter), which carries hashes and enums only — never payloads or
+// receiptlog.LogEmitter), which carries hashes and enums only — never payloads or
 // PII. This tool therefore reconstructs the evidence view without ever needing
 // the raw tokens.
 //
@@ -27,7 +27,8 @@ import (
 
 	"github.com/rudizee007/spt-txn-poc/internal/audit"
 	"github.com/rudizee007/spt-txn-poc/internal/controlmap"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/internal/receiptlog"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 func main() {
@@ -52,7 +53,7 @@ func main() {
 
 	var allRows []controlmap.EvidenceRow
 	for _, e := range log.Entries() {
-		if e.Type != receipt.EventType {
+		if e.Type != receiptlog.EventType {
 			continue
 		}
 		r, ok := receiptFromDetail(e.Detail, e.Time)
@@ -60,7 +61,7 @@ func main() {
 			continue
 		}
 		// The authoritative receipt hash is the audit entry's subject (set by
-		// receipt.LogEmitter at emission), falling back to the detail field.
+		// receiptlog.LogEmitter at emission), falling back to the detail field.
 		rh := e.Subject
 		if rh == "" {
 			rh = e.Detail["receipt_hash"]

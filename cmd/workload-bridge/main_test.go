@@ -40,12 +40,12 @@ import (
 )
 
 const (
-	testAudience   = "spt-txn-exchange"
-	testIssuer     = "https://oidc.example"
-	spiffeSubject  = "spiffe://prod.example/ns/pay/sa/charger"
-	ttSPIFFE       = "urn:violetsky:token-type:spiffe-jwt-svid"
-	ttK8s          = "urn:violetsky:token-type:k8s-sa"
-	ttAWS          = "urn:violetsky:token-type:aws-irsa"
+	testAudience  = "spt-txn-exchange"
+	testIssuer    = "https://oidc.example"
+	spiffeSubject = "spiffe://prod.example/ns/pay/sa/charger"
+	ttSPIFFE      = "urn:violetsky:token-type:spiffe-jwt-svid"
+	ttK8s         = "urn:violetsky:token-type:k8s-sa"
+	ttAWS         = "urn:violetsky:token-type:aws-irsa"
 )
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }

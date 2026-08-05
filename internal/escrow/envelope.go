@@ -304,7 +304,7 @@ const PrivateKeySize = 32 + mlkem.SeedSize
 func (k *Key) Bytes() []byte {
 	out := make([]byte, 0, PrivateKeySize)
 	out = append(out, k.x25519.Bytes()...) // 32-byte X25519 scalar
-	out = append(out, k.mlkem.Bytes()...)   // 64-byte ML-KEM-768 seed
+	out = append(out, k.mlkem.Bytes()...)  // 64-byte ML-KEM-768 seed
 	return out
 }
 

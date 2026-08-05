@@ -10,7 +10,7 @@ import (
 
 	"github.com/rudizee007/spt-txn-poc/internal/decision"
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 // testRig wires a Middleware over a stub verifier/emitter/server.

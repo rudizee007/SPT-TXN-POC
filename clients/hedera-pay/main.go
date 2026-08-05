@@ -19,9 +19,10 @@
 //   - -dry-run builds and prints the transfer without any network call.
 //
 // Usage:
-//   export HEDERA_OPERATOR_ID=0.0.xxxxx HEDERA_OPERATOR_KEY=302e0201...
-//   go run . -to 0.0.yyyyy -amount 1000 -memo <anchorHex> -dry-run
-//   go run . -to 0.0.yyyyy -amount 1000 -memo <anchorHex>            # settle on testnet
+//
+//	export HEDERA_OPERATOR_ID=0.0.xxxxx HEDERA_OPERATOR_KEY=302e0201...
+//	go run . -to 0.0.yyyyy -amount 1000 -memo <anchorHex> -dry-run
+//	go run . -to 0.0.yyyyy -amount 1000 -memo <anchorHex>            # settle on testnet
 //
 // -amount is in TINYBARS (1 HBAR = 100,000,000 tinybars), mirroring xrpl-pay's
 // drops so the gate ceiling/price numbers carry over unchanged.

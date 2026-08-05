@@ -10,18 +10,18 @@ import (
 	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 // harness wires an Engine with a stub verifier and an in-memory emitter that
 // records every receipt, so tests can assert on the evidence as well as the
 // decision.
 type harness struct {
-	engine   *Engine
-	receipts []*receipt.Receipt
-	logKey   ed25519.PrivateKey
-	logPub   ed25519.PublicKey
-	claims   map[string]any // returned by the stub verifier on success
+	engine    *Engine
+	receipts  []*receipt.Receipt
+	logKey    ed25519.PrivateKey
+	logPub    ed25519.PublicKey
+	claims    map[string]any // returned by the stub verifier on success
 	verifyErr error
 	emitErr   error
 }

@@ -16,8 +16,9 @@
 // surface — see docs/AGENTSVC-AND-ZKCHAIN-SCOPING.md — and is not in this build.
 //
 // Endpoints:
-//   POST /agent/verify  — run the eight-step engine on a presented chain
-//   GET  /agent/health  — liveness check
+//
+//	POST /agent/verify  — run the eight-step engine on a presented chain
+//	GET  /agent/health  — liveness check
 //
 // POST /agent/verify request body (JSON):
 //
@@ -62,8 +63,8 @@ const (
 )
 
 func main() {
-	addr    := envOr("SPT_AGENTSVC_ADDR", defaultAddr)
-	role    := envOr("SPT_AGENT_ROLE",    "verify")
+	addr := envOr("SPT_AGENTSVC_ADDR", defaultAddr)
+	role := envOr("SPT_AGENT_ROLE", "verify")
 	regPath := envOr("SPT_AGENT_REGISTRY", defaultRegistry)
 
 	log.SetPrefix("agentsvc: ")

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudizee007/spt-txn-poc/internal/cttoken"
 	"github.com/rudizee007/spt-txn-poc/internal/cattoken"
+	"github.com/rudizee007/spt-txn-poc/internal/cttoken"
 	"github.com/rudizee007/spt-txn-poc/internal/dpop"
 	"github.com/rudizee007/spt-txn-poc/internal/ledger"
 	"github.com/rudizee007/spt-txn-poc/internal/tbac"
@@ -36,7 +36,7 @@ type harness struct {
 	agentPub  ed25519.PublicKey
 	agentPriv ed25519.PrivateKey
 	cat       *cattoken.CAT
-	ct       *cttoken.CT
+	ct        *cttoken.CT
 	tc        ledger.TxnContext
 	l         ledger.Ledger
 }

@@ -6,8 +6,9 @@
 // before issuing. Issues CATs signed with Ed25519.
 //
 // Endpoints:
-//   POST /cat/issue   — issue a new CAT
-//   GET  /cat/health  — liveness check
+//
+//	POST /cat/issue   — issue a new CAT
+//	GET  /cat/health  — liveness check
 //
 // POST /cat/issue request body (JSON):
 //
@@ -53,9 +54,9 @@ const (
 )
 
 func main() {
-	addr    := envOr("SPT_CAT_ADDR",    defaultAddr)
-	keyPath := envOr("SPT_CAT_KEY",     defaultKeyPath)
-	trAddr  := envOr("SPT_TR_ADDR_URL", defaultTRAddr)
+	addr := envOr("SPT_CAT_ADDR", defaultAddr)
+	keyPath := envOr("SPT_CAT_KEY", defaultKeyPath)
+	trAddr := envOr("SPT_TR_ADDR_URL", defaultTRAddr)
 
 	log.SetPrefix("catsvc: ")
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
@@ -77,7 +78,7 @@ func main() {
 		log.Fatalf("issuer not in Trust Registry: %v", err)
 	}
 	regPub := hex.EncodeToString(rec.PublicKey)
-	myPub  := hex.EncodeToString(pubKey)
+	myPub := hex.EncodeToString(pubKey)
 	if regPub != myPub {
 		log.Fatalf("registered public key %s does not match loaded key %s", regPub, myPub)
 	}
@@ -86,7 +87,7 @@ func main() {
 	// ── HTTP mux ───────────────────────────────────────────────────
 	mux := http.NewServeMux()
 	mux.HandleFunc("/cat/health", handleHealth)
-	mux.HandleFunc("/cat/issue",  handleIssue(privKey, pubKey))
+	mux.HandleFunc("/cat/issue", handleIssue(privKey, pubKey))
 
 	srv := &http.Server{
 		Handler:      mux,
@@ -317,13 +318,14 @@ func (t *httpTrustRegistry) Lookup(ctx context.Context, iss string, role trustre
 // the raw Ed25519 private key (64 bytes: 32-byte seed + 32-byte public key).
 //
 // Signify secret key format (base64-decoded):
-//   [0:2]   algorithm ("Ed")
-//   [2:4]   KDF ("BK" = bcrypt | "none")
-//   [4:8]   KDF rounds (big-endian uint32)
-//   [8:24]  salt (16 bytes)
-//   [24:32] checksum (8 bytes)
-//   [32:40] fingerprint (8 bytes)
-//   [40:104] Ed25519 private key (64 bytes: seed||public)
+//
+//	[0:2]   algorithm ("Ed")
+//	[2:4]   KDF ("BK" = bcrypt | "none")
+//	[4:8]   KDF rounds (big-endian uint32)
+//	[8:24]  salt (16 bytes)
+//	[24:32] checksum (8 bytes)
+//	[32:40] fingerprint (8 bytes)
+//	[40:104] Ed25519 private key (64 bytes: seed||public)
 func loadSignifyKey(path string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -367,7 +369,7 @@ func loadSignifyKey(path string) (ed25519.PrivateKey, ed25519.PublicKey, error) 
 	}
 
 	privKey := ed25519.PrivateKey(raw[40:104])
-	pubKey  := ed25519.PublicKey(raw[72:104])
+	pubKey := ed25519.PublicKey(raw[72:104])
 	return privKey, pubKey, nil
 }
 

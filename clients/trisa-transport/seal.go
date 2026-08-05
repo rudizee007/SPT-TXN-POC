@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	ErrHMACMismatch   = errors.New("trisatransport: envelope HMAC does not verify")
-	ErrBadAlgorithm   = errors.New("trisatransport: unsupported envelope algorithm")
-	ErrShortPayload   = errors.New("trisatransport: payload shorter than GCM nonce")
-	ErrNotSealed      = errors.New("trisatransport: envelope is not sealed")
+	ErrHMACMismatch = errors.New("trisatransport: envelope HMAC does not verify")
+	ErrBadAlgorithm = errors.New("trisatransport: unsupported envelope algorithm")
+	ErrShortPayload = errors.New("trisatransport: payload shorter than GCM nonce")
+	ErrNotSealed    = errors.New("trisatransport: envelope is not sealed")
 )
 
 const (

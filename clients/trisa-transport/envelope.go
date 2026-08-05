@@ -32,13 +32,13 @@ const (
 // Field names use JSON tags so it can also be marshalled for a non-gRPC carrier.
 type SecureEnvelope struct {
 	ID                  string `json:"id"`
-	Payload             []byte `json:"payload"`               // nonce || AES-256-GCM ciphertext
-	EncryptionKey       []byte `json:"encryption_key"`        // AES key, RSA-OAEP sealed to recipient
-	EncryptionAlgorithm string `json:"encryption_algorithm"`  // EncryptionAESGCM
-	HMAC                []byte `json:"hmac"`                  // HMAC-SHA256(Payload, hmacSecret)
-	HMACSecret          []byte `json:"hmac_secret"`           // HMAC secret, RSA-OAEP sealed to recipient
-	HMACAlgorithm       string `json:"hmac_algorithm"`        // HMACSHA256
-	SealAlgorithm       string `json:"seal_algorithm"`        // SealRSAOAEP
+	Payload             []byte `json:"payload"`              // nonce || AES-256-GCM ciphertext
+	EncryptionKey       []byte `json:"encryption_key"`       // AES key, RSA-OAEP sealed to recipient
+	EncryptionAlgorithm string `json:"encryption_algorithm"` // EncryptionAESGCM
+	HMAC                []byte `json:"hmac"`                 // HMAC-SHA256(Payload, hmacSecret)
+	HMACSecret          []byte `json:"hmac_secret"`          // HMAC secret, RSA-OAEP sealed to recipient
+	HMACAlgorithm       string `json:"hmac_algorithm"`       // HMACSHA256
+	SealAlgorithm       string `json:"seal_algorithm"`       // SealRSAOAEP
 	Sealed              bool   `json:"sealed"`
 	PublicKeyID         string `json:"public_key_id,omitempty"` // which recipient key was used
 }

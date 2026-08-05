@@ -44,7 +44,7 @@ func TestEthereum_Validate_Rejects(t *testing.T) {
 	l := ethereumAdapter(t)
 	bad := map[string]ledger.TxnContext{
 		"no 0x prefix":   {Beneficiary: "deadbeef", Amount: "1", Currency: "ETH"},
-		"too long hex":   {Beneficiary: ethB + "ff", Amount: "1", Currency: "ETH"},     // 42 hex
+		"too long hex":   {Beneficiary: ethB + "ff", Amount: "1", Currency: "ETH"},        // 42 hex
 		"too short hex":  {Beneficiary: ethB[:len(ethB)-1], Amount: "1", Currency: "ETH"}, // 39 hex
 		"non-hex":        {Beneficiary: "0xZZZ", Amount: "1", Currency: "ETH"},
 		"bad originator": {Originator: "nope", Beneficiary: ethB, Amount: "1", Currency: "ETH"},

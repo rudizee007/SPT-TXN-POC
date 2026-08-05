@@ -16,7 +16,7 @@ import (
 
 	"github.com/rudizee007/spt-txn-poc/internal/decision"
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 // stubEngine builds a decision engine whose verifier permits a fixed token and

@@ -266,3 +266,31 @@ func TestVerifyAssertion_Tamper(t *testing.T) {
 		}
 	}
 }
+
+// A personhood attestation must carry an expiry — a zero ExpiresAt would be
+// infinitely valid and (with no cache revocation) resolve forever.
+func TestPresent_RequiresExpiry(t *testing.T) {
+	v, _, attPriv, attester := newVerifier(t)
+	att := personhoodPass(attester, "wallet:noexp", attPriv)
+	att.ExpiresAt = time.Time{} // no expiry
+	att.Sign(attPriv)
+	if err := v.Present(att); err == nil {
+		t.Fatal("accepted an attestation with no expiry")
+	}
+}
+
+// Revocation must actually revoke: once an attester is untrusted, an attestation
+// already Presented under it must stop resolving (no Present-time cache bypass).
+func TestResolve_UntrustedAttesterFailsClosed(t *testing.T) {
+	v, _, attPriv, attester := newVerifier(t)
+	if err := v.Present(personhoodPass(attester, "wallet:alice", attPriv)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.Resolve(context.Background(), "wallet:alice", "bank-A"); err != nil {
+		t.Fatalf("resolve before revocation: %v", err)
+	}
+	v.UntrustAttester(attester)
+	if _, err := v.Resolve(context.Background(), "wallet:alice", "bank-A"); err == nil {
+		t.Fatal("resolved after the attester was untrusted — revocation bypass")
+	}
+}

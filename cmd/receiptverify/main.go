@@ -23,7 +23,8 @@ import (
 	"os"
 
 	"github.com/rudizee007/spt-txn-poc/internal/audit"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/internal/receiptlog"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 func main() {
@@ -79,7 +80,7 @@ func main() {
 	entries := log.Entries()
 	idx := -1
 	for i, e := range entries {
-		if e.Type == receipt.EventType && e.Subject == rHash {
+		if e.Type == receiptlog.EventType && e.Subject == rHash {
 			idx = i
 			break
 		}

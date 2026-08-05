@@ -44,7 +44,7 @@ func TestPolkadot_Validate_Rejects(t *testing.T) {
 	bad := map[string]ledger.TxnContext{
 		"too short":      {Beneficiary: "abc", Amount: "1", Currency: "DOT"},
 		"non-base58":     {Beneficiary: "05oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5", Amount: "1", Currency: "DOT"}, // leading 0 not in base58
-		"short hex":      {Beneficiary: dotHex[:len(dotHex)-1], Amount: "1", Currency: "DOT"},                              // 63 hex
+		"short hex":      {Beneficiary: dotHex[:len(dotHex)-1], Amount: "1", Currency: "DOT"},                             // 63 hex
 		"bad originator": {Originator: "nope!", Beneficiary: dotSS58, Amount: "1", Currency: "DOT"},
 		"empty amount":   {Beneficiary: dotSS58, Amount: "", Currency: "DOT"},
 		"negative":       {Beneficiary: dotSS58, Amount: "-5", Currency: "DOT"},

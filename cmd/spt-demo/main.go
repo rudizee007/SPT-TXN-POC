@@ -14,6 +14,7 @@
 //  7. Emit a signed receipt into the transparency log.
 //  8. Revoke the leaf via the status list -> the same request now DENIES.
 //  9. Show intent binding: a hijacked call DENIES even with a valid token.
+//
 // 10. Witnesses co-sign the log's tree head; a rewritten history is refused.
 // 11. Export the receipt to NIST/DORA/SOC2 control evidence.
 // 12. Crypto-agility: the suite id is covered by the signature.
@@ -43,13 +44,14 @@ import (
 	"github.com/rudizee007/spt-txn-poc/internal/dpop"
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
 	"github.com/rudizee007/spt-txn-poc/internal/ledger"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/internal/receiptlog"
 	"github.com/rudizee007/spt-txn-poc/internal/statuslist"
 	"github.com/rudizee007/spt-txn-poc/internal/suite"
 	"github.com/rudizee007/spt-txn-poc/internal/tbac"
 	"github.com/rudizee007/spt-txn-poc/internal/trustregistry"
 	"github.com/rudizee007/spt-txn-poc/internal/txntoken"
 	"github.com/rudizee007/spt-txn-poc/internal/verifier"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 const (
@@ -73,9 +75,9 @@ func main() {
 	// ── keys & registry ────────────────────────────────────────────────
 	ctPub, ctPriv := genKey()
 	ttsPub, ttsPriv := genKey()
-	svidPub, svidPriv := genKey()   // the workload's SPIFFE signer (its trust domain)
+	svidPub, svidPriv := genKey()     // the workload's SPIFFE signer (its trust domain)
 	statusPub, statusPriv := genKey() // status-list signer
-	logPub, logPriv := genKey()      // transparency-log signer
+	logPub, logPriv := genKey()       // transparency-log signer
 
 	reg := mustReg()
 	regRegister(reg, issCT, trustregistry.RoleCTIssuer, ctPub)
@@ -196,7 +198,7 @@ func main() {
 	logPath := filepath.Join(dir, "audit.jsonl")
 	alog, err := audit.Open(logPath)
 	check(err, "open log")
-	em, err := receipt.NewLogEmitter(alog, logPriv)
+	em, err := receiptlog.NewLogEmitter(alog, logPriv)
 	check(err, "emitter")
 	permit := mkReceipt(receipt.DecisionPermit, receipt.ClassOK, "authorize.ok", txn.Token, intentDigest)
 	rhash, err := em.Emit(permit)

@@ -19,9 +19,10 @@
 //     so the build and field mapping can be verified before funding anything.
 //
 // Usage:
-//   export SPT_XRPL_SEED=sEd...                       # testnet payer seed (faucet)
-//   go run . -to rDEST... -amount 1000 -sourcetag 402 -memo <anchorHex> -dry-run
-//   go run . -to rDEST... -amount 1000 -sourcetag 402 -memo <anchorHex>   # submit
+//
+//	export SPT_XRPL_SEED=sEd...                       # testnet payer seed (faucet)
+//	go run . -to rDEST... -amount 1000 -sourcetag 402 -memo <anchorHex> -dry-run
+//	go run . -to rDEST... -amount 1000 -sourcetag 402 -memo <anchorHex>   # submit
 //
 // NOTE (API): written against github.com/Peersyst/xrpl-go v0.1.12 (the official
 // XRPLF Go library). The transaction is built as a FlatTransaction map keyed by
@@ -47,8 +48,8 @@ import (
 )
 
 const (
-	testnetRPC   = "https://s.altnet.rippletest.net:51234/"
-	seedEnv      = "SPT_XRPL_SEED"
+	testnetRPC      = "https://s.altnet.rippletest.net:51234/"
+	seedEnv         = "SPT_XRPL_SEED"
 	defaultMemoType = "spt-txn/humanAnchor"
 )
 

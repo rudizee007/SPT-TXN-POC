@@ -44,7 +44,7 @@ import (
 	"github.com/rudizee007/spt-txn-poc/internal/audit"
 	"github.com/rudizee007/spt-txn-poc/internal/decision"
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/internal/receiptlog"
 	"github.com/rudizee007/spt-txn-poc/internal/txntoken"
 )
 
@@ -133,7 +133,7 @@ func main() {
 		log.Fatalf("audit log: %v", err)
 	}
 	defer auditLog.Close()
-	emitter, err := receipt.NewLogEmitter(auditLog, ed25519.PrivateKey(logKey))
+	emitter, err := receiptlog.NewLogEmitter(auditLog, ed25519.PrivateKey(logKey))
 	if err != nil {
 		log.Fatalf("emitter: %v", err)
 	}

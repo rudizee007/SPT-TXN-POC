@@ -117,7 +117,6 @@ func TestMerkle_DeterministicAndSigned(t *testing.T) {
 	l.Close()
 }
 
-
 // AUD-2: Append must reject Detail maps that carry a known-sensitive (PII) key,
 // forcing callers to log commitments/opaque IDs instead of raw values.
 func TestLog_RejectsPIIDetail(t *testing.T) {

@@ -45,9 +45,9 @@ import (
 )
 
 const (
-	issCAT     = "domain-a.authorg"                 // the CAT issuer (a KYC provider / SAS attester in production)
-	attesterID = "civic-gatekeeper:uniqueness-v1"   // the trusted Civic gatekeeper network / SAS credential
-	subject    = "So1anaWa11et:demo-alice"          // stable subject ref — stays INSIDE the adapter
+	issCAT     = "domain-a.authorg"               // the CAT issuer (a KYC provider / SAS attester in production)
+	attesterID = "civic-gatekeeper:uniqueness-v1" // the trusted Civic gatekeeper network / SAS credential
+	subject    = "So1anaWa11et:demo-alice"        // stable subject ref — stays INSIDE the adapter
 	claim      = "proof-of-personhood"
 )
 

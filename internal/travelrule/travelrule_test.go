@@ -17,8 +17,8 @@ import (
 // share the artifacts (read-only for prove/verify). Issuer and verifier share
 // them, which is correct: proofs only verify against the vk from the same setup.
 var (
-	once                          sync.Once
-	gCommit, gThreshold, gVASP    *zkproof.Artifacts
+	once                       sync.Once
+	gCommit, gThreshold, gVASP *zkproof.Artifacts
 )
 
 func arts(t *testing.T) (*zkproof.Artifacts, *zkproof.Artifacts, *zkproof.Artifacts) {
@@ -170,7 +170,6 @@ func TestTravelRule_WrongRegistryRootRejected(t *testing.T) {
 		t.Error("attestation referencing an untrusted registry root must be rejected")
 	}
 }
-
 
 // TR-1: the amount commitment is bound into the signed SD-JWT. Swapping in a
 // different AmountCommitment after issuance must be caught by Verify's binding

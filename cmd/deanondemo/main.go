@@ -7,13 +7,17 @@
 // It is self-contained (no network) and exercises the exact escrow +
 // deanonymization engine that cmd/deanonsvc serves over a Unix socket:
 //
-//	1. an escrow authority holds a hybrid X25519+ML-KEM-768 key
-//	2. the x402 gate provisions an agent -> a humanAnchor (a ZK commitment)
-//	3. the issuer seals the real identity, keyed by that anchor (no PII on-chain)
-//	4. a LAWFUL request (authorized signer + stated basis) recovers the identity
-//	5. requests without a lawful basis, or from an unknown authority, are REFUSED
+//  1. an escrow authority holds a hybrid X25519+ML-KEM-768 key
 //
-//	go run ./cmd/deanondemo
+//  2. the x402 gate provisions an agent -> a humanAnchor (a ZK commitment)
+//
+//  3. the issuer seals the real identity, keyed by that anchor (no PII on-chain)
+//
+//  4. a LAWFUL request (authorized signer + stated basis) recovers the identity
+//
+//  5. requests without a lawful basis, or from an unknown authority, are REFUSED
+//
+//     go run ./cmd/deanondemo
 package main
 
 import (

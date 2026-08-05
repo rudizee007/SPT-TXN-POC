@@ -30,10 +30,10 @@ import (
 )
 
 const (
-	issOrg = "domain-a.authorg"   // the org that authorized the human
-	issA   = "agent-a.delegator"  // agent A's own delegation-issuer identity
-	issTTS = "domain-a.tts"       // SPT-Txn (token exchange) issuer
-	aud    = "domain-b.execorg"   // the executing domain (verifier)
+	issOrg = "domain-a.authorg"  // the org that authorized the human
+	issA   = "agent-a.delegator" // agent A's own delegation-issuer identity
+	issTTS = "domain-a.tts"      // SPT-Txn (token exchange) issuer
+	aud    = "domain-b.execorg"  // the executing domain (verifier)
 	htm    = "POST"
 	htu    = "https://foss.violetskysecurity.com/b/verify"
 )

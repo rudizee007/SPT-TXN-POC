@@ -47,15 +47,15 @@ func TestStellar_Validate_Rejects(t *testing.T) {
 		longMemo[i] = 'a'
 	}
 	bad := map[string]ledger.TxnContext{
-		"bad address":        {Beneficiary: "alice", Amount: "1", Currency: "XLM"},
-		"wrong length G":     {Beneficiary: "GABC", Amount: "1", Currency: "XLM"},
-		"bad originator":     {Originator: "nope", Beneficiary: stlB, Amount: "1", Currency: "XLM"},
-		"empty amount":       {Beneficiary: stlB, Amount: "", Currency: "XLM"},
-		"negative amount":    {Beneficiary: stlB, Amount: "-5", Currency: "XLM"},
-		"empty currency":     {Beneficiary: stlB, Amount: "1", Currency: ""},
-		"asset code too long":{Beneficiary: stlB, Amount: "1", Currency: "THISISTOOLONG"},
-		"over-long memo":     {Beneficiary: stlB, Amount: "1", Currency: "XLM", Extra: map[string]string{"memo": string(longMemo)}},
-		"bad memo_hash":      {Beneficiary: stlB, Amount: "1", Currency: "XLM", Extra: map[string]string{"memo_hash": "xyz"}},
+		"bad address":         {Beneficiary: "alice", Amount: "1", Currency: "XLM"},
+		"wrong length G":      {Beneficiary: "GABC", Amount: "1", Currency: "XLM"},
+		"bad originator":      {Originator: "nope", Beneficiary: stlB, Amount: "1", Currency: "XLM"},
+		"empty amount":        {Beneficiary: stlB, Amount: "", Currency: "XLM"},
+		"negative amount":     {Beneficiary: stlB, Amount: "-5", Currency: "XLM"},
+		"empty currency":      {Beneficiary: stlB, Amount: "1", Currency: ""},
+		"asset code too long": {Beneficiary: stlB, Amount: "1", Currency: "THISISTOOLONG"},
+		"over-long memo":      {Beneficiary: stlB, Amount: "1", Currency: "XLM", Extra: map[string]string{"memo": string(longMemo)}},
+		"bad memo_hash":       {Beneficiary: stlB, Amount: "1", Currency: "XLM", Extra: map[string]string{"memo_hash": "xyz"}},
 	}
 	for name, tc := range bad {
 		if err := l.Validate(tc); err == nil {

@@ -53,9 +53,9 @@ func TestAptos_Validate_Rejects(t *testing.T) {
 		"empty amount":   {Beneficiary: aptB, Amount: "", Currency: "APT"},
 		"negative":       {Beneficiary: aptB, Amount: "-5", Currency: "APT"},
 		"empty currency": {Beneficiary: aptB, Amount: "1", Currency: ""},
-		"bad currency":   {Beneficiary: aptB, Amount: "1", Currency: "USDC"},                      // not APT, not a type tag, not an addr
-		"bad coin type":  {Beneficiary: aptB, Amount: "1", Currency: "0x1::aptos_coin"},           // only 2 segments
-		"bad type ident": {Beneficiary: aptB, Amount: "1", Currency: "0x1::9bad::AptosCoin"},      // module starts with digit
+		"bad currency":   {Beneficiary: aptB, Amount: "1", Currency: "USDC"},                 // not APT, not a type tag, not an addr
+		"bad coin type":  {Beneficiary: aptB, Amount: "1", Currency: "0x1::aptos_coin"},      // only 2 segments
+		"bad type ident": {Beneficiary: aptB, Amount: "1", Currency: "0x1::9bad::AptosCoin"}, // module starts with digit
 		"bad anchor":     {Beneficiary: aptB, Amount: "1", Currency: "APT", Extra: map[string]string{"anchor_hash": "xyz"}},
 	}
 	for name, tc := range bad {

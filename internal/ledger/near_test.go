@@ -41,16 +41,16 @@ func TestNear_Validate_Rejects(t *testing.T) {
 	l := nearAdapter(t)
 	const acctB = "merchant.testnet"
 	bad := map[string]ledger.TxnContext{
-		"too short":         {Beneficiary: "a", Amount: "1", Currency: "NEAR"},
-		"uppercase":         {Beneficiary: "Merchant.testnet", Amount: "1", Currency: "NEAR"},
-		"leading dot":       {Beneficiary: ".merchant.testnet", Amount: "1", Currency: "NEAR"},
-		"double dot":        {Beneficiary: "a..b", Amount: "1", Currency: "NEAR"},
-		"bad char":          {Beneficiary: "mer chant.testnet", Amount: "1", Currency: "NEAR"},
-		"bad originator":    {Originator: "!!!", Beneficiary: acctB, Amount: "1", Currency: "NEAR"},
-		"empty amount":      {Beneficiary: acctB, Amount: "", Currency: "NEAR"},
-		"negative amount":   {Beneficiary: acctB, Amount: "-5", Currency: "NEAR"},
-		"empty currency":   {Beneficiary: acctB, Amount: "1", Currency: ""},
-		"bad currency":     {Beneficiary: acctB, Amount: "1", Currency: "US DC!"},
+		"too short":       {Beneficiary: "a", Amount: "1", Currency: "NEAR"},
+		"uppercase":       {Beneficiary: "Merchant.testnet", Amount: "1", Currency: "NEAR"},
+		"leading dot":     {Beneficiary: ".merchant.testnet", Amount: "1", Currency: "NEAR"},
+		"double dot":      {Beneficiary: "a..b", Amount: "1", Currency: "NEAR"},
+		"bad char":        {Beneficiary: "mer chant.testnet", Amount: "1", Currency: "NEAR"},
+		"bad originator":  {Originator: "!!!", Beneficiary: acctB, Amount: "1", Currency: "NEAR"},
+		"empty amount":    {Beneficiary: acctB, Amount: "", Currency: "NEAR"},
+		"negative amount": {Beneficiary: acctB, Amount: "-5", Currency: "NEAR"},
+		"empty currency":  {Beneficiary: acctB, Amount: "1", Currency: ""},
+		"bad currency":    {Beneficiary: acctB, Amount: "1", Currency: "US DC!"},
 	}
 	for name, tc := range bad {
 		if err := l.Validate(tc); err == nil {

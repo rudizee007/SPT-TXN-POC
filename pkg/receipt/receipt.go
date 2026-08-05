@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudizee007/spt-txn-poc/internal/jcs"
+	"github.com/rudizee007/spt-txn-poc/pkg/jcs"
 )
 
 // Version is the receipt format version string.
@@ -52,8 +52,8 @@ type Receipt struct {
 	Decision     string `json:"decision"`
 	Class        string `json:"class"`
 	RulePath     string `json:"rule_path"`
-	TokenHash    string `json:"token_hash"`             // base64url SHA-256 of the presented compact token; "" if none
-	PolicyHash   string `json:"policy_hash"`            // base64url SHA-256 of the policy bundle evaluated
+	TokenHash    string `json:"token_hash"`  // base64url SHA-256 of the presented compact token; "" if none
+	PolicyHash   string `json:"policy_hash"` // base64url SHA-256 of the policy bundle evaluated
 	IntentDigest string `json:"intent_digest,omitempty"`
 	Jurisdiction string `json:"jurisdiction,omitempty"`
 	TS           int64  `json:"ts"`

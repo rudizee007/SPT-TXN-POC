@@ -44,16 +44,16 @@ import (
 // production issuers do (keys created once, reused per transaction). Returns the
 // pieces the benchmarks need. Used at setup time (outside the timed loop).
 type fixture struct {
-	orgPub, orgPriv   ed25519.PublicKey
-	orgPrivKey        ed25519.PrivateKey
-	ttsPub            ed25519.PublicKey
-	ttsPriv           ed25519.PrivateKey
-	agentPub          ed25519.PublicKey
-	l                 ledger.Ledger
-	tc                ledger.TxnContext
-	cat               *cattoken.CAT
-	ct                *cttoken.CT
-	txn               *txntoken.TXN
+	orgPub, orgPriv ed25519.PublicKey
+	orgPrivKey      ed25519.PrivateKey
+	ttsPub          ed25519.PublicKey
+	ttsPriv         ed25519.PrivateKey
+	agentPub        ed25519.PublicKey
+	l               ledger.Ledger
+	tc              ledger.TxnContext
+	cat             *cattoken.CAT
+	ct              *cttoken.CT
+	txn             *txntoken.TXN
 }
 
 func newFixture(tb testing.TB) *fixture {

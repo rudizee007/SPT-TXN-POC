@@ -25,15 +25,15 @@ const issCTA = "agent-a.delegator"
 // agenticChain holds a built CAT -> CT_A -> CT_B agentic delegation chain plus
 // the keys needed to mint SPT-Txn tokens at either the A or B hop.
 type agenticChain struct {
-	reg  *trustregistry.MockRegistry
-	eng  *verifier.Engine
-	l    ledger.Ledger
-	ttsPriv ed25519.PrivateKey // SPT-Txn (TTS) issuer key (issTTS)
-	ctaPriv ed25519.PrivateKey // agent A's delegation-issuer private key (issCTA)
-	ctaPub  ed25519.PublicKey
-	cat  *cattoken.CAT
-	ctA  *cttoken.CT // hop 1, held by agent A
-	ctB  *cttoken.CT // hop 2, held by sub-agent B
+	reg        *trustregistry.MockRegistry
+	eng        *verifier.Engine
+	l          ledger.Ledger
+	ttsPriv    ed25519.PrivateKey // SPT-Txn (TTS) issuer key (issTTS)
+	ctaPriv    ed25519.PrivateKey // agent A's delegation-issuer private key (issCTA)
+	ctaPub     ed25519.PublicKey
+	cat        *cattoken.CAT
+	ctA        *cttoken.CT // hop 1, held by agent A
+	ctB        *cttoken.CT // hop 2, held by sub-agent B
 	agentAPub  ed25519.PublicKey
 	agentAPriv ed25519.PrivateKey
 	agentBPub  ed25519.PublicKey
@@ -172,7 +172,7 @@ func TestAgentic_RevokeSubAgentIssuer_Cascades(t *testing.T) {
 	// Agent A's own one-hop action (leaf = CT_A, issued by the still-active org
 	// issuer) remains valid — the cascade is scoped to A's downstream delegations.
 	tcA := paymentTxn("7000") // within CT_A's 8000 ceiling
-	txnA, proofA := a.txnFor(t, a.ctA.Token, /*CT_A issuer=*/keyOf(t, a.reg, issCT), a.agentAPriv, a.agentAPub, tcA)
+	txnA, proofA := a.txnFor(t, a.ctA.Token /*CT_A issuer=*/, keyOf(t, a.reg, issCT), a.agentAPriv, a.agentAPub, tcA)
 	dA := a.eng.Verify(context.Background(), verifier.Input{
 		TxnToken: txnA, DPoPProof: proofA, HTM: htm, HTU: htu,
 		CTChain: []string{a.ctA.Token}, CAT: a.cat.Token,

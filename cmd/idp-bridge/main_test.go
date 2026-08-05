@@ -441,6 +441,7 @@ func TestIDPExchange_DryRun_WouldDeny(t *testing.T) {
 //   - `aud` as an ARRAY and a PingOne-style issuer path (…/as);
 //   - a machine/agent (M2M) token with NO `sub` — the authenticated principal is
 //     the OAuth `client_id`, which the bridge uses as the subject.
+//
 // Hermetic: no live PingOne tenant needed. The live end-to-end runbook is in
 // docs/PINGONE-IDP-INTEGRATION.md.
 func TestIDPExchange_PingOneCompatibility(t *testing.T) {

@@ -47,6 +47,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -63,7 +64,7 @@ const (
 
 const (
 	attestationTag = "spt-txn-civicpass-attestation-v1" // attester signs this domain
-	assertionTag   = "spt-txn-civicpass-assertion-v1"    // adapter signs this domain
+	assertionTag   = "spt-txn-civicpass-assertion-v1"   // adapter signs this domain
 	nullifierTag   = "spt-txn-civicpass-nullifier-v1"
 	anchorTag      = "spt-txn-civicpass-anchor"
 	leeway         = 60 * time.Second
@@ -99,10 +100,10 @@ var (
 // attestation account; here they are supplied directly so the seam is offline-
 // testable. The attester signature covers every field via canonicalBytes.
 type Attestation struct {
-	Scheme    string    `json:"scheme"`     // SchemeCivicPass | SchemeSAS
-	Attester  string    `json:"attester"`   // trusted issuer id (gatekeeper network / SAS credential)
-	Subject   string    `json:"subject"`    // stable subject ref (wallet / pass id); NEVER exposed downstream
-	Claim     string    `json:"claim"`      // e.g. "proof-of-personhood", "uniqueness", "kyc"
+	Scheme    string    `json:"scheme"`   // SchemeCivicPass | SchemeSAS
+	Attester  string    `json:"attester"` // trusted issuer id (gatekeeper network / SAS credential)
+	Subject   string    `json:"subject"`  // stable subject ref (wallet / pass id); NEVER exposed downstream
+	Claim     string    `json:"claim"`    // e.g. "proof-of-personhood", "uniqueness", "kyc"
 	IssuedAt  time.Time `json:"issued_at"`
 	NotBefore time.Time `json:"not_before"` // zero => no lower bound beyond IssuedAt
 	ExpiresAt time.Time `json:"expires_at"`
@@ -124,28 +125,31 @@ type Attestation struct {
 // value cannot be shifted between fields.
 func (a *Attestation) canonicalBytes() []byte {
 	var b []byte
-	put := func(s string) { b = append(b, s...); b = append(b, 0x00) }
-	putBytes := func(p []byte) { b = append(b, p...); b = append(b, 0x00) }
+	// Every variable-length field is length-prefixed (8-byte big-endian length)
+	// so no value — including a NativeNullifier that contains 0x00 — can be
+	// shifted across a field boundary and still reproduce the same preimage.
+	put := func(p []byte) {
+		var n [8]byte
+		binary.BigEndian.PutUint64(n[:], uint64(len(p)))
+		b = append(b, n[:]...)
+		b = append(b, p...)
+	}
+	putS := func(s string) { put([]byte(s)) }
 	putI64 := func(v int64) {
 		var t [8]byte
-		u := v
-		for i := 7; i >= 0; i-- {
-			t[i] = byte(u)
-			u >>= 8
-		}
+		binary.BigEndian.PutUint64(t[:], uint64(v)) // fixed 8-byte width, unambiguous
 		b = append(b, t[:]...)
-		b = append(b, 0x00)
 	}
-	put(attestationTag)
-	put(a.Scheme)
-	put(a.Attester)
-	put(a.Subject)
-	put(a.Claim)
+	putS(attestationTag)
+	putS(a.Scheme)
+	putS(a.Attester)
+	putS(a.Subject)
+	putS(a.Claim)
 	putI64(a.IssuedAt.Unix())
 	putI64(a.NotBefore.Unix())
 	putI64(a.ExpiresAt.Unix())
-	put(a.NullifierContext)
-	putBytes(a.NativeNullifier)
+	putS(a.NullifierContext)
+	put(a.NativeNullifier)
 	return b
 }
 
@@ -205,6 +209,12 @@ func (v *Verifier) TrustAttester(attesterID string, pub ed25519.PublicKey) error
 	return nil
 }
 
+// UntrustAttester removes an attester from the trusted set. Because Resolve
+// re-checks attester membership, any attestation already Presented under this
+// attester immediately stops producing anchors — the operator's revocation lever,
+// with no cache to flush.
+func (v *Verifier) UntrustAttester(attesterID string) { delete(v.attesters, attesterID) }
+
 // AllowClaim adds a claim value the adapter will accept (e.g.
 // "proof-of-personhood", "uniqueness", "kyc"). An attestation whose Claim is not
 // allow-listed is rejected — an operator opts in to exactly the assurance level
@@ -234,6 +244,12 @@ func (v *Verifier) Present(att *Attestation) error {
 	if len(att.NativeNullifier) != 0 && att.NullifierContext == "" {
 		return fmt.Errorf("%w: native nullifier without a context", ErrMalformed)
 	}
+	// A personhood/uniqueness credential MUST expire: a zero ExpiresAt would make
+	// withinValidity skip the upper bound and (with no revocation of cached
+	// entries) resolve forever. Require a bounded expiry up front.
+	if att.ExpiresAt.IsZero() {
+		return fmt.Errorf("%w: attestation must carry a non-zero expiry", ErrMalformed)
+	}
 	if len(att.Signature) != ed25519.SignatureSize ||
 		!ed25519.Verify(pub, att.canonicalBytes(), att.Signature) {
 		return ErrAttestationSig
@@ -260,6 +276,21 @@ func (v *Verifier) Resolve(_ context.Context, subjectRef, contextLabel string) (
 	att, ok := v.verified[subjectRef]
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrNoAttestation, subjectRef)
+	}
+	// Re-run the full trust gate at resolve time, not just the temporal check, so
+	// that un-trusting a (compromised) attester, removing a claim from the
+	// allow-list, or a now-invalid signature immediately stops producing anchors.
+	// Present-time caching must not become a revocation bypass.
+	pub, ok := v.attesters[att.Attester]
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", ErrUntrustedAttester, att.Attester)
+	}
+	if !v.claims[att.Claim] {
+		return nil, fmt.Errorf("%w: %q", ErrClaim, att.Claim)
+	}
+	if len(att.Signature) != ed25519.SignatureSize ||
+		!ed25519.Verify(pub, att.canonicalBytes(), att.Signature) {
+		return nil, ErrAttestationSig
 	}
 	if err := withinValidity(att, time.Now()); err != nil {
 		return nil, err
@@ -325,12 +356,16 @@ func VerifyAssertion(a *identityroot.Assertion, authorityPub ed25519.PublicKey) 
 // without nullKey, so relying parties cannot correlate the same person.
 func (v *Verifier) deriveNullifier(scheme, subject, contextLabel string) [32]byte {
 	mac := hmac.New(sha256.New, v.nullKey)
-	mac.Write([]byte(nullifierTag))
-	mac.Write([]byte(scheme))
-	mac.Write([]byte{0x00})
-	mac.Write([]byte(subject))
-	mac.Write([]byte{0x00})
-	mac.Write([]byte(contextLabel))
+	put := func(p []byte) {
+		var n [8]byte
+		binary.BigEndian.PutUint64(n[:], uint64(len(p)))
+		mac.Write(n[:])
+		mac.Write(p)
+	}
+	put([]byte(nullifierTag))
+	put([]byte(scheme))
+	put([]byte(subject))
+	put([]byte(contextLabel))
 	var out [32]byte
 	copy(out[:], mac.Sum(nil))
 	return out
@@ -348,23 +383,20 @@ func subjectMaterial(scheme, subject string) []byte {
 // the scheme, anchor, context nullifier, context, and issuance time so a proof
 // cannot be lifted onto a different anchor, context, or nullifier.
 func assertionMessage(scheme string, anchor zkdid.Commitment, null [32]byte, contextLabel string, iat time.Time) []byte {
-	b := make([]byte, 0, len(assertionTag)+len(scheme)+32+32+len(contextLabel)+16)
-	b = append(b, assertionTag...)
-	b = append(b, 0x00)
-	b = append(b, scheme...)
-	b = append(b, 0x00)
-	b = append(b, anchor.Bytes()...)
-	b = append(b, 0x00)
-	b = append(b, null[:]...)
-	b = append(b, 0x00)
-	b = append(b, contextLabel...)
-	b = append(b, 0x00)
-	var t [8]byte
-	u := iat.Unix()
-	for i := 7; i >= 0; i-- {
-		t[i] = byte(u)
-		u >>= 8
+	var b []byte
+	put := func(p []byte) {
+		var n [8]byte
+		binary.BigEndian.PutUint64(n[:], uint64(len(p)))
+		b = append(b, n[:]...)
+		b = append(b, p...)
 	}
+	put([]byte(assertionTag))
+	put([]byte(scheme))
+	put(anchor.Bytes())
+	put(null[:])
+	put([]byte(contextLabel))
+	var t [8]byte
+	binary.BigEndian.PutUint64(t[:], uint64(iat.Unix()))
 	b = append(b, t[:]...)
 	return b
 }

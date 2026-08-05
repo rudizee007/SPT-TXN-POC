@@ -46,9 +46,9 @@ type Transfer struct {
 
 // Secrets are the private inputs the originator VASP holds for the proofs.
 type Secrets struct {
-	OriginatorID   []byte // identity material behind the humanAnchor
-	OriginatorRand []byte // anchor randomness
-	AmountBlinding []byte // blinding for the amount commitment
+	OriginatorID      []byte // identity material behind the humanAnchor
+	OriginatorRand    []byte // anchor randomness
+	AmountBlinding    []byte // blinding for the amount commitment
 	BeneficiaryVASPID []byte // the beneficiary VASP's registry leaf identifier
 }
 
@@ -69,12 +69,12 @@ type Attestation struct {
 // Issuer is the originator VASP. It holds the signing key, the per-circuit
 // setup artifacts, and the registered-VASP registry.
 type Issuer struct {
-	Name      string
-	Signer    ed25519.PrivateKey
-	Commit    *zkproof.Artifacts
-	Threshold *zkproof.Artifacts
-	VASP      *zkproof.Artifacts
-	Registry  *zkproof.MerkleTree
+	Name           string
+	Signer         ed25519.PrivateKey
+	Commit         *zkproof.Artifacts
+	Threshold      *zkproof.Artifacts
+	VASP           *zkproof.Artifacts
+	Registry       *zkproof.MerkleTree
 	ThresholdValue uint64
 }
 
@@ -147,11 +147,11 @@ func (iss *Issuer) Build(t Transfer, s Secrets, txnContextHash string, ttl time.
 // per-circuit verifying artifacts, the registered-VASP root, and the policy
 // threshold — all out of band, not from the attestation.
 type Verifier struct {
-	IssuerPub ed25519.PublicKey
-	Commit    *zkproof.Artifacts
-	Threshold *zkproof.Artifacts
-	VASP      *zkproof.Artifacts
-	KnownRoot *big.Int
+	IssuerPub      ed25519.PublicKey
+	Commit         *zkproof.Artifacts
+	Threshold      *zkproof.Artifacts
+	VASP           *zkproof.Artifacts
+	KnownRoot      *big.Int
 	ThresholdValue uint64
 }
 

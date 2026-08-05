@@ -4,8 +4,9 @@
 // identity so the CAT issuer will mint a CAT (security review C3).
 //
 // Usage:
-//   mksubject -sub alice [-iss domain-a.authorg] [-ttl-hours 1] \
-//             [-key /var/spt-txn/a/keys/ct-issuer.sec]
+//
+//	mksubject -sub alice [-iss domain-a.authorg] [-ttl-hours 1] \
+//	          [-key /var/spt-txn/a/keys/ct-issuer.sec]
 //
 // Prints the compact JWT to stdout; pass it as "subject_token" to /cat/issue.
 package main

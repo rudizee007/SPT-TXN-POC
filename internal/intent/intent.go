@@ -16,7 +16,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/rudizee007/spt-txn-poc/internal/jcs"
+	"github.com/rudizee007/spt-txn-poc/pkg/jcs"
 )
 
 // Claim is the token claim carrying the bound intent digest.

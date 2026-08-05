@@ -89,7 +89,7 @@ func TestBase58_Vectors(t *testing.T) {
 		in   []byte
 		want string
 	}{
-		{[]byte{0x00}, "1"},       // single zero byte → one '1'
+		{[]byte{0x00}, "1"},        // single zero byte → one '1'
 		{[]byte{0x00, 0x00}, "11"}, // two zero bytes → "11"
 		{[]byte{0x00, 0x01}, "12"}, // leading zero preserved, then 1 → '2'
 		{[]byte{57}, "z"},          // index 57 in the alphabet is 'z'

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudizee007/spt-txn-poc/internal/cttoken"
 	"github.com/rudizee007/spt-txn-poc/internal/cattoken"
+	"github.com/rudizee007/spt-txn-poc/internal/cttoken"
 	"github.com/rudizee007/spt-txn-poc/internal/dpop"
 	"github.com/rudizee007/spt-txn-poc/internal/ledger"
 	"github.com/rudizee007/spt-txn-poc/internal/tbac"
@@ -78,7 +78,7 @@ func TestIssue_FullChainAndVerify(t *testing.T) {
 	txn, err := txntoken.Issue(txntoken.IssueRequest{
 		Issuer:          "domain-a.tts",
 		Audience:        "domain-b.execorg",
-		ParentCT:       ctToken,
+		ParentCT:        ctToken,
 		ParentIssuerKey: ctIssuerPub,
 		HolderPublicKey: agentPub,
 		Ledger:          l,
@@ -144,7 +144,7 @@ func TestIssue_TxnExceedsCapability(t *testing.T) {
 	_, err := txntoken.Issue(txntoken.IssueRequest{
 		Issuer:          "domain-a.tts",
 		Audience:        "domain-b.execorg",
-		ParentCT:       ctToken,
+		ParentCT:        ctToken,
 		ParentIssuerKey: ctIssuerPub,
 		HolderPublicKey: agentPub,
 		Ledger:          l,
@@ -164,7 +164,7 @@ func TestIssue_WrongHolderRejected(t *testing.T) {
 	_, err := txntoken.Issue(txntoken.IssueRequest{
 		Issuer:          "domain-a.tts",
 		Audience:        "domain-b.execorg",
-		ParentCT:       ctToken,
+		ParentCT:        ctToken,
 		ParentIssuerKey: ctIssuerPub,
 		HolderPublicKey: wrongPub,
 		Ledger:          l,
@@ -183,7 +183,7 @@ func TestIssue_ExpiredTokenFailsVerify(t *testing.T) {
 	txn, err := txntoken.Issue(txntoken.IssueRequest{
 		Issuer:          "domain-a.tts",
 		Audience:        "domain-b.execorg",
-		ParentCT:       ctToken,
+		ParentCT:        ctToken,
 		ParentIssuerKey: ctIssuerPub,
 		HolderPublicKey: agentPub,
 		Ledger:          l,

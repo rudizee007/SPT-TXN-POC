@@ -57,8 +57,8 @@ type Identity struct {
 
 // Transaction is TRISA's generic transaction plus the SPT-Txn proof extension.
 type Transaction struct {
-	Asset     string  `json:"asset"`
-	Amount    string  `json:"amount"`
+	Asset     string   `json:"asset"`
+	Amount    string   `json:"amount"`
 	Extension ProofExt `json:"spt_txn"`
 }
 

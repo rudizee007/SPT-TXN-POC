@@ -15,8 +15,8 @@ import (
 // jwksServer serves a JWKS whose contents can be swapped to simulate key
 // rotation, counting fetches to assert throttling.
 type jwksServer struct {
-	srv    *httptest.Server
-	body   atomic.Value // []byte
+	srv     *httptest.Server
+	body    atomic.Value // []byte
 	fetches int64
 }
 

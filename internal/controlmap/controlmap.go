@@ -12,7 +12,7 @@ package controlmap
 import (
 	"sort"
 
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 // Framework identifies a control catalogue.

@@ -374,14 +374,14 @@ func TestSPIFFETrustDomainParsing(t *testing.T) {
 		}
 	}
 	bad := []string{
-		"spiffe://",                       // empty authority
-		"spiffe:///path",                  // empty host
-		"spiffe://evil@good.example/x",    // userinfo
-		"spiffe://good.example:8443/x",    // port
-		"spiffe://good.example/x?q=1",     // query
-		"spiffe://good.example/x#f",       // fragment
-		"https://good.example/x",          // wrong scheme
-		"not-a-uri",                       // no scheme
+		"spiffe://",                    // empty authority
+		"spiffe:///path",               // empty host
+		"spiffe://evil@good.example/x", // userinfo
+		"spiffe://good.example:8443/x", // port
+		"spiffe://good.example/x?q=1",  // query
+		"spiffe://good.example/x#f",    // fragment
+		"https://good.example/x",       // wrong scheme
+		"not-a-uri",                    // no scheme
 	}
 	for _, in := range bad {
 		if _, err := spiffeTrustDomain(in); err == nil {

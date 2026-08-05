@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPT-Txn — Deployment Topology by Industry · foss.violetskysecurity.com</title>
+<meta name="description" content="Where SPT-Txn components sit in your network across blockchain, VASP, RWA, AI-agent, and identity deployments — trust boundaries, data flows, and who controls each component. Hypothetical reference placements.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://foss.violetskysecurity.com/topology.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Violet Sky Security · SPT-Txn">
+<meta property="og:title" content="SPT-Txn — Deployment Topology by Industry">
+<meta property="og:description" content="Where each SPT-Txn component sits in your network, by industry — trust boundaries, data flows, and who controls what.">
+<meta property="og:url" content="https://foss.violetskysecurity.com/topology.html">
+<meta property="og:image" content="https://foss.violetskysecurity.com/logo_lion.png">
+
+<link rel="stylesheet" href="/fonts.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0A0612; --bg2:#100A1E; --bg3:#16102A;
+    --violet:#7B2FBE; --violet-m:#9D4EDD; --violet-l:#C77DFF; --violet-xl:#E0AAFF;
+    --white:#F8F8FF; --muted:#A09AB8; --border:rgba(155,78,221,0.18); --glow:rgba(123,47,190,0.35);
+  }
+  html { scroll-behavior:smooth; }
+  body { background:var(--bg); color:var(--white); font-family:'Inter',sans-serif; font-size:16px; line-height:1.65; overflow-x:hidden; }
+  a { color:var(--violet-l); }
+
+  nav { position:fixed; top:0; left:0; right:0; z-index:100; display:flex; align-items:center; justify-content:space-between;
+        padding:1rem 2.5rem; background:rgba(10,6,18,0.85); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); }
+  .nav-brand { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:1rem; color:var(--violet-l); text-decoration:none; letter-spacing:0.04em; }
+  .nav-brand span { color:var(--white); }
+  .nav-links { display:flex; gap:2rem; list-style:none; }
+  .nav-links a { font-family:'Space Grotesk',sans-serif; font-size:0.82rem; font-weight:500; color:var(--muted); text-decoration:none; letter-spacing:0.06em; text-transform:uppercase; transition:color 0.2s; }
+  .nav-links a:hover, .nav-links a.on { color:var(--violet-l); }
+
+  header { position:relative; overflow:hidden; padding:9rem 2rem 2rem; text-align:center; }
+  .glow { position:absolute; width:640px; height:640px; border-radius:50%; background:radial-gradient(circle, rgba(123,47,190,0.16) 0%, transparent 70%); top:-80px; left:50%; transform:translateX(-50%); pointer-events:none; }
+  .eyebrow { font-family:'Space Mono',monospace; font-size:0.72rem; letter-spacing:0.18em; color:var(--violet-m); text-transform:uppercase; margin-bottom:1.1rem; position:relative; }
+  h1 { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:clamp(2rem,5vw,3.1rem); line-height:1.14; letter-spacing:-0.02em; max-width:820px; margin:0 auto; position:relative; }
+  h1 .accent { color:var(--violet-l); }
+  .lead { font-family:'Space Grotesk',sans-serif; font-size:clamp(1.02rem,2.2vw,1.3rem); color:var(--violet-xl); max-width:720px; margin:1.4rem auto 0; position:relative; }
+  .desc { font-size:1rem; color:var(--muted); max-width:760px; margin:1.2rem auto 0; position:relative; }
+
+  .wrap { max-width:960px; margin:0 auto; padding:0 2rem 3rem; }
+
+  /* widget */
+  .topo { margin-top:1.5rem; color:var(--white); }
+  .tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .tabs button { font-family:'Space Grotesk',sans-serif; font-size:13px; font-weight:500; color:var(--white); background:rgba(157,78,221,.24); border:1.5px solid var(--violet-m); border-radius:999px; padding:7px 16px; cursor:pointer; transition:.15s; }
+  .tabs button:hover { background:rgba(157,78,221,.42); border-color:var(--violet-l); }
+  .tabs button.on { background:var(--violet-m); border-color:var(--violet-xl); color:#fff; box-shadow:0 0 0 3px rgba(157,78,221,.34); }
+  .stage { background:var(--bg3); border:1px solid var(--border); border-radius:14px; padding:10px; }
+  .stage svg { display:block; width:100%; height:auto; }
+  .legend { display:flex; flex-wrap:wrap; gap:10px 16px; margin:14px 2px 0; font-size:11.5px; color:var(--muted); }
+  .lg { display:flex; align-items:center; gap:6px; }
+  .sw { width:14px; height:12px; border-radius:3px; display:inline-block; flex:0 0 auto; background:var(--bg3); }
+  .sw.vs { border:2px solid #9D4EDD; background:rgba(157,78,221,.14); }
+  .sw.cl { border:1.6px solid #3BC9DB; }
+  .sw.pl { border:1.6px dashed #E9C46A; }
+  .sw.pk { border:1.6px solid #F58BC2; background:rgba(245,139,194,.08); }
+  .sw.ex { border:1.6px solid #8A8FA8; }
+  .detail { margin-top:14px; font-size:13px; color:var(--violet-xl); background:var(--bg2); border-left:3px solid var(--violet-m); border-radius:0 8px 8px 0; padding:12px 15px; line-height:1.55; min-height:20px; }
+  .detail b { color:var(--white); }
+  .cap { margin-top:12px; font-size:12.5px; color:var(--muted); }
+  .nd { cursor:pointer; }
+  .nd:hover rect.card { filter:brightness(1.35); }
+
+  footer { border-top:1px solid var(--border); margin-top:2rem; padding:2rem; text-align:center; color:var(--muted); font-size:0.85rem; }
+  @media (max-width:640px){ nav{padding:1rem 1.2rem;} .nav-links{gap:1.1rem;} header{padding-top:7.5rem;} }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="/">SPT<span>-Txn</span></a>
+  <ul class="nav-links">
+    <li><a href="/">Home</a></li>
+    <li><a href="/#architecture">Architecture</a></li>
+    <li><a href="/topology.html" class="on">Topology</a></li>
+    <li><a href="/#publications">Research</a></li>
+    <li><a href="/demo.html">Demo</a></li>
+  </ul>
+</nav>
+
+<header>
+  <div class="glow"></div>
+  <div class="eyebrow">Reference architecture</div>
+  <h1>Deployment topology, <span class="accent">by industry</span></h1>
+  <p class="lead">Where each SPT-Txn component sits in your network — and which side of the trust boundary.</p>
+  <p class="desc">
+    The companion to “Components and control”: this shows the hypothetical placement of components
+    across five deployment shapes. Everything inside the dashed boundary runs in your own
+    infrastructure — nothing calls home. Click any component to see its role and who controls it.
+  </p>
+</header>
+
+<div class="wrap">
+  <div class="topo" id="topo">
+    <div class="tabs" id="tabs"></div>
+    <div class="stage"><svg id="svg" viewBox="0 0 880 560" role="img" aria-label="Deployment topology diagram"></svg></div>
+    <div class="legend">
+      <span class="lg"><i class="sw vs"></i>SPT-Txn — open-source, you run it</span>
+      <span class="lg"><i class="sw cl"></i>Client-operated</span>
+      <span class="lg"><i class="sw pl"></i>Pluggable — your engine / IdP</span>
+      <span class="lg"><i class="sw pk"></i>SPT-Txn licensed pack — optional</span>
+      <span class="lg"><i class="sw ex"></i>External — you don't control it</span>
+    </div>
+    <div class="detail" id="detail">Click any component to see its role and who controls it.</div>
+    <p class="cap">Hypothetical reference placements to illustrate the architecture — not a description of any specific customer deployment. Verification is offline; the on-chain anchor is a periodic write, never in the hot path; no PII touches the ledger.</p>
+  </div>
+</div>
+
+<footer>
+  Violet Sky Security SEZC · SPT-Txn — Sovereign Policy Token Transactions ·
+  <a href="/">foss.violetskysecurity.com</a>
+</footer>
+
+<script>
+(function(){
+  var VIEWS=[['blockchain','Blockchain · L1/L2'],['vasp','VASP / CASP'],['rwa','Mint / RWA'],['ai','AI Agents'],['idp','Identity · IdP']];
+
+  // node: id,x,y,w,h,name,sub,own,detail; hub:true marks the flow origin
+  var D={
+    blockchain:{ nodes:[
+      {id:'cat',x:44,y:104,w:414,h:46,name:'CAT issuer',sub:'verify-once compliance credential',own:'cl',detail:'Your KYC / compliance provider issues a reusable, verify-once credential. Client-operated — you hold the keys.'},
+      {id:'pol',x:44,y:166,w:414,h:46,name:'Your policy engine',sub:'OPA · custom — bring your own',own:'pl',detail:'The decision point. Bring your own policy engine; SPT-Txn calls it over a standard OPA-compatible decision API, or runs your rules as an imported bundle.'},
+      {id:'ver',x:44,y:228,w:414,h:46,name:'SPT-Txn 8-step verifier',sub:'offline · intent-bound',own:'vs',hub:true,detail:'Open-source verifier. Validates the full token chain offline in sub-millisecond time and binds the authorization to one transaction. Nothing calls home.'},
+      {id:'adp',x:44,y:290,w:414,h:46,name:'Ledger adapter',sub:'XRPL · Solana · EVM · …',own:'cl',detail:'You run the adapter for your chain(s). Client-operated and swappable.'},
+      {id:'log',x:44,y:352,w:414,h:46,name:'Receipt + Merkle log',sub:'tamper-evident audit',own:'vs',detail:'Every decision emits a signed receipt to an append-only Merkle log you host — evidence as a byproduct of enforcement.'}
+    ], ext:[
+      {id:'led',x:548,y:150,w:300,h:58,name:'Ledger — L1 / L2',sub:'settlement gate · x402 · escrow',own:'ex',detail:'Settlement happens on-chain through the x402 / escrow gate. No PII ever touches the ledger.'},
+      {id:'anc',x:548,y:340,w:300,h:58,name:'On-chain anchor',sub:'Merkle root · out-of-band',own:'ex',detail:'The receipt-log Merkle root is periodically anchored on-chain — a background write, never in the hot path.'}
+    ], flows:[{to:'led',label:'settle · no PII'},{to:'anc',label:'anchor root'}] },
+
+    vasp:{ nodes:[
+      {id:'kyc',x:44,y:104,w:414,h:46,name:'KYC / Compliance provider',sub:'issues the compliance credential',own:'cl',detail:'Your KYC provider (e.g. Sumsub) issues the verify-once credential. You operate the registry and keys.'},
+      {id:'pol',x:44,y:166,w:414,h:46,name:'Policy decision point — your engine',sub:'Notabene · Elliptic · OPA',own:'pl',detail:'Keep your existing Travel-Rule / screening engine. SPT-Txn calls it over a decision API (adapter for Notabene / Elliptic, your OPA, or an imported rule bundle) — or license a pack only if you have none.'},
+      {id:'pep',x:44,y:228,w:414,h:46,name:'SPT-Txn PEP + 8-step verifier',sub:'binds intent · offline',own:'vs',hub:true,detail:'The enforcement point. Intercepts the transaction, queries your policy engine, binds the authorization to one payment, and records the receipt. Open-source, runs in your infra.'},
+      {id:'key',x:44,y:290,w:414,h:46,name:'Key backend',sub:'HSM · KMS · TPM',own:'cl',detail:'Issuer keys held non-extractable in your HSM / KMS / TPM. Client-operated.'},
+      {id:'log',x:44,y:352,w:414,h:46,name:'Receipt + Merkle log',sub:'tamper-evident audit',own:'vs',detail:'Signed, tamper-evident receipts to an append-only Merkle log you host.'},
+      {id:'esc',x:44,y:414,w:414,h:46,name:'humanAnchor escrow',sub:'lawful recovery · t-of-n · off-path',own:'vs',detail:'Threshold-shared human-anchor escrow. The human identity is never in the authorization path — available only to lawful process with quorum consent.'}
+    ], ext:[
+      {id:'ben',x:548,y:150,w:300,h:58,name:'Beneficiary VASP',sub:'TRP / TRISA · counterparty',own:'ex',detail:'The counterparty VASP. Receives a zero-knowledge Travel-Rule payload — the required fields only, no exact amount, nothing on-ledger.'},
+      {id:'led',x:548,y:340,w:300,h:58,name:'Ledger — L1 / L2',sub:'x402 · escrow · anchor',own:'ex',detail:'On-chain settlement and the periodic Merkle anchor. No PII on the ledger.'}
+    ], flows:[{to:'ben',label:'ZK payload · no PII'},{to:'led',label:'settle + anchor'}] },
+
+    rwa:{ nodes:[
+      {id:'iss',x:44,y:120,w:414,h:46,name:'RWA / claim issuer',sub:'trusted issuer',own:'cl',detail:'You (or your trusted issuer) mint the compliance-gated token and hold the keys.'},
+      {id:'pol',x:44,y:190,w:414,h:46,name:'Your policy engine',sub:'OPA · custom — bring your own',own:'pl',detail:'Eligibility policy is pluggable — your own engine or a licensed SPT-Txn pack, over a standard decision API. Migrate at your pace.'},
+      {id:'elig',x:44,y:260,w:414,h:46,name:'On-chain ZK eligibility',sub:'proven · no PII',own:'vs',hub:true,detail:'Eligibility is proven in zero-knowledge on-chain — accreditation, jurisdiction, sanctions status — without ever exposing the underlying PII.'},
+      {id:'perm',x:44,y:330,w:414,h:46,name:'Permissioned transfer',sub:'holder-bound · replay-safe',own:'vs',detail:'Transfers are holder-bound and replay-safe. No outside party approves a transfer.'},
+      {id:'log',x:44,y:400,w:414,h:46,name:'Receipt + Merkle log',sub:'tamper-evident audit',own:'vs',detail:'Signed receipts to an append-only Merkle log you host.'}
+    ], ext:[
+      {id:'tok',x:548,y:255,w:300,h:60,name:'Compliance-gated token',sub:'ERC-3643-aligned · on ledger',own:'ex',detail:'The gated token on the ledger (ERC-3643-aligned). Transfer only permits when the ZK eligibility proof verifies — enforced on-chain, deployed by you.'}
+    ], flows:[{to:'tok',label:'permit transfer'}] },
+
+    ai:{ nodes:[
+      {id:'aid',x:44,y:104,w:414,h:46,name:'Agent identity',sub:'who acts',own:'cl',detail:'Your platform owns agent identity — who the agent is and how it was attested.'},
+      {id:'pol',x:44,y:166,w:414,h:46,name:'Your policy engine',sub:'OPA · custom — bring your own',own:'pl',detail:'Bring your own authorization policy; SPT-Txn calls it as the decision point.'},
+      {id:'int',x:44,y:228,w:414,h:46,name:'Intent binding',sub:'one declared action',own:'vs',detail:'Binds the authorization to one declared action, so a token stolen via prompt injection is useless for anything else.'},
+      {id:'pep',x:44,y:290,w:414,h:46,name:'MCP PEP',sub:'policy-enforcement point',own:'vs',hub:true,detail:'The Model Context Protocol enforcement point. Every agent tool-call is checked against the transaction-scoped token before it runs. Open-source, in your stack.'},
+      {id:'del',x:44,y:352,w:414,h:46,name:'Delegation attenuation',sub:'narrow-only · bounded depth',own:'vs',detail:'Agent-to-agent delegation can only narrow authority, verifiable offline, with bounded depth — a sub-agent can never exceed its parent’s grant.'},
+      {id:'log',x:44,y:414,w:414,h:46,name:'Receipt + Merkle log',sub:'tamper-evident audit',own:'vs',detail:'Signed receipts to an append-only Merkle log — full decision-chain audit for agent actions.'}
+    ], ext:[
+      {id:'tool',x:548,y:150,w:300,h:58,name:'Tool / resource / MCP server',sub:'the action target',own:'ex',detail:'The resource the agent acts on. Reached only after the PEP authorizes the specific action.'},
+      {id:'wrk',x:548,y:340,w:300,h:58,name:'Worker / sub-agent (A2A)',sub:'delegated, attenuated',own:'ex',detail:'A delegated worker agent. It receives a strictly narrower, human-anchored token — never more authority than the orchestrator was granted.'}
+    ], flows:[{to:'tool',label:'enforce action'},{to:'wrk',label:'attenuated + human-anchor'}] },
+
+    idp:{ nodes:[
+      {id:'idp',x:44,y:104,w:414,h:46,name:'Your IdP',sub:'Keycloak · Auth0 · PingOne',own:'pl',detail:'Bring your own identity provider — no rip-and-replace. You keep full control of your identity stack.'},
+      {id:'tox',x:44,y:166,w:414,h:46,name:'OAuth Token Exchange',sub:'RFC 8693',own:'vs',detail:'Standard RFC 8693 token exchange turns an IdP token into a transaction-scoped capability.'},
+      {id:'br',x:44,y:228,w:414,h:46,name:'IdP → CAT bridge',sub:'identity → capability',own:'vs',hub:true,detail:'The open-source bridge that converts identity into a human-anchored capability the enforcement point can bind. Runs in your stack, nothing calls home.'},
+      {id:'wl',x:44,y:290,w:414,h:46,name:'Workload bridge',sub:'SPIFFE / SVID',own:'vs',detail:'Non-human workloads attest via SPIFFE / SVID and receive scoped capabilities the same way.'},
+      {id:'nhi',x:44,y:352,w:414,h:46,name:'NHI attested issuance',sub:'cloud workload identity',own:'vs',detail:'Attested issuance for non-human identities — cloud workload identity federated into scoped tokens.'}
+    ], ext:[
+      {id:'res',x:548,y:225,w:300,h:60,name:'Downstream resource / API',sub:'consumes the capability',own:'ex',detail:'The protected resource. It accepts the human-anchored, transaction-scoped capability instead of a broad session token.'}
+    ], flows:[{to:'res',label:'human-anchored capability'}] }
+  };
+
+  var STY={
+    vs:{stroke:'#9D4EDD',sw:2.2,dash:'',fill:'rgba(157,78,221,.12)'},
+    cl:{stroke:'#3BC9DB',sw:1.6,dash:'',fill:'#1E1140'},
+    pl:{stroke:'#E9C46A',sw:1.6,dash:'5 4',fill:'none'},
+    pk:{stroke:'#F58BC2',sw:1.6,dash:'',fill:'rgba(245,139,194,.08)'},
+    ex:{stroke:'#8A8FA8',sw:1.6,dash:'',fill:'#16102A'}
+  };
+
+  var svg=document.getElementById('svg'), tabsEl=document.getElementById('tabs'),
+      detEl=document.getElementById('detail'), view='blockchain', map={};
+
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+  function nodeSVG(n){
+    var s=STY[n.own];
+    var r='<g class="nd" data-id="'+n.id+'">';
+    r+='<rect class="card" x="'+n.x+'" y="'+n.y+'" width="'+n.w+'" height="'+n.h+'" rx="9" fill="'+s.fill+'" stroke="'+s.stroke+'" stroke-width="'+s.sw+'"'+(s.dash?' stroke-dasharray="'+s.dash+'"':'')+'/>';
+    if(n.own==='vs') r+='<rect x="'+n.x+'" y="'+n.y+'" width="5" height="'+n.h+'" rx="2" fill="#9D4EDD"/>';
+    r+='<text x="'+(n.x+16)+'" y="'+(n.y+21)+'" font-size="13" font-weight="600" fill="#F8F8FF" font-family="Inter,sans-serif">'+esc(n.name)+'</text>';
+    r+='<text x="'+(n.x+16)+'" y="'+(n.y+37)+'" font-size="10.5" fill="#A09AB8" font-family="Space Mono,monospace">'+esc(n.sub)+'</text>';
+    r+='</g>';
+    return r;
+  }
+
+  function render(){
+    var v=D[view], hub=v.nodes.find(function(n){return n.hub;}), s='';
+    map={};
+    v.nodes.concat(v.ext).forEach(function(n){map[n.id]=n;});
+    // trust boundary
+    s+='<rect x="22" y="72" width="476" height="462" rx="14" fill="none" stroke="rgba(155,78,221,0.5)" stroke-width="1.5" stroke-dasharray="6 5"/>';
+    s+='<text x="38" y="92" font-size="10.5" letter-spacing="1.1" fill="#A09AB8" font-family="Space Mono,monospace">YOUR INFRASTRUCTURE — you deploy · nothing calls home</text>';
+    s+='<text x="548" y="118" font-size="10.5" letter-spacing="1.1" fill="#A09AB8" font-family="Space Mono,monospace">EXTERNAL</text>';
+    // flows (under nodes)
+    var hx=hub.x+hub.w, hy=hub.y+hub.h/2;
+    v.flows.forEach(function(f){
+      var e=map[f.to], ex=e.x, ey=e.y+e.h/2;
+      s+='<path d="M'+hx+' '+hy+' C '+(hx+46)+' '+hy+', '+(ex-46)+' '+ey+', '+ex+' '+ey+'" fill="none" stroke="#9D4EDD" stroke-width="1.5" marker-end="url(#ah)"/>';
+      var mx=hx+(ex-hx)*0.40, my=(hy+ey)/2-6;
+      s+='<text x="'+mx+'" y="'+my+'" font-size="9.5" fill="#C77DFF" font-family="Space Mono,monospace">'+esc(f.label)+'</text>';
+    });
+    // inbound
+    var hb=hub.y+hub.h;
+    s+='<path d="M120 512 L120 '+(hb+2)+'" stroke="#8A8FA8" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#ah2)"/>';
+    s+='<text x="132" y="522" font-size="9.5" fill="#A09AB8" font-family="Space Mono,monospace">transaction enters → intercepted here</text>';
+    // nodes
+    v.nodes.forEach(function(n){s+=nodeSVG(n);});
+    v.ext.forEach(function(n){s+=nodeSVG(n);});
+    // defs
+    s='<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#9D4EDD"/></marker>'
+      +'<marker id="ah2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#8A8FA8"/></marker></defs>'+s;
+    svg.innerHTML=s;
+    detEl.innerHTML='Click any component to see its role and who controls it.';
+  }
+
+  svg.addEventListener('click',function(e){
+    var g=e.target.closest('.nd'); if(!g) return;
+    var n=map[g.getAttribute('data-id')]; if(!n) return;
+    detEl.innerHTML='<b>'+esc(n.name)+'</b> — '+esc(n.detail);
+  });
+
+  VIEWS.forEach(function(v){
+    var b=document.createElement('button'); b.textContent=v[1]; b.dataset.v=v[0];
+    b.onclick=function(){ view=v[0]; sync(); render(); };
+    tabsEl.appendChild(b);
+  });
+  function sync(){ Array.prototype.forEach.call(tabsEl.children,function(b){b.classList.toggle('on',b.dataset.v===view);}); }
+  sync(); render();
+})();
+</script>
+</body>
+</html>

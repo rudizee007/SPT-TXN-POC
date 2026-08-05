@@ -1,11 +1,11 @@
 // Command agent is the autonomous payer in the agentic-x402 demo (P1). It runs
 // the full loop:
 //
-//	1. GET the merchant's metered resource  -> 402 Payment Required (+ requirements)
-//	2. ask the gate (gatesvc) to AUTHORIZE that payment
-//	3a. gate DENY  -> the agent refuses; nothing is signed (this is a valid, safe outcome)
-//	3b. gate ALLOW -> settle on XRPL via clients/xrpl-pay (P0), stamping the humanAnchor
-//	4. retry GET resource?proof=<txhash>  -> 200 + content
+//  1. GET the merchant's metered resource  -> 402 Payment Required (+ requirements)
+//  2. ask the gate (gatesvc) to AUTHORIZE that payment
+//     3a. gate DENY  -> the agent refuses; nothing is signed (this is a valid, safe outcome)
+//     3b. gate ALLOW -> settle on XRPL via clients/xrpl-pay (P0), stamping the humanAnchor
+//  4. retry GET resource?proof=<txhash>  -> 200 + content
 //
 // The agent holds NO authority of its own: it can only spend what the gate
 // authorizes, and the gate enforces the human-delegated scope cryptographically.

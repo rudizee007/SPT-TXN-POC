@@ -1,14 +1,15 @@
 // cmd/tr-svc — live SPT-Txn Travel Rule service (privacy-preserving FATF Rec 16).
 //
 // Demonstrates the full flow end to end:
-//   POST /travel/attest  — originator VASP builds a Travel Rule attestation for
-//                          a transfer (IVMS101 as a selectively-disclosable
-//                          SD-JWT + ZK proofs: identity commitment, amount >=
-//                          threshold, beneficiary-VASP registration), bound to
-//                          the SPT-Txn payment.
-//   POST /travel/verify  — beneficiary VASP verifies the attestation and returns
-//                          only the IVMS101 fields it is entitled to see.
-//   GET  /travel/health
+//
+//	POST /travel/attest  — originator VASP builds a Travel Rule attestation for
+//	                       a transfer (IVMS101 as a selectively-disclosable
+//	                       SD-JWT + ZK proofs: identity commitment, amount >=
+//	                       threshold, beneficiary-VASP registration), bound to
+//	                       the SPT-Txn payment.
+//	POST /travel/verify  — beneficiary VASP verifies the attestation and returns
+//	                       only the IVMS101 fields it is entitled to see.
+//	GET  /travel/health
 //
 // Loads the persisted ZK keys (cmd/zk-setup) so the trusted setup is shared, not
 // redone. For the POC this single process plays both roles; the SD-JWT signer is

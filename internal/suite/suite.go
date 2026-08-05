@@ -29,8 +29,8 @@ import (
 
 // Registered suite identifiers.
 const (
-	SuiteEdDSA  = "EdDSA"                   // Ed25519, current default
-	SuiteHybrid = "HYBRID-Ed25519-MLDSA65"  // Ed25519 AND ML-DSA-65 (FIPS 204)
+	SuiteEdDSA  = "EdDSA"                  // Ed25519, current default
+	SuiteHybrid = "HYBRID-Ed25519-MLDSA65" // Ed25519 AND ML-DSA-65 (FIPS 204)
 )
 
 // signingTag domain-separates envelope signatures system-wide.

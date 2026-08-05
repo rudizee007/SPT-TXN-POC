@@ -43,17 +43,17 @@ func TestAlgorand_Validate_AcceptsValidTransfer(t *testing.T) {
 func TestAlgorand_Validate_Rejects(t *testing.T) {
 	l := algorandAdapter(t)
 	bad := map[string]ledger.TxnContext{
-		"too short":       {Beneficiary: algoA[:57], Amount: "1", Currency: "ALGO"},
-		"too long":        {Beneficiary: algoA + "A", Amount: "1", Currency: "ALGO"},
-		"lowercase char":  {Beneficiary: algoA[:57] + "a", Amount: "1", Currency: "ALGO"}, // 58 len, 'a' not base32
+		"too short":        {Beneficiary: algoA[:57], Amount: "1", Currency: "ALGO"},
+		"too long":         {Beneficiary: algoA + "A", Amount: "1", Currency: "ALGO"},
+		"lowercase char":   {Beneficiary: algoA[:57] + "a", Amount: "1", Currency: "ALGO"}, // 58 len, 'a' not base32
 		"digit out of set": {Beneficiary: algoA[:57] + "0", Amount: "1", Currency: "ALGO"}, // '0' not in [2-7]
-		"bad originator":  {Originator: "nope", Beneficiary: algoB, Amount: "1", Currency: "ALGO"},
-		"empty amount":    {Beneficiary: algoB, Amount: "", Currency: "ALGO"},
-		"negative":        {Beneficiary: algoB, Amount: "-5", Currency: "ALGO"},
-		"empty currency":  {Beneficiary: algoB, Amount: "1", Currency: ""},
-		"bad currency":    {Beneficiary: algoB, Amount: "1", Currency: "USDCx"}, // not ALGO, not numeric
-		"asa zero":        {Beneficiary: algoB, Amount: "1", Currency: "0"},
-		"bad anchor":      {Beneficiary: algoB, Amount: "1", Currency: "ALGO", Extra: map[string]string{"anchor_hash": "xyz"}},
+		"bad originator":   {Originator: "nope", Beneficiary: algoB, Amount: "1", Currency: "ALGO"},
+		"empty amount":     {Beneficiary: algoB, Amount: "", Currency: "ALGO"},
+		"negative":         {Beneficiary: algoB, Amount: "-5", Currency: "ALGO"},
+		"empty currency":   {Beneficiary: algoB, Amount: "1", Currency: ""},
+		"bad currency":     {Beneficiary: algoB, Amount: "1", Currency: "USDCx"}, // not ALGO, not numeric
+		"asa zero":         {Beneficiary: algoB, Amount: "1", Currency: "0"},
+		"bad anchor":       {Beneficiary: algoB, Amount: "1", Currency: "ALGO", Extra: map[string]string{"anchor_hash": "xyz"}},
 	}
 	for name, tc := range bad {
 		if err := l.Validate(tc); err == nil {

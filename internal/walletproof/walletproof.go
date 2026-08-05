@@ -32,11 +32,11 @@ import (
 )
 
 var (
-	ErrExpired       = errors.New("walletproof: challenge expired or not yet valid")
-	ErrBadSignature  = errors.New("walletproof: signature does not verify under the public key")
-	ErrAddrMismatch  = errors.New("walletproof: public key does not derive the claimed address")
-	ErrBadPublicKey  = errors.New("walletproof: public key is not a 32-byte Ed25519 key")
-	ErrEmptyField    = errors.New("walletproof: chain, address and humanAnchor are required")
+	ErrExpired      = errors.New("walletproof: challenge expired or not yet valid")
+	ErrBadSignature = errors.New("walletproof: signature does not verify under the public key")
+	ErrAddrMismatch = errors.New("walletproof: public key does not derive the claimed address")
+	ErrBadPublicKey = errors.New("walletproof: public key is not a 32-byte Ed25519 key")
+	ErrEmptyField   = errors.New("walletproof: chain, address and humanAnchor are required")
 )
 
 // Challenge is the message the customer must sign to prove control. Its
@@ -111,11 +111,11 @@ type ControlProof struct {
 // be folded into the Travel Rule attestation as evidence of self-hosted control.
 func (p ControlProof) Claims() map[string]any {
 	return map[string]any{
-		"selfhosted_control":         true,
-		"selfhosted_chain":           p.Chain,
-		"selfhosted_address":         p.Address,
-		"selfhosted_verified_at":     p.VerifiedAt,
-		"selfhosted_bound_anchor":    p.HumanAnchor,
+		"selfhosted_control":      true,
+		"selfhosted_chain":        p.Chain,
+		"selfhosted_address":      p.Address,
+		"selfhosted_verified_at":  p.VerifiedAt,
+		"selfhosted_bound_anchor": p.HumanAnchor,
 	}
 }
 

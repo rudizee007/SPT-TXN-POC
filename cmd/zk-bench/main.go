@@ -4,15 +4,16 @@
 // representative circuit (N sequential 2-input field hashes) across the two
 // decision axes:
 //
-//   hash:  MiMC      vs  Poseidon2
-//   curve: BN254     vs  BLS12-381
+//	hash:  MiMC      vs  Poseidon2
+//	curve: BN254     vs  BLS12-381
 //
 // It deliberately uses a throwaway circuit (not the production circuits) so the
 // benchmark cannot affect deployed code. The output is the empirical basis for
 // the -02 "we measured and chose" table and the CBOM "measured" column.
 //
 // Run:  go run ./cmd/zk-bench            (default 200 hashes)
-//       go run ./cmd/zk-bench -iters 500
+//
+//	go run ./cmd/zk-bench -iters 500
 package main
 
 import (

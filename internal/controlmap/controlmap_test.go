@@ -4,7 +4,7 @@ import (
 	"crypto/ed25519"
 	"testing"
 
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 func signedReceipt(t *testing.T, decision, class, rule string, intent string) receipt.Receipt {

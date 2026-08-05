@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
 	"github.com/rudizee007/spt-txn-poc/internal/statuslist"
 	"github.com/rudizee007/spt-txn-poc/internal/suite"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 func vectorPath(name string) string {

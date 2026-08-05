@@ -1,4 +1,4 @@
-package receipt
+package receiptlog
 
 import (
 	"crypto/ed25519"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rudizee007/spt-txn-poc/internal/audit"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 // TestEmitAndProveInclusion is the end-to-end P2 path: decisions emit signed
@@ -30,11 +31,11 @@ func TestEmitAndProveInclusion(t *testing.T) {
 
 	var hashes []string
 	for i := 0; i < 7; i++ {
-		dec, class, rule := DecisionPermit, ClassOK, "authorize.ok"
+		dec, class, rule := receipt.DecisionPermit, receipt.ClassOK, "authorize.ok"
 		if i%3 == 0 {
-			dec, class, rule = DecisionDeny, ClassViolation, "intent.digest-mismatch"
+			dec, class, rule = receipt.DecisionDeny, receipt.ClassViolation, "intent.digest-mismatch"
 		}
-		r, err := New("pep.test", dec, class, rule, TokenHash("tok"), TokenHash("policy"))
+		r, err := receipt.New("pep.test", dec, class, rule, receipt.TokenHash("tok"), receipt.TokenHash("policy"))
 		if err != nil {
 			t.Fatal(err)
 		}

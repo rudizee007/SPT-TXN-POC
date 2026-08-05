@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
-	"github.com/rudizee007/spt-txn-poc/internal/receipt"
+	"github.com/rudizee007/spt-txn-poc/pkg/receipt"
 )
 
 // Decision is the opaque result of Engine.Decide. The zero value denies.

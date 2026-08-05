@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPT-Txn — Components &amp; Control, by industry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{background:#0A0612;margin:0;padding:24px 12px;}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     SPT-Txn component & control map — self-contained widget.
+     Drop the #sptx block, its <style>, and its <script> into the
+     Architecture section of index.html. Requires the Space Grotesk
+     + Inter fonts (already loaded on foss.violetskysecurity.com).
+     ============================================================ -->
+
+<div class="sptx" id="sptx">
+  <div class="hd">
+    <h2>SPT-Txn — Components &amp; Control, by industry</h2>
+    <p class="sub">SPT-Txn is an open standard you install and run — <b>nothing calls home</b>. Pick an industry, reveal from simplest to full stack; the ribbon shows the <b>data flow</b>, every box is coloured by <b>who controls it</b>.</p>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="levels" id="levels"></div>
+
+  <div class="flow" id="flow"></div>
+
+  <div class="legend">
+    <span class="lg"><i class="sw vs"></i>SPT-Txn open-source (Apache-2.0) — you install &amp; run it; no call-home</span>
+    <span class="lg"><i class="sw cl"></i>Client-operated — you deploy &amp; control</span>
+    <span class="lg"><i class="sw pl"></i>Pluggable — your choice (backend / policy engine)</span>
+    <span class="lg"><i class="sw pk"></i>SPT-Txn licensed pack — optional, runs in your infra</span>
+  </div>
+
+  <div class="cols" id="cols"></div>
+  <div class="cap" id="cap"></div>
+  <div class="detail" id="detail">Click any box to see its role and who owns it.</div>
+</div>
+
+<style>
+#sptx{--bg:#0A0612;--card:#16102A;--card2:#1E1140;--v1:#7B2FBE;--v2:#9D4EDD;--v3:#C77DFF;--v4:#E0AAFF;--white:#F8F8FF;--muted:#A09AB8;
+--vs-b:#9D4EDD;--vs-t:#E0AAFF;--vs-g:rgba(157,78,221,.16);
+--cl-b:#3BC9DB;--cl-t:#9DEAF2;--cl-g:rgba(59,201,219,.12);
+--pl-b:#E9C46A;--pl-t:#F2CC8F;--pl-g:rgba(233,196,106,.08);
+--pk-b:#F58BC2;--pk-t:#F9B8DA;--pk-g:rgba(245,139,194,.12);
+background:var(--bg);border:1px solid #2a1f45;border-radius:16px;padding:22px 20px 20px;color:var(--white);
+font-family:'Inter',system-ui,-apple-system,sans-serif;max-width:900px;margin:0 auto;}
+#sptx h2{font-family:'Space Grotesk','Inter',sans-serif;font-size:20px;font-weight:600;margin:0 0 4px;color:var(--white);}
+#sptx .sub{font-size:13.5px;color:var(--muted);margin:0 0 16px;line-height:1.5;}
+#sptx .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+#sptx .tabs button{font-family:inherit;font-size:13px;font-weight:500;color:var(--white);background:rgba(157,78,221,.28);
+border:1.5px solid var(--v2);border-radius:999px;padding:7px 15px;cursor:pointer;transition:.15s;}
+#sptx .tabs button:hover{background:rgba(157,78,221,.45);border-color:var(--v3);color:#fff;}
+#sptx .tabs button.on{background:var(--v2);border-color:var(--v4);color:#fff;box-shadow:0 0 0 3px rgba(157,78,221,.38);}
+#sptx .levels{display:flex;gap:6px;margin-bottom:16px;align-items:center;}
+#sptx .levels .lbl{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-right:6px;}
+#sptx .levels button{font-family:inherit;font-size:12px;font-weight:500;color:var(--white);background:rgba(157,78,221,.22);
+border:1.5px solid #8a5fc0;border-radius:8px;padding:5px 13px;cursor:pointer;transition:.15s;}
+#sptx .levels button:hover{color:#fff;border-color:var(--v3);background:rgba(157,78,221,.38);}
+#sptx .levels button.on{color:#fff;border-color:var(--v4);background:var(--v1);box-shadow:0 0 0 3px rgba(123,47,190,.32);}
+#sptx .flow{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:2px 0 18px;padding:12px 14px;background:var(--card);border-radius:10px;border:1px solid #2a1f45;}
+#sptx .fl-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--v3);margin-right:4px;font-weight:600;width:100%;margin-bottom:2px;}
+#sptx .step{display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid #3a2a5a;border-radius:8px;padding:5px 10px;}
+#sptx .step.last{background:var(--vs-g);border-color:var(--vs-b);}
+#sptx .step .n{width:18px;height:18px;border-radius:50%;background:var(--v2);color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+#sptx .step .t{font-size:11.5px;color:var(--white);white-space:nowrap;}
+#sptx .arw{color:var(--v3);font-size:15px;line-height:1;}
+#sptx .legend{display:flex;flex-wrap:wrap;gap:12px 16px;margin-bottom:16px;font-size:11.5px;color:var(--muted);}
+#sptx .lg{display:flex;align-items:center;gap:6px;}
+#sptx .sw{width:12px;height:12px;border-radius:3px;display:inline-block;flex:0 0 auto;}
+#sptx .sw.vs{background:var(--vs-g);border:1.5px solid var(--vs-b);}
+#sptx .sw.cl{background:var(--cl-g);border:1.5px solid var(--cl-b);}
+#sptx .sw.pl{background:var(--pl-g);border:1.5px dashed var(--pl-b);}
+#sptx .sw.pk{background:var(--pk-g);border:1.5px solid var(--pk-b);}
+#sptx .cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-items:start;}
+#sptx .col h3{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--v3);margin:0 0 10px;font-weight:600;}
+#sptx .box{background:var(--card);border:1.5px solid #3a2a5a;border-radius:10px;padding:9px 11px;margin-bottom:9px;cursor:pointer;transition:.15s;}
+#sptx .box:hover{transform:translateY(-1px);border-color:var(--v3);}
+#sptx .box.vs{background:var(--vs-g);border-color:var(--vs-b);}
+#sptx .box.cl{background:var(--cl-g);border-color:var(--cl-b);}
+#sptx .box.pl{background:var(--pl-g);border:1.5px dashed var(--pl-b);}
+#sptx .box.pk{background:var(--pk-g);border-color:var(--pk-b);}
+#sptx .box .bn{font-size:13px;font-weight:500;color:var(--white);}
+#sptx .box .bs{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.35;}
+#sptx .cap{margin-top:16px;font-size:12.5px;color:var(--v4);background:var(--card2);border-left:3px solid var(--v2);
+border-radius:0 8px 8px 0;padding:11px 14px;line-height:1.55;}
+#sptx .detail{margin-top:10px;font-size:12px;color:var(--muted);min-height:18px;padding:8px 12px;background:var(--card);border-radius:8px;}
+#sptx .detail b{color:var(--white);}
+@media(max-width:640px){#sptx .cols{grid-template-columns:1fr;}}
+</style>
+
+<script>
+(function(){
+  var VIEWS=[['blockchain','Blockchain · L1/L2'],['vasp','VASP / CASP'],['rwa','Mint / RWA'],['ai','AI Agents'],['idp','Identity · IDP']];
+  var LEVELS=[[1,'Basic'],[2,'Standard'],[3,'Comprehensive']];
+  var STAGES=[['issue','1 · Identity & Issuance'],['verify','2 · Trust & Verification'],['enforce','3 · Enforcement & Settlement']];
+  var A='all';
+  var C=[
+    ['issue',A,1,'CAT','verify-once compliance credential','cl'],
+    ['issue',A,1,'CT','scoped capability','cl'],
+    ['issue',A,1,'SPT-Txn Token','per-transaction, intent-bound','cl'],
+    ['verify',A,1,'8-Step Verifier','offline, sub-millisecond','vs'],
+    ['verify',A,1,'Trust Registry','signed issuer-key snapshot','pl'],
+    ['verify',A,2,'humanAnchor','zkDID commitment','vs'],
+    ['verify',A,2,'Key backend','SoftHSM2 · HSM · KMS · TPM','pl'],
+    ['enforce',A,2,'Signed Receipt + Merkle log','tamper-evident audit','vs'],
+    ['verify',A,3,'PQC hybrid signing','X25519 + ML-KEM-768','vs'],
+    ['enforce',['blockchain'],1,'Ledger adapter','XRPL · Solana · EVM · …','cl'],
+    ['enforce',['blockchain'],1,'Context-hash binding','bound to one txn','vs'],
+    ['enforce',['blockchain'],2,'On-chain anchor','Merkle root, out-of-band','cl'],
+    ['enforce',['blockchain'],3,'Settlement gate','x402 · escrow · Token-2022 hook','vs'],
+    ['issue',['vasp'],1,'KYC / Compliance provider','CAT issuer — e.g. Sumsub','cl'],
+    ['verify',['vasp'],2,'Policy decision point','OPA-compatible · ABAC → TBAC','vs'],
+    ['verify',['vasp'],2,'Your policy engine','Sumsub · OPA · custom — bring your own','pl'],
+    ['enforce',['vasp'],2,'Travel Rule payload','TRP / TRISA · IVMS101','vs'],
+    ['enforce',['vasp'],2,'ZK selective disclosure','amount hidden, no PII','vs'],
+    ['verify',['vasp'],2,'VASP registry','counterparty lookup','pl'],
+    ['enforce',['vasp'],3,'humanAnchor escrow','lawful recovery · t-of-n','vs'],
+    ['verify',['vasp'],3,'SPT-Txn jurisdiction pack','FATF · MiCA · VARA · licensed, optional','pk'],
+    ['issue',['rwa'],1,'RWA / claim issuer','trusted issuer','cl'],
+    ['enforce',['rwa'],1,'Compliance-gated token','ERC-3643-aligned','cl'],
+    ['verify',['rwa'],2,'On-chain ZK eligibility','proven, no PII','vs'],
+    ['verify',['rwa'],2,'Your policy engine','OPA · custom · Sumsub — bring your own','pl'],
+    ['enforce',['rwa'],2,'Permissioned transfer','holder-bound, replay-safe','vs'],
+    ['verify',['rwa'],3,'SPT-Txn jurisdiction pack','per-jurisdiction · licensed, optional','pk'],
+    ['issue',['ai'],1,'Agent identity','who acts','cl'],
+    ['verify',['ai'],1,'Intent binding','one declared action','vs'],
+    ['verify',['ai'],2,'Your policy engine','OPA · custom — bring your own','pl'],
+    ['enforce',['ai'],2,'MCP PEP','policy-enforcement point','vs'],
+    ['verify',['ai'],2,'Delegation attenuation','narrow-only, bounded depth','vs'],
+    ['enforce',['ai'],3,'A2A + humanAnchor propagation','human-origin across hops','vs'],
+    ['issue',['idp'],1,'IdP','Keycloak · Auth0 · PingOne','pl'],
+    ['issue',['idp'],1,'OAuth Token Exchange','RFC 8693','vs'],
+    ['issue',['idp'],2,'IdP → CAT bridge','identity → capability','vs'],
+    ['issue',['idp'],2,'Workload-bridge','SPIFFE / SVID','vs'],
+    ['issue',['idp'],3,'NHI attested issuance','cloud workload identity','vs']
+  ];
+  var FLOW={
+    blockchain:['Identity','Issue CAT','Issue CT','Mint SPT-Txn','8-step verify · offline','Settle on-chain (no PII) + receipt'],
+    vasp:['KYC identity','Issue CAT','Policy → CT','Mint SPT-Txn','8-step verify · offline','Travel-Rule payload (ZK) + receipt'],
+    rwa:['Prove eligibility','Issue CAT','Policy → CT','Mint SPT-Txn','8-step verify · offline','Permit transfer + receipt'],
+    ai:['Agent identity','Issue CAT','Delegate CT (attenuated)','Mint SPT-Txn (intent)','8-step verify · offline','Enforce at MCP PEP + receipt'],
+    idp:['IdP login','Token Exchange → CAT','Issue CT','Mint SPT-Txn','8-step verify · offline','Enforce + receipt']
+  };
+  var CAP={
+    blockchain:'You run the ledger adapter and hold your keys. The SPT-Txn verifier and receipt format are open-source (Apache-2.0) and run entirely inside your infrastructure — nothing calls home. The on-chain anchor is a periodic write, never in the hot path, and no PII touches the ledger.',
+    vasp:'Your KYC provider (e.g. Sumsub) issues the CAT; you operate the registry and keys. Policy is evaluated at one pluggable point — bring your own engine (Sumsub / OPA / custom) or license an SPT-Txn jurisdiction pack; either way it runs in your infra. SPT-Txn’s offline verifier and zero-knowledge Travel-Rule payload are open-source. PII stays off-chain and off the wire.',
+    rwa:'You (or your trusted issuer) mint the compliance-gated token and hold the keys. Eligibility policy is pluggable — your own engine (OPA / Sumsub / custom) or a licensed SPT-Txn pack. SPT-Txn’s on-chain ZK eligibility verifier and replay-safe permissioning are open-source and deployed by you — eligibility proven without exposing PII, and no outside party approves a transfer.',
+    ai:'Your platform owns agent identity and can bring its own authorization policy (OPA / custom). SPT-Txn’s intent binding, MCP policy-enforcement point, and attenuating delegation are open-source and run in your stack — a compromised agent can’t exceed its grant, and nothing calls home.',
+    idp:'Bring your own IdP (Keycloak / Auth0 / PingOne). The open-source SPT-Txn bridge turns its tokens into human-anchored capabilities over RFC 8693 — no rip-and-replace, nothing calls home, and you keep full control of your identity stack.'
+  };
+  var OWN={vs:'SPT-Txn open-source — you install & run it; no call-home',cl:'Client-operated (you deploy & control)',pl:'Pluggable — your choice',pk:'SPT-Txn licensed pack (optional; runs in your infra, you enforce locally)'};
+  var view='blockchain',lvl=1;
+
+  var tabsEl=document.getElementById('tabs'),lvlEl=document.getElementById('levels'),flowEl=document.getElementById('flow'),
+      colsEl=document.getElementById('cols'),capEl=document.getElementById('cap'),detEl=document.getElementById('detail');
+
+  VIEWS.forEach(function(v){var b=document.createElement('button');b.textContent=v[1];b.dataset.v=v[0];
+    b.onclick=function(){view=v[0];render();};tabsEl.appendChild(b);});
+  var ll=document.createElement('span');ll.className='lbl';ll.textContent='Depth';lvlEl.appendChild(ll);
+  LEVELS.forEach(function(l){var b=document.createElement('button');b.textContent=l[1];b.dataset.l=l[0];
+    b.onclick=function(){lvl=l[0];render();};lvlEl.appendChild(b);});
+
+  function render(){
+    Array.prototype.forEach.call(tabsEl.children,function(b){b.classList.toggle('on',b.dataset.v===view);});
+    Array.prototype.forEach.call(lvlEl.querySelectorAll('button'),function(b){b.classList.toggle('on',+b.dataset.l===lvl);});
+    var steps=FLOW[view];
+    var h='<span class="fl-lbl">Data flow →</span>';
+    steps.forEach(function(s,i){
+      h+='<span class="step'+(i===steps.length-1?' last':'')+'"><span class="n">'+(i+1)+'</span><span class="t">'+s+'</span></span>';
+      if(i<steps.length-1) h+='<span class="arw">→</span>';
+    });
+    flowEl.innerHTML=h;
+    colsEl.innerHTML='';
+    STAGES.forEach(function(s){
+      var col=document.createElement('div');col.className='col';
+      col.innerHTML='<h3>'+s[1]+'</h3>';
+      C.filter(function(c){return c[0]===s[0] && (c[1]===A||c[1].indexOf(view)>-1) && c[2]<=lvl;})
+       .forEach(function(c){
+         var d=document.createElement('div');d.className='box '+c[5];
+         d.innerHTML='<div class="bn">'+c[3]+'</div><div class="bs">'+c[4]+'</div>';
+         d.onclick=function(){detEl.innerHTML='<b>'+c[3]+'</b> — '+c[4]+' &nbsp;·&nbsp; '+OWN[c[5]];};
+         col.appendChild(d);
+       });
+      colsEl.appendChild(col);
+    });
+    capEl.textContent=CAP[view];
+    detEl.innerHTML='Click any box to see its role and who owns it.';
+  }
+  render();
+})();
+</script>
+
+</body>
+</html>

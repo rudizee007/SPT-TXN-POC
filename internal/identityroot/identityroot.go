@@ -47,7 +47,7 @@ type Assertion struct {
 	Anchor    zkdid.Commitment `json:"anchor"`    // fresh per issuance; sealed as the CAT humanAnchor
 	Nullifier [32]byte         `json:"nullifier"` // context-specific; stable per (subject, context)
 	Context   string           `json:"context"`
-	Proof     []byte           `json:"proof"`     // root/adapter proof that personhood was vouched for
+	Proof     []byte           `json:"proof"` // root/adapter proof that personhood was vouched for
 	IssuedAt  time.Time        `json:"issued_at"`
 }
 

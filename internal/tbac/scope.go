@@ -4,14 +4,14 @@
 // scope, per Section 3.4 (Scope Invariants) of
 // draft-coetzee-oauth-spt-txn-tokens.
 //
-// POC scope model
+// # POC scope model
 //
 // A Scope is a set of named dimensions (map[string]any), matching the
 // capability_scope claim produced by internal/cattoken. Containment is
 // evaluated per dimension with deterministic, documented semantics:
 //
 //   - number  child MUST be <= parent   (numeric dimensions are ceilings,
-//                                         e.g. max_amount, delegation limits)
+//     e.g. max_amount, delegation limits)
 //   - string  child MUST equal parent   (e.g. currency=USD, action=transfer)
 //   - bool    child MUST equal parent
 //   - list    child set MUST be a subset of parent set

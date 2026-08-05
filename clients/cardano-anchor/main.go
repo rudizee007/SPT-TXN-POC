@@ -112,7 +112,12 @@ func main() {
 	if !*jsonOut {
 		fmt.Printf("cardano-anchor — %s\n", *network)
 		fmt.Printf("  from (sender)   : %s\n", senderStr)
-		fmt.Printf("  to              : %s\n", func() string { if *to == "" { return senderStr + " (self)" }; return *to }())
+		fmt.Printf("  to              : %s\n", func() string {
+			if *to == "" {
+				return senderStr + " (self)"
+			}
+			return *to
+		}())
 		fmt.Printf("  amount          : %d lovelace (%.6f ADA)\n", lovelace, float64(lovelace)/1e6)
 		fmt.Printf("  metadata[%d]     : spt_txn_context_hash=%s (on-chain)\n", *label, anchor)
 	}

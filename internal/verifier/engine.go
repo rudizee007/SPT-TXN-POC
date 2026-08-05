@@ -25,8 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudizee007/spt-txn-poc/internal/cttoken"
 	"github.com/rudizee007/spt-txn-poc/internal/cattoken"
+	"github.com/rudizee007/spt-txn-poc/internal/cttoken"
 	"github.com/rudizee007/spt-txn-poc/internal/dpop"
 	"github.com/rudizee007/spt-txn-poc/internal/ledger"
 	"github.com/rudizee007/spt-txn-poc/internal/statuslist"
@@ -58,7 +58,7 @@ type Input struct {
 	TxnToken  string            // the SPT-Txn Token (compact JWT)
 	DPoPProof string            // DPoP proof of possession of the holder key
 	HTM, HTU  string            // HTTP method and URI the DPoP proof must bind
-	CT       string            // single parent Capability Token (one-hop; legacy)
+	CT        string            // single parent Capability Token (one-hop; legacy)
 	CTChain   []string          // ordered CT delegation chain, root→leaf (multi-hop)
 	CAT       string            // root CAT (required; full-chain check)
 	Txn       ledger.TxnContext // the concrete transaction being authorized
@@ -500,6 +500,7 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 //     from the presented leaf CT's own scope, so the proof only verifies for the
 //     exact leaf scope presented (see TestChainVerifierFunc_Injection).
 //   - D (max depth) is taken from the presented CAT.
+//
 // The intermediate hop scopes remain hidden; only the endpoints are in clear.
 // Still gated behind an explicit, operator-opted-in ChainVerifier.
 func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in Input) (map[string]any, error) {

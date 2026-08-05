@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPT-Txn × x402 — Live Demo · foss.violetskysecurity.com</title>
+<meta name="description" content="SPT-Txn × x402 — the per-transaction authorization layer for agent payments. A live walkthrough on Solana devnet, plus the repos, devnet transactions, and standards references.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://foss.violetskysecurity.com/demo.html">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Violet Sky Security · SPT-Txn">
+<meta property="og:title" content="SPT-Txn × x402 — Live Demo">
+<meta property="og:description" content="x402 moves the money. SPT-Txn proves the agent was allowed to. Live demo, repos, and on-chain proof on Solana devnet.">
+<meta property="og:url" content="https://foss.violetskysecurity.com/demo.html">
+<meta property="og:image" content="https://foss.violetskysecurity.com/logo_lion.png">
+
+<!-- Self-hosted fonts (no third-party requests) -->
+<link rel="stylesheet" href="/fonts.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0A0612;
+    --bg2:       #100A1E;
+    --bg3:       #16102A;
+    --violet:    #7B2FBE;
+    --violet-m:  #9D4EDD;
+    --violet-l:  #C77DFF;
+    --violet-xl: #E0AAFF;
+    --white:     #F8F8FF;
+    --muted:     #A09AB8;
+    --border:    rgba(155,78,221,0.18);
+    --glow:      rgba(123,47,190,0.35);
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--white);
+    font-family: 'Inter', sans-serif; font-size: 16px; line-height: 1.65;
+    overflow-x: hidden;
+  }
+  a { color: var(--violet-l); }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 2.5rem;
+    background: rgba(10,6,18,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-brand {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1rem;
+    color: var(--violet-l); text-decoration: none; letter-spacing: 0.04em;
+  }
+  .nav-brand span { color: var(--white); }
+  .nav-links { display: flex; gap: 2rem; list-style: none; }
+  .nav-links a {
+    font-family: 'Space Grotesk', sans-serif; font-size: 0.82rem; font-weight: 500;
+    color: var(--muted); text-decoration: none; letter-spacing: 0.06em;
+    text-transform: uppercase; transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--violet-l); }
+
+  /* ── HEADER ── */
+  header {
+    position: relative; overflow: hidden;
+    padding: 9rem 2rem 3rem; text-align: center;
+  }
+  .glow {
+    position: absolute; width: 640px; height: 640px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(123,47,190,0.16) 0%, transparent 70%);
+    top: -80px; left: 50%; transform: translateX(-50%); pointer-events: none;
+  }
+  .eyebrow {
+    font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.18em;
+    color: var(--violet-m); text-transform: uppercase; margin-bottom: 1.1rem; position: relative;
+  }
+  h1 {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: clamp(2.1rem, 5vw, 3.4rem); line-height: 1.14; letter-spacing: -0.02em;
+    max-width: 820px; margin: 0 auto; position: relative;
+  }
+  h1 .accent { color: var(--violet-l); }
+  .lead {
+    font-family: 'Space Grotesk', sans-serif; font-size: clamp(1.05rem, 2.4vw, 1.4rem);
+    color: var(--violet-xl); max-width: 720px; margin: 1.6rem auto 0; position: relative;
+  }
+  .desc {
+    font-size: 1.02rem; color: var(--muted); max-width: 720px;
+    margin: 1.4rem auto 0; position: relative;
+  }
+
+  /* ── LAYOUT ── */
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 2rem; }
+  section { padding: 2.6rem 0; }
+  .sec-label {
+    font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.16em;
+    color: var(--violet-m); text-transform: uppercase; margin-bottom: 1rem;
+  }
+
+  /* ── VIDEO ── */
+  .video-frame {
+    border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    background: #000; box-shadow: 0 0 60px rgba(123,47,190,0.14);
+  }
+  .video-frame video { display: block; width: 100%; height: auto; }
+  .video-cap { font-size: 0.85rem; color: var(--muted); margin-top: 0.8rem; text-align: center; }
+
+  /* ── LINK CARDS ── */
+  .links-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 0.9rem;
+  }
+  .link-card {
+    display: block; text-decoration: none; padding: 1rem 1.1rem;
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+    transition: transform .15s, border-color .15s;
+  }
+  .link-card:hover { transform: translateY(-2px); border-color: var(--violet-l); }
+  .link-type {
+    font-family: 'Space Mono', monospace; font-size: 0.66rem; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--violet-m); margin-bottom: 0.35rem;
+  }
+  .link-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.98rem; color: var(--white); }
+  .link-sub { font-size: 0.82rem; color: var(--muted); margin-top: 0.2rem; word-break: break-word; }
+  .link-title .arr { color: var(--violet-l); }
+
+  code { font-family: 'Space Mono', monospace; font-size: 0.85em; color: var(--violet-xl);
+         background: rgba(155,78,221,0.10); border-radius: 4px; padding: 0.05em 0.35em; }
+
+  footer {
+    border-top: 1px solid var(--border); margin-top: 2rem;
+    padding: 2rem; text-align: center; color: var(--muted); font-size: 0.85rem;
+  }
+
+  @media (max-width: 640px) { nav { padding: 1rem 1.2rem; } .nav-links { gap: 1.1rem; } header { padding-top: 7.5rem; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="/">SPT<span>-Txn</span></a>
+  <ul class="nav-links">
+    <li><a href="/">Home</a></li>
+    <li><a href="/#architecture">Architecture</a></li>
+    <li><a href="/#topology">Topology</a></li>
+    <li><a href="/#publications">Research</a></li>
+    <li><a href="/demo.html">Demo</a></li>
+  </ul>
+</nav>
+
+<header>
+  <div class="glow"></div>
+  <div class="eyebrow">Live demo · Solana devnet</div>
+  <h1>SPT-Txn × x402 — <span class="accent">Demo</span></h1>
+  <p class="lead">x402 moves the money. SPT-Txn proves the agent was <em>allowed</em> to.</p>
+  <p class="desc">
+    SPT-Txn is the per-transaction authorization layer x402 is missing. It
+    authorizes any actor initiating a payment — a person acting through an
+    interface, a non-human workload, or an AI agent (including agents acting over
+    MCP) — with the autonomous-agent case the most urgent. Authority lives only
+    inside a short-lived token bound to one exact payment — one asset, one amount,
+    one recipient — verified offline with no call home, so a hijacked or
+    prompt-injected agent holds a token that's useless for any other payment. A
+    pre-sign guard refuses any transaction that doesn't match; a real USDC transfer
+    settles on Solana devnet; and every decision emits a signed receipt whose log's
+    Merkle root is anchored on-chain. Drop-in middleware adds it to any x402 server
+    in one line.
+  </p>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <div class="sec-label">Live — an AI agent, gated over MCP</div>
+    <div class="video-frame">
+      <video controls preload="metadata">
+        <source src="/SPT-TXN-MCP-live-demo.mp4" type="video/mp4">
+        Your browser can't play this video —
+        <a href="/SPT-TXN-MCP-live-demo.mp4">download it here</a>.
+      </video>
+    </div>
+    <p class="video-cap">A real agent (Claude Desktop) calls a payment tool over MCP. The one payment a human approved is authorized and settles on Solana devnet; a hijacked recipient and an inflated amount are refused by the enforcement point — the same gate that secures the HTTP x402 flow.</p>
+    <div class="links-grid" style="margin-top:1rem">
+      <a class="link-card" href="https://explorer.solana.com/tx/3Ykx1hu5USHDxusy5gSKXRgFwdugnneKbQTv47wRcvRULv7no2971MuraxxF6bVUDFcu3ySh5ZdkSzrYDygusikK?cluster=devnet" target="_blank" rel="noopener">
+        <div class="link-type">On-chain proof · Solana devnet</div>
+        <div class="link-title">The exact transaction from this demo <span class="arr">↗</span></div>
+        <div class="link-sub">The payment the agent was authorized to make — settled on devnet, payer → merchant. Verify it yourself on Solana Explorer.</div>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-label">Walkthrough — the full loop</div>
+    <div class="video-frame">
+      <video controls preload="metadata">
+        <source src="/SPT-TXN-Hackathon-week1.mp4" type="video/mp4">
+        Your browser can't play this video —
+        <a href="/SPT-TXN-Hackathon-week1.mp4">download it here</a>.
+      </video>
+    </div>
+    <p class="video-cap">Offline verification, real USDC settlement on Solana devnet, a tampered payment refused before signing, and the on-chain evidence anchor.</p>
+  </section>
+
+  <section>
+    <div class="sec-label">Code — all open source (Apache-2.0)</div>
+    <div class="links-grid">
+      <a class="link-card" href="https://github.com/rudizee007/spt-txn-x402-solana" target="_blank" rel="noopener">
+        <div class="link-type">Repository</div>
+        <div class="link-title">spt-txn-x402-solana <span class="arr">↗</span></div>
+        <div class="link-sub">The x402 gate, HTTP flow, settle guard, receipts, and devnet tools.</div>
+      </a>
+      <a class="link-card" href="https://github.com/rudizee007/spt-txn-x402-escrow" target="_blank" rel="noopener">
+        <div class="link-type">Repository</div>
+        <div class="link-title">spt-txn-x402-escrow <span class="arr">↗</span></div>
+        <div class="link-sub">On-chain trustless enforcement (Anchor) — release-on-proof, fail-closed.</div>
+      </a>
+      <a class="link-card" href="https://github.com/rudizee007/spt-txn-poc" target="_blank" rel="noopener">
+        <div class="link-type">Repository</div>
+        <div class="link-title">spt-txn-poc <span class="arr">↗</span></div>
+        <div class="link-sub">The open SPT-Txn reference engine.</div>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-label">On-chain proof — Solana devnet</div>
+    <div class="links-grid">
+      <a class="link-card" href="https://explorer.solana.com/tx/376oVo5dNc8tVgJiXB6eVpckNhTNchxbrgs19ShZmcmNx1ZxkN6v8Hvw6TjFVRxo2Xzs1w1RDPFT6BdxbsPDU1u2?cluster=devnet" target="_blank" rel="noopener">
+        <div class="link-type">Transaction</div>
+        <div class="link-title">USDC settlement <span class="arr">↗</span></div>
+        <div class="link-sub">A real, authorization-gated USDC transfer settled on devnet (shown in the demo).</div>
+      </a>
+      <a class="link-card" href="https://explorer.solana.com/tx/3H4MfiYrsZ66pK23VkCFeKPpN18u2YiJQvWDnqTBNp4Hy541kMKtDWuVV9xnBN9Kp9R8WBiRN6m4uaBrCm76rNkX?cluster=devnet" target="_blank" rel="noopener">
+        <div class="link-type">Transaction · earlier run</div>
+        <div class="link-title">USDC settlement · payer → merchant <span class="arr">↗</span></div>
+        <div class="link-sub">Payer → a brand-new merchant, whose token account is created in the same transaction.</div>
+      </a>
+      <a class="link-card" href="https://explorer.solana.com/tx/iFwwZkv134qXcMX3D17JtbtiVQHJcA3RYfVBaM7QgWchGUjqVtaPukLuhQepXJ2ou6QuL3AN8n7EzyjjJAwKuCi?cluster=devnet" target="_blank" rel="noopener">
+        <div class="link-type">Transaction</div>
+        <div class="link-title">Evidence anchor <span class="arr">↗</span></div>
+        <div class="link-sub">The receipt-log Merkle root anchored via SPL Memo.</div>
+      </a>
+      <a class="link-card" href="https://explorer.solana.com/address/C9kTmtYm5V8cFfNvgzJAcVfM2zYN1Pqv245Xe27h4NwZ?cluster=devnet" target="_blank" rel="noopener">
+        <div class="link-type">Escrow program · deployed on devnet</div>
+        <div class="link-title">Program on Explorer <span class="arr">↗</span></div>
+        <div class="link-sub"><code>C9kTmtYm5V8cFfNvgzJAcVfM2zYN1Pqv245Xe27h4NwZ</code></div>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-label">Research &amp; standards</div>
+    <div class="links-grid">
+      <a class="link-card" href="https://datatracker.ietf.org/doc/draft-coetzee-oauth-spt-txn-tokens/" target="_blank" rel="noopener">
+        <div class="link-type">IETF Internet-Draft</div>
+        <div class="link-title">draft-coetzee-oauth-spt-txn-tokens <span class="arr">↗</span></div>
+        <div class="link-sub">Presented to the OAuth Working Group.</div>
+      </a>
+      <a class="link-card" href="https://doi.org/10.5281/zenodo.19299787" target="_blank" rel="noopener">
+        <div class="link-type">Formal theory · Zenodo</div>
+        <div class="link-title">Transaction-binding security proofs <span class="arr">↗</span></div>
+        <div class="link-sub">DOI 10.5281/zenodo.19299787</div>
+      </a>
+      <a class="link-card" href="https://orcid.org/0009-0009-6557-8843" target="_blank" rel="noopener">
+        <div class="link-type">Author</div>
+        <div class="link-title">ORCID <span class="arr">↗</span></div>
+        <div class="link-sub">0009-0009-6557-8843 · Rudolf J. Coetzee</div>
+      </a>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  Violet Sky Security SEZC · SPT-Txn — Sovereign Policy Token Transactions ·
+  <a href="/">foss.violetskysecurity.com</a>
+</footer>
+
+</body>
+</html>

@@ -7,7 +7,7 @@
 - A privacy-preserving FATF Travel Rule (Recommendation 16, the "crypto travel rule") compliance layer for VASPs and CASPs.
 - An accountability and authorization layer for agentic / AI-agent payments that composes with x402 (HTTP 402 machine-to-machine payments): it decides whether an autonomous agent may pay, within what scope, and who the accountable human is, before settlement.
 - Blockchain-agnostic: a ledger is a target behind an adapter, never a dependency.
-- Extends the OAuth Transaction Tokens work (draft-ietf-oauth-transaction-tokens) and aligns with the OAuth 2.0 Security Best Current Practice (RFC 9700).
+- Defined in its own Internet-Draft, `draft-coetzee-oauth-spt-txn-tokens` (revision -02), which extends the OAuth Transaction Tokens work (draft-ietf-oauth-transaction-tokens) and aligns with the OAuth 2.0 Security Best Current Practice (RFC 9700).
 
 ## Core concepts
 
@@ -17,7 +17,7 @@
 - Zero-knowledge proofs: Groth16 over BN254, ZK-friendly Poseidon2 hashing, and Baby Jubjub in-circuit signatures for agentic delegation chains.
 - Post-quantum hybrid cryptography: X25519 + ML-KEM-768 (FIPS 203) for both TLS transport and escrow encapsulation, resistant to harvest-now-decrypt-later attacks; signatures are on a defined ML-DSA migration path.
 - Trust Registry: issuer keys, roles, and algorithm assignments as a signed, locally-cached snapshot; algorithm selection is registry-governed, giving downgrade resistance.
-- Decentralized naming and identity: zkDID commitments and zkDNS, a capture-resistant name-to-key resolution root.
+- Decentralized naming and identity: zkDID commitments, and zkDNS — a proposed capture-resistant name-to-key resolution root (design-stage; not yet implemented or endorsed).
 
 ## Multi-chain transaction binding (implemented, testnet)
 
@@ -26,7 +26,7 @@ The framework binds an authorization token to a specific ledger transaction via 
 ## Papers and specifications
 
 - [SPT-Txn framework paper (PDF)](https://foss.violetskysecurity.com/papers/spt-txn-framework-expanded-v2.pdf): the comprehensive framework — token chain, zkDID and zkDNS, the cryptographic design (Poseidon2, BN254 vs BLS12-381, Groth16 vs PLONK), the post-quantum migration plan, the FATF Travel Rule deployment, and a CycloneDX CBOM. DOI 10.5281/zenodo.20870193.
-- Internet-Draft extending draft-ietf-oauth-transaction-tokens, adding Section 11 (Algorithm Agility and Post-Quantum Migration).
+- [SPT-Txn Internet-Draft — draft-coetzee-oauth-spt-txn-tokens (revision -02)](https://datatracker.ietf.org/doc/draft-coetzee-oauth-spt-txn-tokens/): extends draft-ietf-oauth-transaction-tokens, adding algorithm agility and a post-quantum migration path.
 - Public technical comments to NIST SP 800-133r3 (Recommendation for Cryptographic Key Generation).
 
 ## Project
@@ -35,6 +35,12 @@ The framework binds an authorization token to a specific ledger transaction via 
 - Organization: Violet Sky Security SEZC, Cayman Islands.
 - Reference deployment: https://foss.violetskysecurity.com (live; post-quantum hybrid TLS, group X25519MLKEM768).
 - Status: reference implementation and multi-chain footprints are on public test networks; the framework, papers, and cryptographic design are public and open source.
+
+## Trademarks and attribution
+
+- SPT-Txn is independently developed by Violet Sky Security SEZC. Integration with .zkdid™ and .zkdns™ is proposed and not yet implemented or endorsed.
+- .zkdid™ and .zkdns™ are trademarks associated with Toby Bolton's public-interest protocol initiative. Where this project uses the generic terms "zkDID" and "zkDNS" (for example "zkDID commitment"), they denote the generic zero-knowledge decentralized-identifier and naming primitives, and are distinct from the .zkdid™ and .zkdns™ protocol and marks.
+- Scope of the current implementation: the human-anchor identity material is a placeholder / deterministic test principal. Proof-of-personhood, one-human-one-identity uniqueness, the decentralized identity root, key rotation/recovery, and private name-to-key resolution are explicitly out of scope for the present implementation and are the intended role of a future .zkdid™ / .zkdns™ integration. The Ethereum-mainnet on-chain proof demonstrates a zero-knowledge threshold predicate (a hidden value satisfies a bound), not proof of personhood.
 
 ## Keywords
 

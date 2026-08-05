@@ -13,6 +13,7 @@
 //	go run ./cmd/gatesvc -ceiling 5000 -agent rPdvC6ccq8hCdPKSPJkPmyZ4Mi1oG2FFkT
 //
 // Endpoints:
+//
 //	GET  /gate/health
 //	POST /gate/authorize   {"price","currency","payto","sourcetag"} -> Decision JSON
 package main

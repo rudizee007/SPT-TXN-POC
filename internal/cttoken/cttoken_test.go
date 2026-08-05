@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudizee007/spt-txn-poc/internal/cttoken"
 	"github.com/rudizee007/spt-txn-poc/internal/cattoken"
+	"github.com/rudizee007/spt-txn-poc/internal/cttoken"
 	"github.com/rudizee007/spt-txn-poc/internal/tbac"
 )
 

@@ -20,8 +20,8 @@ func hasSep(s string) bool {
 
 func FuzzCanonicalEncode(f *testing.F) {
 	f.Add("XRP", "1000", "memo", "deadbeef")
-	f.Add("US\x1fD", "1", "k", "v")     // separator in a field value
-	f.Add("XRP", "1", "ke\x1ey", "v")   // separator in an extra key
+	f.Add("US\x1fD", "1", "k", "v")   // separator in a field value
+	f.Add("XRP", "1", "ke\x1ey", "v") // separator in an extra key
 	f.Fuzz(func(t *testing.T, cur, amt, ek, ev string) {
 		ordered := [][2]string{{"chain", "xrpl"}, {"Amount", amt}, {"Currency", cur}}
 		extra := map[string]string{ek: ev}

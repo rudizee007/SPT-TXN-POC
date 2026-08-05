@@ -123,7 +123,7 @@ type result struct {
 	perOp     time.Duration
 }
 
-func run1(d time.Duration, fn func()) result      { return run1batch(d, 256, fn) }
+func run1(d time.Duration, fn func()) result        { return run1batch(d, 256, fn) }
 func runN(d time.Duration, w int, fn func()) result { return runNbatch(d, w, 256, fn) }
 
 func run1batch(d time.Duration, batch int, fn func()) result {

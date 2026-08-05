@@ -39,6 +39,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -191,21 +192,21 @@ func nullifier(secret []byte, contextLabel string) [32]byte {
 // it binds the anchor, the context nullifier, the context, and the issuance time,
 // so a proof cannot be lifted onto a different anchor, context, or nullifier.
 func personhoodMessage(anchor zkdid.Commitment, null [32]byte, contextLabel string, iat time.Time) []byte {
-	b := make([]byte, 0, len(proofTag)+1+32+1+32+1+len(contextLabel)+1+8)
-	b = append(b, proofTag...)
-	b = append(b, 0x00)
-	b = append(b, anchor.Bytes()...)
-	b = append(b, 0x00)
-	b = append(b, null[:]...)
-	b = append(b, 0x00)
-	b = append(b, contextLabel...)
-	b = append(b, 0x00)
-	var t [8]byte
-	u := iat.Unix()
-	for i := 7; i >= 0; i-- {
-		t[i] = byte(u)
-		u >>= 8
+	var b []byte
+	// Length-prefix every variable-length field so a contextLabel containing 0x00
+	// cannot be shifted across the field boundary into the trailing timestamp.
+	put := func(p []byte) {
+		var n [8]byte
+		binary.BigEndian.PutUint64(n[:], uint64(len(p)))
+		b = append(b, n[:]...)
+		b = append(b, p...)
 	}
+	put([]byte(proofTag))
+	put(anchor.Bytes())
+	put(null[:])
+	put([]byte(contextLabel))
+	var t [8]byte
+	binary.BigEndian.PutUint64(t[:], uint64(iat.Unix()))
 	b = append(b, t[:]...)
 	return b
 }

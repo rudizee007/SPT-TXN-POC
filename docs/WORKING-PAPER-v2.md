@@ -251,14 +251,16 @@ What the interim does *not* provide is the full DID-method apparatus: a
 binding as a method (in the POC this is handled separately by the Trust
 Registry, §7); and a governed naming layer. These are supplied in
 production by **Toby Bolton's** `.zkdid` **/** `.zkdns`
-**infrastructure**, the intended zero-knowledge identity and naming
-provider, with which SPT-Txn integrates.
+**infrastructure**, a privacy-superior zero-knowledge identity and naming
+provider SPT-Txn is designed to adopt — one option among several, not a
+provider the framework is bound to.
 
 Crucially, SPT-Txn treats zkDID as an **interface**, 
 `commit → prove → verify → bind`, not a hard dependency. The interim
-commitment is one implementation of that interface; `.zkdid` is the
-production implementation, adopted behind the same interface with no
-change to the token chain. SPT-Txn is therefore
+commitment is one implementation of that interface; `.zkdid` is one
+production implementation (the privacy-superior one), and shipping roots
+such as Civic Pass or the Solana Attestation Service are others, each
+adopted behind the same interface with no change to the token chain. SPT-Txn is therefore
 **identity-method-agnostic**, completing a consistent design discipline
 across three axes: *ledger* (blockchain-agnostic; XRPL a target, not a
 dependency), *policy representation* (the representation-agnostic policy
@@ -266,6 +268,26 @@ object), and *identity method* (zkDID behind an adapter). The framework
 runs today on its interim and upgrades to `.zkdid `/`.zkdns` when
 that infrastructure is production-ready, a forward-compatibility
 guarantee, not a blocking dependency.
+
+Concretely, the interface admits more than one production root, and no
+single provider is a dependency. The reference implementation ships two
+providers behind it: a clearly-labelled mock (`internal/zkdidmock`) that
+*asserts* personhood, and a real *verifying* adapter
+(`internal/civicpass`) that verifies a shipping personhood/uniqueness
+credential — a **Civic Pass** or **Solana Attestation Service**
+attestation (both Solana-native) — and maps it onto the same
+`resolve → (anchor, context-nullifier, personhood proof)` seam, sealed
+into the CAT through a single `IdentityAnchor` field. Other roots fit the
+same interface unchanged: **World ID** (biometric uniqueness with
+app-scoped nullifiers), a Semaphore-style zero-knowledge
+membership-and-nullifier gate, or a **self-issued root** an operator
+builds and anchors itself (for example on the Solana Attestation
+Service). `.zkdid` / `.zkdns` is the privacy-superior option — it removes
+both the centralised authority a mock relies on and the residual
+subject-linkability a verifying adapter retains — but it is one
+implementation among these, not the sole path to production. SPT-Txn
+therefore runs today against a real, shipping identity root and adopts
+`.zkdid` later with no change to the token chain.
 
 ### 3.4 The revised trust geometry
 

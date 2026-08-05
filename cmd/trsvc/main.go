@@ -6,24 +6,25 @@
 // Applies pledge(2) and unveil(2) after binding both listeners.
 //
 // Endpoints:
-//   GET /tr/health          — liveness check, returns 200 OK + JSON
-//   GET /tr/lookup?iss=&role= — active record lookup
-//   GET /tr/list?role=      — list records (empty role = all)
+//
+//	GET /tr/health          — liveness check, returns 200 OK + JSON
+//	GET /tr/lookup?iss=&role= — active record lookup
+//	GET /tr/list?role=      — list records (empty role = all)
 //
 // Run as _spttr. Env vars:
-//   SPT_TR_ADDR    TCP listen address (default 127.0.0.1:8081) — read-only,
-//                  relayd-facing (lookup/list/health). NEVER serves register.
-//   SPT_TR_SOCKET  Admin Unix socket  (default /var/spt-txn/sockets/tr-admin.sock)
-//                  — serves /tr/register, mode 0600, owner-only. relayd MUST NOT
-//                  forward to this socket; registration is local-admin only.
-//   SPT_TR_DB      SQLite DB path     (default /var/spt-txn/tr/registry.db)
+//
+//	SPT_TR_ADDR    TCP listen address (default 127.0.0.1:8081) — read-only,
+//	               relayd-facing (lookup/list/health). NEVER serves register.
+//	SPT_TR_SOCKET  Admin Unix socket  (default /var/spt-txn/sockets/tr-admin.sock)
+//	               — serves /tr/register, mode 0600, owner-only. relayd MUST NOT
+//	               forward to this socket; registration is local-admin only.
+//	SPT_TR_DB      SQLite DB path     (default /var/spt-txn/tr/registry.db)
 package main
 
 import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"time"
 	"errors"
 	"log"
 	"net"
@@ -32,7 +33,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
-
+	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/trustregistry"
 )
@@ -44,9 +45,9 @@ const (
 )
 
 func main() {
-	addr       := envOr("SPT_TR_ADDR",   defaultAddr)
+	addr := envOr("SPT_TR_ADDR", defaultAddr)
 	socketPath := envOr("SPT_TR_SOCKET", defaultSocket)
-	dbPath     := envOr("SPT_TR_DB",     defaultDB)
+	dbPath := envOr("SPT_TR_DB", defaultDB)
 
 	log.SetPrefix("trsvc: ")
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
@@ -205,7 +206,7 @@ func handleLookup(reg trustregistry.Registry) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		iss     := r.URL.Query().Get("iss")
+		iss := r.URL.Query().Get("iss")
 		roleStr := r.URL.Query().Get("role")
 		if iss == "" || roleStr == "" {
 			jsonError(w, "missing required parameters: iss, role", http.StatusBadRequest)
@@ -315,9 +316,9 @@ func seedIfEmpty(reg trustregistry.Mutable) error {
 		return nil
 	}
 	zeroKey := make([]byte, 32)
-	now     := time.Now().UTC()
+	now := time.Now().UTC()
 	oneYear := now.Add(365 * 24 * time.Hour)
-	note    := map[string]string{"note": "revoked placeholder — register a real signify key via regkey (socket)"}
+	note := map[string]string{"note": "revoked placeholder — register a real signify key via regkey (socket)"}
 
 	seeds := []*trustregistry.Record{
 		{Iss: "domain-a.authorg", Role: trustregistry.RoleCTIssuer,
@@ -426,7 +427,7 @@ func handleRegister(reg trustregistry.Mutable) http.HandlerFunc {
 			jsonError(w, "iss required", http.StatusBadRequest)
 			return
 		}
-		now    := time.Now().UTC()
+		now := time.Now().UTC()
 		oneYear := now.Add(365 * 24 * time.Hour)
 		rec := &trustregistry.Record{
 			Iss:           body.Iss,
