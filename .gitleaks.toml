@@ -62,4 +62,10 @@ regexes = [
   # Verified public before allowlisting.
   '''0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48''',                          # USDC contract, Ethereum mainnet
   '''0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7''',  # Starknet token identifier
+
+  # Static web feature-map copy (web/*.html): a descriptive row label, not a
+  # credential. generic-api-key fires because 'token' sits next to a value.
+  # Verified public before allowlisting (ERC-3643 = the T-REX security-token
+  # standard; also appears in README/docs/solidity).
+  '''ERC-3643-aligned''',
 ]
