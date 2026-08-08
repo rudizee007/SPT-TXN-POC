@@ -2,7 +2,7 @@ module github.com/rudizee007/spt-txn-poc
 
 go 1.25.7
 
-toolchain go1.25.12
+
 
 require (
 	filippo.io/mldsa v0.0.0-20260711112038-ff3f469cee29
