@@ -108,16 +108,28 @@ func VerifyToken(token, uri string, statusPub ed25519.PublicKey, now time.Time) 
 	if claims.Sub != uri {
 		return nil, fmt.Errorf("%w: %q != %q", ErrSubject, claims.Sub, uri)
 	}
-	// A status snapshot MUST carry an expiry. Without one a stale revocation
-	// list would be trusted forever, so an absent or zero exp fails closed
-	// (revocation freshness is a security property, not a nicety).
+	// A status snapshot MUST carry an expiry (revocation freshness is a
+	// security property, not a nicety). This rejects an undated snapshot at
+	// admission; Resolver.Check is what stops a dated one from being trusted
+	// past its date. Until 2026-08-13 only this half existed, and the comment
+	// here claimed the whole property — a resolver populated once answered
+	// StatusValid for tokens revoked afterwards, indefinitely.
 	if claims.Exp == 0 {
 		return nil, fmt.Errorf("%w: status list token has no exp", ErrExpired)
 	}
 	if now.Unix() >= claims.Exp {
 		return nil, ErrExpired
 	}
-	return Decode(Encoded{Bits: claims.StatusList.Bits, Lst: claims.StatusList.Lst}, claims.Entries)
+	l, err := Decode(Encoded{Bits: claims.StatusList.Bits, Lst: claims.StatusList.Lst}, claims.Entries)
+	if err != nil {
+		return nil, err
+	}
+	// Carry the snapshot's expiry into the cached list. Checking it here and
+	// then discarding it made freshness a property of the moment of parsing
+	// rather than of the moment of decision, so a resolver populated once kept
+	// answering from a snapshot that had long since expired.
+	l.notAfter = claims.Exp
+	return l, nil
 }
 
 // Reference is a referenced token's `status.status_list` binding.
@@ -176,14 +188,36 @@ func (r *Resolver) AddVerified(token, uri string, statusPub ed25519.PublicKey, n
 }
 
 // Check resolves the reference and returns nil only when the status is VALID.
-// Every other outcome — list not cached, index out of range, revoked,
-// suspended, or an unknown status value — is a fail-closed error. The caller
-// maps ErrUnavailable to decision class `unavailable` and the rest to
+// Every other outcome — list not cached, snapshot expired, index out of range,
+// revoked, suspended, or an unknown status value — is a fail-closed error. The
+// caller maps ErrUnavailable to decision class `unavailable` and the rest to
 // `violation`.
-func (r *Resolver) Check(ref Reference) error {
+//
+// `now` is a parameter rather than an internal time.Now() so that a caller
+// cannot evaluate a cached snapshot without stating the moment it is being
+// evaluated at. Freshness was previously checked only when the snapshot was
+// admitted to the cache, which made it a property of population rather than of
+// decision — a resolver populated once answered from that snapshot forever.
+func (r *Resolver) Check(ref Reference, now time.Time) error {
 	l, ok := r.lists[ref.URI]
 	if !ok {
 		return fmt.Errorf("%w: no cached list for %q", ErrUnavailable, ref.URI)
+	}
+	// A stale snapshot is UNAVAILABLE, not a violation. The distinction is
+	// load-bearing: "my revocation feed stopped" and "this token is revoked"
+	// require different responses from an operator, and collapsing them makes
+	// an outage indistinguishable from an attack at the moment that matters.
+	// now.IsZero() is checked explicitly. Making `now` a parameter removes the
+	// risk of a caller forgetting to consider time, but replaces it with a
+	// caller passing the zero Time — whose Unix() is negative, so every dated
+	// snapshot would compare as not-yet-expired and be accepted. A missing
+	// evaluation time is unavailability, not permission.
+	//
+	// notAfter == 0 (undated) is likewise not "unconstrained".
+	if now.IsZero() || l.notAfter == 0 || now.Unix() >= l.notAfter {
+		return fmt.Errorf("%w: cached status list for %q is stale or undated "+
+			"(not_after %d, now %d); revocation data cannot be shown current",
+			ErrUnavailable, ref.URI, l.notAfter, now.Unix())
 	}
 	s, err := l.Get(ref.Index)
 	if err != nil {

@@ -155,21 +155,21 @@ func TestResolverCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := r.Check(Reference{Index: 10, URI: uri}); err != nil {
+	if err := r.Check(Reference{Index: 10, URI: uri}, now); err != nil {
 		t.Fatalf("valid entry denied: %v", err)
 	}
-	if err := r.Check(Reference{Index: 11, URI: uri}); !errors.Is(err, ErrRevoked) {
+	if err := r.Check(Reference{Index: 11, URI: uri}, now); !errors.Is(err, ErrRevoked) {
 		t.Fatalf("revoked not detected: %v", err)
 	}
-	if err := r.Check(Reference{Index: 12, URI: uri}); !errors.Is(err, ErrSuspended) {
+	if err := r.Check(Reference{Index: 12, URI: uri}, now); !errors.Is(err, ErrSuspended) {
 		t.Fatalf("suspended not detected: %v", err)
 	}
 	// Uncached uri ⇒ unavailable (fail closed).
-	if err := r.Check(Reference{Index: 0, URI: "https://unknown"}); !errors.Is(err, ErrUnavailable) {
+	if err := r.Check(Reference{Index: 0, URI: "https://unknown"}, now); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("uncached list not unavailable: %v", err)
 	}
 	// Out-of-range index ⇒ unknown (fail closed), never valid.
-	if err := r.Check(Reference{Index: 9999, URI: uri}); !errors.Is(err, ErrUnknown) {
+	if err := r.Check(Reference{Index: 9999, URI: uri}, now); !errors.Is(err, ErrUnknown) {
 		t.Fatalf("out-of-range not failed closed: %v", err)
 	}
 }
@@ -221,4 +221,108 @@ func FuzzDecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, lst string, bits, entries int) {
 		_, _ = Decode(Encoded{Bits: bits, Lst: lst}, entries) // must not panic
 	})
+}
+
+// A cached snapshot must stop being trusted at its own expiry. Freshness was
+// previously checked only when the snapshot entered the cache, so a resolver
+// populated once answered StatusValid for tokens revoked afterwards —
+// indefinitely, with no unavailability signal.
+func TestResolverRefusesAStaleSnapshot(t *testing.T) {
+	uri := "https://issuer.example/statuslists/1"
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := New(1, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Set(7, StatusInvalid); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	tok, err := SignToken(l, uri, now, time.Hour, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewResolver()
+	if err := r.AddVerified(tok, uri, pub, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// Inside the window the snapshot answers normally — both directions, so
+	// this is not satisfied by a resolver that refuses everything.
+	if err := r.Check(Reference{Index: 0, URI: uri}, now.Add(time.Minute)); err != nil {
+		t.Fatalf("fresh snapshot rejected: %v", err)
+	}
+	if err := r.Check(Reference{Index: 7, URI: uri}, now.Add(time.Minute)); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("revoked index inside the window: %v", err)
+	}
+
+	// At and past the expiry it is UNAVAILABLE, not valid and not revoked.
+	// The class matters: "my revocation feed stopped" and "this token is
+	// revoked" need different responses, and an operator must be able to tell
+	// an outage from an attack.
+	for _, at := range []time.Time{now.Add(time.Hour), now.Add(2 * time.Hour)} {
+		if err := r.Check(Reference{Index: 0, URI: uri}, at); !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("stale snapshot at %v: got %v, want ErrUnavailable", at.Sub(now), err)
+		}
+	}
+}
+
+// A list built by Decode alone has never been through VerifyToken, so nothing
+// establishes when it was current. Undated is treated as stale rather than as
+// unconstrained.
+func TestUndatedListIsNotUsableForDecisions(t *testing.T) {
+	l, err := New(1, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := l.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(enc, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewResolver()
+	r.lists["https://undated.example"] = decoded
+	if err := r.Check(Reference{Index: 0, URI: "https://undated.example"}, time.Now()); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("undated list accepted: %v", err)
+	}
+	// With a zero evaluation time this is the ONLY thing that refuses it:
+	// time.Time{}.Unix() is negative, so the ordinary "now >= notAfter"
+	// comparison reads an undated list as not-yet-expired.
+	if err := r.Check(Reference{Index: 0, URI: "https://undated.example"}, time.Time{}); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("undated list accepted at zero time: %v", err)
+	}
+}
+
+// A caller that forgets to supply an evaluation time gets unavailability, not
+// permission. time.Time{}.Unix() is about -62135596800, so every dated snapshot
+// would otherwise compare as not-yet-expired and be accepted — the parameter
+// that removed one footgun would have introduced another.
+func TestZeroEvaluationTimeIsUnavailable(t *testing.T) {
+	uri := "https://issuer.example/statuslists/zero"
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := New(1, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	tok, err := SignToken(l, uri, now, time.Hour, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewResolver()
+	if err := r.AddVerified(tok, uri, pub, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Check(Reference{Index: 0, URI: uri}, time.Time{}); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("zero evaluation time accepted a snapshot: %v", err)
+	}
 }

@@ -46,6 +46,15 @@ type List struct {
 	bits    int    // 1, 2, 4, or 8
 	entries int    // number of referenced tokens
 	data    []byte // packed big-endian within each byte, MSB-first
+
+	// notAfter is the snapshot's own expiry, carried from the Status List
+	// Token it was verified from. Zero means "undated", which Resolver.Check
+	// treats as stale: a revocation snapshot with no known validity cannot be
+	// shown to be current, and revocation data that cannot be shown current is
+	// exactly what must not be trusted. Decode alone leaves this zero, so a
+	// list built from raw encoded bytes is unusable for decisions until it has
+	// been through VerifyToken — which is the intended direction.
+	notAfter int64
 }
 
 // New creates a zero-initialised (all VALID) list of n entries at the given

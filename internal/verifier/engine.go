@@ -104,8 +104,8 @@ type Engine struct {
 
 // checkStatus consults the status-list resolver for a token, if both the
 // resolver is configured and the token carries a status claim. A malformed
-// status claim, an unavailable list, a revoked/suspended entry, or an unknown
-// status all fail closed. Absence of a status claim (or of a resolver) is not
+// status claim, an unavailable list, a STALE list, a revoked/suspended entry, or
+// an unknown status all fail closed. Absence of a status claim (or of a resolver) is not
 // an error — such a token simply is not in scope for status-list revocation.
 func (e *Engine) checkStatus(claims map[string]any) error {
 	if e.StatusResolver == nil {
@@ -118,7 +118,7 @@ func (e *Engine) checkStatus(claims map[string]any) error {
 	if !ok {
 		return nil
 	}
-	return e.StatusResolver.Check(ref)
+	return e.StatusResolver.Check(ref, time.Now())
 }
 
 // New returns an engine bound to a registry.
