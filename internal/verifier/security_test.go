@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -177,4 +178,85 @@ func TestSec_FutureIAT(t *testing.T) {
 	h.in.TxnToken = forged
 	// step2 runs before DPoP, so the original proof binding is irrelevant here.
 	mustDeny(t, h.eng.Verify(context.Background(), h.in), 2)
+}
+
+// ── monotonic TTL, final hop (adversarial review #3, F2) ─────────────────────
+
+// reforgeTxn re-signs the SPT-Txn with mutated claims and refreshes the DPoP
+// proof, which is bound to the token by `ath`. Without the refresh the request
+// dies at step 5 and the test would pass for the wrong reason.
+func reforgeTxn(t *testing.T, h *harness, mutate func(map[string]any)) {
+	t.Helper()
+	claims := decodeClaims(t, h.in.TxnToken)
+	mutate(claims)
+	h.in.TxnToken = forgeToken(claims, h.ttsPriv)
+	proof, err := dpop.Proof(h.agentPriv, htm, htu, dpop.ATH(h.in.TxnToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.in.DPoPProof = proof
+}
+
+// A malicious or compromised TTS mints an SPT-Txn that outlives the capability
+// authorizing it. `txntoken.Issue` refuses this, so the token must be forged —
+// which is exactly the threat invariant 2 names: the check exists at
+// verification *because* a malicious issuer must not be able to extend a
+// lifetime. Authority would otherwise persist after its grant expired.
+func TestSec_TxnMustNotOutliveItsLeafCapability(t *testing.T) {
+	h := build(t)
+	leafExp := decodeClaims(t, h.in.CT)["exp"].(float64)
+	reforgeTxn(t, h, func(c map[string]any) { c["exp"] = leafExp + 1 })
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
+}
+
+// Property: across a spread of offsets from the leaf's expiry, the engine
+// permits EXACTLY when the transaction token does not outlive its capability.
+//
+// Both directions matter. A test that only asserts denial of over-long tokens
+// passes just as well against an engine that denies everything, and the scope
+// attenuation property test in internal/cttoken — the model for this one — is
+// issuance-side and would not have caught any of F2.
+func TestSec_TxnLifetimeAttenuationProperty(t *testing.T) {
+	seed := time.Now().UnixNano()
+	rng := rand.New(rand.NewSource(seed))
+	t.Logf("seed %d", seed)
+
+	for i := 0; i < 200; i++ {
+		h := build(t)
+		leafExp := int64(decodeClaims(t, h.in.CT)["exp"].(float64))
+
+		// Spread across the boundary: comfortably inside, exactly at, one past,
+		// well past.
+		//
+		// The "inside" case must stay strictly in the FUTURE. An earlier version
+		// drew an unbounded negative offset and produced already-expired tokens,
+		// which step 2 rejected — correctly. "Does not outlive its parent" and
+		// "is still valid" are different properties, and only the first is under
+		// test here. That confusion surfaced because this asserts both
+		// directions; a deny-only test would have passed straight over it.
+		now := time.Now().Unix()
+		span := leafExp - now
+		if span < 2 {
+			t.Fatalf("fixture leaf CT expires in %ds — too soon to draw an interior point", span)
+		}
+		var txExp int64
+		switch i % 4 {
+		case 0:
+			txExp = now + 1 + rng.Int63n(span) // (now, leafExp]
+		case 1:
+			txExp = leafExp
+		case 2:
+			txExp = leafExp + 1
+		default:
+			txExp = leafExp + 1 + rng.Int63n(86400)
+		}
+		reforgeTxn(t, h, func(c map[string]any) { c["exp"] = float64(txExp) })
+
+		d := h.eng.Verify(context.Background(), h.in)
+		wantAllow := txExp <= leafExp
+		if d.Allow != wantAllow {
+			t.Fatalf("txExp %d (leafExp %+d, now %+d): allow=%v want %v (step %d: %s)",
+				txExp, txExp-leafExp, txExp-now, d.Allow, wantAllow, d.Step, d.Reason)
+		}
+	}
 }

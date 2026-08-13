@@ -194,6 +194,25 @@ func (e *Engine) Verify(ctx context.Context, in Input) Decision {
 	if err != nil {
 		return deny(6, err)
 	}
+	// Monotonic TTL, final hop (DELEGATION-INTENT-MCP.md §1.2 invariant 2).
+	//
+	// step6Chain enforces exp(CT[i]) ≤ exp(parent) inside its loop, but the
+	// SPT-Txn is itself a child of the leaf CT and that last hop was checked
+	// nowhere in the verifier. `txntoken.Issue` enforces it and the verifier
+	// trusted that it had — which is precisely the asymmetry step 6 exists to
+	// remove, and which invariant 2 names outright: a child that outlives its
+	// parent MUST be rejected at construction AND at verification, so that a
+	// malicious issuer cannot extend a lifetime.
+	//
+	// Deliberately placed HERE rather than inside each step-6 variant. Both
+	// variants return the leaf, so one check on the shared return value is one
+	// implementation. Two copies would be two implementations of one invariant,
+	// which is the arrangement the canonicalization rule in the spec exists to
+	// forbid: two implementations of one thing diverge over time, and a
+	// divergence in an authorization invariant is a bypass.
+	if err := checkTxnLifetime(txClaims, ctClaims); err != nil {
+		return deny(6, err)
+	}
 	// Step 7 — scope containment of the transaction within the capability.
 	if err := step7Scope(ctClaims, in.Txn); err != nil {
 		return deny(7, err)
@@ -654,12 +673,55 @@ func scopeOf(claims map[string]any) (tbac.Scope, error) {
 	return tbac.Scope(raw), nil
 }
 
-func intClaim(claims map[string]any, name string) (int, bool) {
+// intClaim reads an integral JSON claim.
+//
+// Returns int64, not int. `exp` is a Unix timestamp, and on a 32-bit build
+// `int(f)` for any exp at or beyond 2038-01-19 is an out-of-range float→int
+// conversion — implementation-defined in Go, and typically negative on the
+// targets that have it. A negative parent exp makes `child > parent` false, so
+// a child could outlive its parent by decades while the comparison reported
+// attenuation. No 32-bit target is built today (CI has no GOARCH matrix), which
+// is why this was latent rather than live; int64 removes the hazard rather than
+// relying on the build matrix never changing.
+func intClaim(claims map[string]any, name string) (int64, bool) {
 	f, ok := claims[name].(float64)
 	if !ok {
 		return 0, false
 	}
-	return int(f), true
+	return int64(f), true
+}
+
+// checkTxnLifetime enforces exp(SPT-Txn) ≤ exp(leaf CT).
+//
+// The transaction token is the final hop of the delegation chain. It MUST NOT
+// outlive the capability that authorized it, or authority persists after the
+// grant conferring it has expired.
+//
+// Both halves fail closed on an absent or non-integral exp. A missing exp is
+// not "no constraint": it is a lifetime that cannot be bounded, and this engine
+// does not proceed on a bound it cannot compute.
+//
+// Those two branches are currently UNREACHABLE through Verify: step2Expiry
+// already requires the SPT-Txn's exp to be a float, and cttoken.Verify requires
+// the leaf CT's. They are kept because that reachability is a property of the
+// current step ordering, not of this function, and a reordering that removed it
+// would otherwise turn an unusable exp into an unbounded lifetime silently.
+// Pinned by TestCheckTxnLifetime, which is white-box for exactly this reason —
+// an end-to-end test of these branches passes because step 2 denied first, and
+// is worth nothing.
+func checkTxnLifetime(txClaims, leaf map[string]any) error {
+	txExp, ok := intClaim(txClaims, "exp")
+	if !ok {
+		return fmt.Errorf("SPT-Txn missing or non-integral exp")
+	}
+	leafExp, ok := intClaim(leaf, "exp")
+	if !ok {
+		return fmt.Errorf("leaf CT missing or non-integral exp")
+	}
+	if txExp > leafExp {
+		return fmt.Errorf("SPT-Txn outlives its leaf capability (exp %d > %d): TTL must attenuate", txExp, leafExp)
+	}
+	return nil
 }
 
 // reservedClaimPrefix namespaces synthetic, verifier-internal claims. Any
