@@ -41,7 +41,8 @@ func benchEngine(b *testing.B) (*Engine, Input) {
 		Verify: func(ctx context.Context, token string) (map[string]any, error) {
 			// Model the real cost: return claims with a fresh jti each call so
 			// the replay cache admits every iteration (mirrors distinct tokens).
-			return map[string]any{"jti": token, intent.Claim: digest}, nil
+			return map[string]any{"jti": token, intent.Claim: digest,
+				"exp": float64(time.Now().Add(30 * time.Second).Unix())}, nil
 		},
 		Emit: func(r *receipt.Receipt) (string, error) {
 			// Sign (the real emitter's dominant cost) but skip disk I/O — the
@@ -51,6 +52,7 @@ func benchEngine(b *testing.B) (*Engine, Input) {
 			}
 			return r.Hash()
 		},
+		MaxTokenTTL:    time.Minute,
 		ReplayCapacity: 1 << 20,
 	})
 	if err != nil {
@@ -84,14 +86,19 @@ func TestDecideP99Budget(t *testing.T) {
 	_, logKey, _ := ed25519.GenerateKey(nil)
 	digestIntent := intent.Intent{Tool: "t", Params: json.RawMessage(`{"a":"1"}`), Target: "x"}
 	digest, _ := digestIntent.Digest()
-	eng, _ := New(Config{
+	eng, err := New(Config{
 		PEP: "p", PolicyHash: "h",
 		Verify: func(ctx context.Context, token string) (map[string]any, error) {
-			return map[string]any{"jti": token, intent.Claim: digest}, nil
+			return map[string]any{"jti": token, intent.Claim: digest,
+				"exp": float64(time.Now().Add(30 * time.Second).Unix())}, nil
 		},
 		Emit:           func(r *receipt.Receipt) (string, error) { _ = r.Sign(logKey); return r.Hash() },
+		MaxTokenTTL:    time.Minute,
 		ReplayCapacity: 1 << 20,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	const n = 5000
 	lat := make([]time.Duration, n)

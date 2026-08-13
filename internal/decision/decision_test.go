@@ -16,6 +16,11 @@ import (
 // harness wires an Engine with a stub verifier and an in-memory emitter that
 // records every receipt, so tests can assert on the evidence as well as the
 // decision.
+// exp is a valid, in-bounds expiry for the harness's MaxTokenTTL. Claims
+// without one are now refused (token.exp-absent), so fixtures that mean to
+// exercise a LATER check must carry a plausible expiry to reach it.
+func (h *harness) exp() float64 { return float64(time.Now().Add(30 * time.Second).Unix()) }
+
 type harness struct {
 	engine    *Engine
 	receipts  []*receipt.Receipt
@@ -53,6 +58,7 @@ func newHarness(t *testing.T) *harness {
 			h.receipts = append(h.receipts, r)
 			return mustHash(r), nil
 		},
+		MaxTokenTTL:    time.Minute,
 		ReplayWindow:   time.Minute,
 		ReplayCapacity: 4,
 	})
@@ -81,7 +87,7 @@ func (h *harness) bindClaims(t *testing.T, jti string, in intent.Intent) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.claims = map[string]any{"jti": jti, intent.Claim: d}
+	h.claims = map[string]any{"jti": jti, intent.Claim: d, "exp": h.exp()}
 }
 
 func (h *harness) lastReceipt(t *testing.T) *receipt.Receipt {
@@ -137,7 +143,7 @@ func TestEveryDenyPathEmitsReceiptAndClassifies(t *testing.T) {
 			other.Tool = "payments.drain"
 			return Input{Token: "tok", Intent: other}
 		}, "intent.digest-mismatch", receipt.ClassViolation},
-		{"no intent claim", func(h *harness, t *testing.T) { h.claims = map[string]any{"jti": "jti-y"} }, func(h *harness, t *testing.T) Input {
+		{"no intent claim", func(h *harness, t *testing.T) { h.claims = map[string]any{"jti": "jti-y", "exp": h.exp()} }, func(h *harness, t *testing.T) Input {
 			return Input{Token: "tok", Intent: declaredIntent()}
 		}, "intent.digest-mismatch", receipt.ClassViolation},
 	}
@@ -225,6 +231,11 @@ func TestConfigValidation(t *testing.T) {
 		PolicyHash: "h",
 		Verify:     func(context.Context, string) (map[string]any, error) { return nil, nil },
 		Emit:       func(*receipt.Receipt) (string, error) { return "", nil },
+		// Also required. Its own cases live in
+		// TestNewRefusesAnUnboundedOrUnmemorableLifetime, which explains what
+		// each refusal prevents — this table only asserts that absence is
+		// rejected, which is not the interesting half.
+		MaxTokenTTL: time.Minute,
 	}
 	broken := []func(Config) Config{
 		func(c Config) Config { c.PEP = ""; return c },
@@ -239,5 +250,84 @@ func TestConfigValidation(t *testing.T) {
 	}
 	if _, err := New(base); err != nil {
 		t.Fatalf("valid config rejected: %v", err)
+	}
+}
+
+// ── lifetime bound (adversarial review #3, F3) ───────────────────────────────
+
+// The construction-time guards. Both are refusals rather than warnings because
+// the failures they prevent are silent: nothing reports that single use has
+// stopped being single use.
+func TestNewRefusesAnUnboundedOrUnmemorableLifetime(t *testing.T) {
+	base := func() Config {
+		return Config{
+			PEP: "pep.test", PolicyHash: receipt.TokenHash("p"), Jurisdiction: "T",
+			Verify: func(context.Context, string) (map[string]any, error) { return nil, nil },
+			Emit:   func(*receipt.Receipt) (string, error) { return "", nil },
+		}
+	}
+	t.Run("MaxTokenTTL is required", func(t *testing.T) {
+		if _, err := New(base()); err == nil {
+			t.Fatal("constructed an engine with no declared lifetime bound: a PEP that " +
+				"does not walk the chain would accept whatever lifetime the issuer chose")
+		}
+	})
+	t.Run("ReplayWindow must cover MaxTokenTTL", func(t *testing.T) {
+		c := base()
+		c.MaxTokenTTL = time.Hour
+		c.ReplayWindow = time.Minute
+		if _, err := New(c); err == nil {
+			t.Fatal("constructed an engine whose tokens outlive the memory of their own " +
+				"jti — the slot is pruned while the token is still valid and it replays")
+		}
+	})
+	t.Run("the default ReplayWindow does not silently under-cover", func(t *testing.T) {
+		c := base()
+		c.MaxTokenTTL = 20 * time.Minute // > the 10-minute default
+		if _, err := New(c); err == nil {
+			t.Fatal("defaulted ReplayWindow to 10m under a 20m MaxTokenTTL: a default " +
+				"that quietly violates the invariant is worse than no default")
+		}
+	})
+}
+
+// The regression for the bypass itself. Before this bound existed, a token
+// legitimately issued with a 24h TTL under a 24h capability was accepted by
+// every shipped gateway skin, its jti was forgotten after the replay window,
+// and the same token then replayed — every window, for 24 hours.
+func TestOverLongTokenIsRefusedBeforeItCanBurnAReplaySlot(t *testing.T) {
+	h := newHarness(t) // MaxTokenTTL = 1m
+	h.bindClaims(t, "jti-long", declaredIntent())
+	h.claims["exp"] = float64(time.Now().Add(24 * time.Hour).Unix())
+
+	d := h.engine.Decide(context.Background(), Input{Token: "tok", Intent: declaredIntent()})
+	if d.Permit() {
+		t.Fatal("a 24h token was permitted by a PEP that declared a 1m bound")
+	}
+	if d.Rule() != "token.ttl-excessive" || d.Class() != receipt.ClassViolation {
+		t.Fatalf("rule/class = %s/%s, want token.ttl-excessive/%s", d.Rule(), d.Class(), receipt.ClassViolation)
+	}
+
+	// The refusal must NOT have consumed the jti. Otherwise an attacker with a
+	// supply of over-long tokens fills a bounded cache with tokens that were
+	// never acceptable, and a full cache denies everything as unavailable.
+	h.claims["exp"] = h.exp()
+	d2 := h.engine.Decide(context.Background(), Input{Token: "tok", Intent: declaredIntent()})
+	if !d2.Permit() {
+		t.Fatalf("the same jti was refused after an over-long presentation (%s/%s): "+
+			"the rejected token burned a replay slot", d2.Rule(), d2.Class())
+	}
+}
+
+// A verifier that does not surface exp leaves the lifetime unbounded and
+// unknowable, so the engine must not proceed on trust.
+func TestMissingExpIsRefused(t *testing.T) {
+	h := newHarness(t)
+	h.bindClaims(t, "jti-noexp", declaredIntent())
+	delete(h.claims, "exp")
+
+	d := h.engine.Decide(context.Background(), Input{Token: "tok", Intent: declaredIntent()})
+	if d.Permit() || d.Rule() != "token.exp-absent" {
+		t.Fatalf("rule = %s, permit = %v; want token.exp-absent and a deny", d.Rule(), d.Permit())
 	}
 }

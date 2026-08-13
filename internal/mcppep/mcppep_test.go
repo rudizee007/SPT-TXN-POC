@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/decision"
 	"github.com/rudizee007/spt-txn-poc/internal/intent"
@@ -38,6 +39,7 @@ func newRig(t *testing.T) *testRig {
 			}
 			return c, nil
 		},
+		MaxTokenTTL: time.Minute,
 		Emit: func(r *receipt.Receipt) (string, error) {
 			if err := r.Sign(logKey); err != nil {
 				return "", err
@@ -67,7 +69,10 @@ func (r *testRig) mint(t *testing.T, token, jti, tool, argsJSON string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.claims[token] = map[string]any{"jti": jti, intent.Claim: d}
+	// Every real token carries exp; a fixture without one is refused
+	// (token.exp-absent) and never reaches the check under test.
+	r.claims[token] = map[string]any{"jti": jti, intent.Claim: d,
+		"exp": float64(time.Now().Add(30 * time.Second).Unix())}
 }
 
 func callMsg(token, tool, argsJSON string) []byte {

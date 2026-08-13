@@ -10,6 +10,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"testing"
+	"time"
 
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	rpccode "google.golang.org/genproto/googleapis/rpc/code"
@@ -41,7 +42,8 @@ func stubEngine(t *testing.T, upstream, method, path, token string) *decision.En
 			}
 			return map[string]any{"jti": tok, intent.Claim: digest}, nil
 		},
-		Emit: func(r *receipt.Receipt) (string, error) { _ = r.Sign(logKey); return r.Hash() },
+		MaxTokenTTL: time.Minute,
+		Emit:        func(r *receipt.Receipt) (string, error) { _ = r.Sign(logKey); return r.Hash() },
 	})
 	if err != nil {
 		t.Fatal(err)

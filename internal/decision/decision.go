@@ -18,6 +18,7 @@ package decision
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -65,10 +66,23 @@ type UnavailableError struct{ Err error }
 func (u UnavailableError) Error() string { return "unavailable: " + u.Err.Error() }
 func (u UnavailableError) Unwrap() error { return u.Err }
 
-// TokenVerifier verifies a presented compact token offline (signature, chain
-// walk, expiry, revocation/status) and returns its claims. Return an
-// UnavailableError when a required dependency (status list, registry
-// snapshot) is unreachable; any other error is treated as a violation.
+// TokenVerifier verifies a presented compact token offline and returns its
+// claims. Return an UnavailableError when a required dependency (status list,
+// registry snapshot) is unreachable; any other error is treated as a violation.
+//
+// # What an implementation is required to check, and what it is not
+//
+// An implementation MUST verify the signature and MUST reject an expired token.
+// Everything beyond that is profile-dependent, and this comment previously
+// claimed otherwise — it said every verifier performs a "chain walk" and a
+// "revocation/status" check. The three shipped gateway skins do neither: they
+// are presented with one token and hold no registry, so they rely on the TTS
+// having walked the chain at issuance (GATEWAY-PROFILES.md §1.1).
+//
+// That reliance is legitimate, and it is why Config.MaxTokenTTL exists. A PEP
+// that does not consult revocation has a revocation gap equal to the token's
+// remaining lifetime, so the engine bounds that lifetime itself rather than
+// assuming a verifier did.
 type TokenVerifier func(ctx context.Context, token string) (map[string]any, error)
 
 // Emitter signs the receipt with the log key, appends it to the transparency
@@ -83,8 +97,22 @@ type Config struct {
 	Jurisdiction string // jurisdiction profile identifier
 	Verify       TokenVerifier
 	Emit         Emitter
-	// ReplayWindow bounds how long a jti is remembered; it should be ≥ the
-	// maximum token TTL this PEP accepts. Zero uses 10 minutes.
+	// MaxTokenTTL is the longest remaining lifetime this PEP will accept on a
+	// presented token. Required — there is no default, because the safe value
+	// depends on how much revocation latency the deployment tolerates and
+	// guessing it on an operator's behalf is how a 30-second design ends up
+	// accepting 24-hour tokens.
+	//
+	// A gateway PEP does not walk the chain, so revoking the CT, the CAT or the
+	// issuer key does not invalidate an already-minted token. This bound IS the
+	// revocation latency for that form factor (GATEWAY-PROFILES.md §1.1).
+	MaxTokenTTL time.Duration
+
+	// ReplayWindow bounds how long a jti is remembered. It MUST be ≥
+	// MaxTokenTTL and New refuses to construct an Engine where it is not: a
+	// token that outlives the memory of its own jti is replayable once the slot
+	// is pruned, which turns single use into single-use-per-window. Zero uses
+	// 10 minutes, which is only accepted if MaxTokenTTL is 10 minutes or less.
 	ReplayWindow time.Duration
 	// ReplayCapacity bounds the replay cache. A full cache DENIES new
 	// tokens (unavailable) — it never evicts-and-hopes. Zero uses 65536.
@@ -114,8 +142,22 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.Emit == nil {
 		return nil, errors.New("decision: receipt emitter required")
 	}
+	if cfg.MaxTokenTTL <= 0 {
+		return nil, errors.New("decision: MaxTokenTTL required — a PEP that does not " +
+			"walk the chain has a revocation gap equal to the token lifetime it accepts, " +
+			"so that lifetime must be a declared bound and not whatever the issuer chose")
+	}
 	if cfg.ReplayWindow <= 0 {
 		cfg.ReplayWindow = 10 * time.Minute
+	}
+	// Refuse rather than warn. These are one property written twice, and when
+	// they disagree the failure is silent: the jti slot is pruned while the
+	// token is still valid, the same token is accepted again, and nothing
+	// anywhere reports that single use stopped being single use.
+	if cfg.ReplayWindow < cfg.MaxTokenTTL {
+		return nil, fmt.Errorf("decision: ReplayWindow (%s) is shorter than MaxTokenTTL (%s) — "+
+			"a token would outlive the memory of its own jti and replay once the slot is pruned",
+			cfg.ReplayWindow, cfg.MaxTokenTTL)
 	}
 	if cfg.ReplayCapacity <= 0 {
 		cfg.ReplayCapacity = 65536
@@ -157,6 +199,28 @@ func (e *Engine) Decide(ctx context.Context, in Input) Decision {
 	if jti == "" {
 		return e.finish(receipt.DecisionDeny, receipt.ClassViolation, "token.jti-absent", tokenHash, "")
 	}
+
+	// Lifetime bound. A gateway PEP does not walk the chain, so revoking the
+	// CT, the CAT or the issuer key cannot withdraw a token already minted:
+	// the remaining lifetime IS the revocation gap (GATEWAY-PROFILES.md §1.1).
+	// The verifier proved the token is not yet expired; it did not prove the
+	// window is one this PEP is willing to be blind for.
+	//
+	// Checked BEFORE the replay slot is consumed, unlike the intent check. An
+	// over-long token can never be accepted here, so burning a slot for it
+	// would let an attacker fill a bounded cache with tokens that were never
+	// acceptable — and a full cache denies every token as unavailable.
+	expF, ok := claims["exp"].(float64)
+	if !ok {
+		// Fail closed: without exp there is no lifetime to bound. The verifier
+		// contract requires rejecting expired tokens, so a verifier that does
+		// not surface exp is one whose expiry behaviour cannot be checked here.
+		return e.finish(receipt.DecisionDeny, receipt.ClassViolation, "token.exp-absent", tokenHash, "")
+	}
+	if remaining := time.Until(time.Unix(int64(expF), 0)); remaining > e.cfg.MaxTokenTTL {
+		return e.finish(receipt.DecisionDeny, receipt.ClassViolation, "token.ttl-excessive", tokenHash, "")
+	}
+
 	switch e.replayCheck(jti) {
 	case replayDuplicate:
 		return e.finish(receipt.DecisionDeny, receipt.ClassViolation, "replay.duplicate", tokenHash, "")

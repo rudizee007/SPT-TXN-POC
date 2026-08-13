@@ -27,6 +27,50 @@ that "passed through" without a decision attached (CLAUDE.md §2).
 **Latency is a security requirement:** decision path budget p99 < 10 ms. The
 skins add serialization only.
 
+## 1.1 What a gateway PEP verifies, and what it relies on
+
+A gateway PEP is presented with **one token** — the SPT-Txn — and nothing else.
+It receives no CAT, no CT chain, and it holds no trust-registry snapshot. It
+therefore **does not walk the delegation chain**. It relies on the TTS having
+walked it at issuance, and verifies the TTS signature.
+
+That reliance is sound only under the conditions below. They are not optional
+hardening; they are what makes a non-chain-walking PEP an authorization point
+rather than a signature checker.
+
+**A PEP MUST declare a maximum acceptable token lifetime, and MUST reject a
+token whose remaining lifetime exceeds it.**
+
+The reliance above buys a revocation gap exactly as long as the token's
+lifetime: once minted, an SPT-Txn cannot be withdrawn by revoking the CT, the
+CAT, or the issuer's registry key, because the PEP consults none of them.
+`txntoken.DefaultTTL` is 30 seconds for this reason, but a TTL is
+caller-supplied at issuance and bounded only by the parent CT's expiry — so a
+24-hour capability yields an acceptable 24-hour transaction token. The bound has
+to be enforced where the reliance is taken, which is the PEP.
+
+**A PEP's replay window MUST be at least its maximum acceptable token
+lifetime.**
+
+Single use is enforced by remembering a `jti` for the replay window. If a token
+outlives that memory, the slot is pruned while the token is still valid and the
+same token is accepted again. Single use then means "single use per replay
+window", which is not single use. The two values are one property expressed
+twice, so the engine refuses to start when they disagree rather than trusting an
+operator to keep them aligned.
+
+**Consequences to state plainly, because a deployer will otherwise assume
+otherwise:**
+
+- Revoking a CT, a CAT, or an issuer key does not invalidate an already-minted
+  SPT-Txn at a gateway PEP. The maximum token lifetime *is* the revocation
+  latency for this form factor.
+- A deployment that needs revocation to take effect faster than that must lower
+  the maximum token lifetime, not add a cache.
+- A PEP that needs the chain walked at the point of use is not this form factor;
+  it is the full engine (`internal/verifier`), which requires the chain to be
+  presented and a registry to be reachable.
+
 ## 2. Envoy `ext_authz` (HTTP mode)
 
 - Endpoint: `POST /authz` receiving the ext_authz HTTP-service payload
