@@ -59,6 +59,20 @@ window", which is not single use. The two values are one property expressed
 twice, so the engine refuses to start when they disagree rather than trusting an
 operator to keep them aligned.
 
+**A PEP MUST verify that the token's `aud` names this deployment, and MUST be
+configured with that identity explicitly.**
+
+`aud` is the executing domain the token was minted for. A PEP that does not
+check it accepts any validly-signed, unexpired token from the same TTS,
+including one issued for a different domain entirely — so every deployment under
+one TTS becomes a single audience, and the domain boundary exists only in the
+issuer's intent. This is step 3 of the eight-step engine, and the gateway form
+factor does not run that engine, so the check has to exist here.
+
+The identity is required configuration, not a default. An audience compared
+against an unset value passes whenever the token also omits `aud`, which is a
+fail-open reachable by misconfiguration alone.
+
 **Consequences to state plainly, because a deployer will otherwise assume
 otherwise:**
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mutation check for the gateway lifetime bound (adversarial review #3, F3).
+# Mutation check for the guards in the decision core (adversarial review #3).
 #
 # A passing suite is not evidence that a guard works. Each mutation below
 # disables exactly one of the three guards that make a non-chain-walking PEP
@@ -11,6 +11,8 @@
 #   M-A  the token lifetime bound never fires
 #   M-B  ReplayWindow may be shorter than MaxTokenTTL
 #   M-C  a token with no exp is accepted
+#   M-D  the audience check never fires
+#   M-E  an empty expected audience is accepted at construction
 #
 # Restores the file on any exit path, including Ctrl-C.
 set -uo pipefail
@@ -66,9 +68,19 @@ run_mutation "M-C missing exp is accepted" \
   "	expF, ok := claims[\"exp\"].(float64)
 	if false && !ok {" || rc=1
 
+run_mutation "M-D audience check never fires" \
+  "TestAudienceMustNameThisDeployment" \
+  "if aud, _ := claims[\"aud\"].(string); aud != e.cfg.Audience {" \
+  "if aud, _ := claims[\"aud\"].(string); false && aud != e.cfg.Audience {" || rc=1
+
+run_mutation "M-E empty audience accepted at construction" \
+  "TestNewRefusesAnEmptyAudience" \
+  "if cfg.Audience == \"\" {" \
+  "if false && cfg.Audience == \"\" {" || rc=1
+
 cp "$BAK" "$F"
 if [ "$rc" -eq 0 ]; then
-  echo "OK — all three guards are load-bearing."
+  echo "OK — all five guards are load-bearing."
 else
   echo "PROBLEM — a guard can be removed with the suite still green. Fix the test, not this script."
 fi

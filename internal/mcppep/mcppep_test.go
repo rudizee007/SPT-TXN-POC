@@ -39,6 +39,7 @@ func newRig(t *testing.T) *testRig {
 			}
 			return c, nil
 		},
+		Audience:    "aud.test",
 		MaxTokenTTL: time.Minute,
 		Emit: func(r *receipt.Receipt) (string, error) {
 			if err := r.Sign(logKey); err != nil {
@@ -71,7 +72,7 @@ func (r *testRig) mint(t *testing.T, token, jti, tool, argsJSON string) {
 	}
 	// Every real token carries exp; a fixture without one is refused
 	// (token.exp-absent) and never reaches the check under test.
-	r.claims[token] = map[string]any{"jti": jti, intent.Claim: d,
+	r.claims[token] = map[string]any{"jti": jti, intent.Claim: d, "aud": "aud.test",
 		"exp": float64(time.Now().Add(30 * time.Second).Unix())}
 }
 

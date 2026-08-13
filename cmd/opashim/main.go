@@ -67,13 +67,17 @@ func main() {
 	auditPath := flag.String("audit-log", "opashim-audit.jsonl", "transparency log path")
 	policyHash := flag.String("policy-hash", "", "hash of the policy bundle version (required)")
 	jurisdiction := flag.String("jurisdiction", "", "jurisdiction profile identifier")
+	audience := flag.String("audience", "",
+		"executing-domain identity this PEP answers for, matched against the token's aud "+
+			"(required). Distinct from -pep (a registry identity) and -upstream (a resource): "+
+			"this is the domain the token was minted FOR.")
 	maxTTL := flag.Duration("max-token-ttl", 60*time.Second,
 		"longest remaining token lifetime this PEP accepts. A gateway PEP does not walk "+
 			"the chain, so this IS the revocation latency (GATEWAY-PROFILES.md 1.1). "+
 			"txntoken.DefaultTTL is 30s; the default here allows one clock-skew margin over it.")
 	flag.Parse()
 
-	if *ttsPubHex == "" || *logKeyFile == "" || *policyHash == "" {
+	if *audience == "" || *ttsPubHex == "" || *logKeyFile == "" || *policyHash == "" {
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -108,6 +112,7 @@ func main() {
 			return txntoken.Verify(token, ed25519.PublicKey(ttsPub))
 		},
 		Emit:        emitter.Emit,
+		Audience:    *audience,
 		MaxTokenTTL: *maxTTL,
 	})
 	if err != nil {

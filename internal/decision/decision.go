@@ -97,6 +97,20 @@ type Config struct {
 	Jurisdiction string // jurisdiction profile identifier
 	Verify       TokenVerifier
 	Emit         Emitter
+
+	// Audience is the executing-domain identity this PEP answers for, matched
+	// against the token's `aud`. Required.
+	//
+	// Distinct from PEP (a trust-registry identity) and from the intent target
+	// (a resource). This is the domain the token was minted FOR, and without it
+	// a PEP accepts any validly-signed, unexpired token from the same TTS —
+	// including one issued for a different domain — so every deployment under
+	// one issuer collapses into a single audience.
+	//
+	// Required rather than defaulted because the natural default is the empty
+	// string, and comparing "" against a token that omits `aud` succeeds. That
+	// is a fail-open reachable by forgetting to set a field.
+	Audience string
 	// MaxTokenTTL is the longest remaining lifetime this PEP will accept on a
 	// presented token. Required — there is no default, because the safe value
 	// depends on how much revocation latency the deployment tolerates and
@@ -141,6 +155,11 @@ func New(cfg Config) (*Engine, error) {
 	}
 	if cfg.Emit == nil {
 		return nil, errors.New("decision: receipt emitter required")
+	}
+	if cfg.Audience == "" {
+		return nil, errors.New("decision: Audience required — an empty expected audience " +
+			"matches a token that omits aud, so a PEP configured by omission would accept " +
+			"tokens minted for any domain")
 	}
 	if cfg.MaxTokenTTL <= 0 {
 		return nil, errors.New("decision: MaxTokenTTL required — a PEP that does not " +
@@ -198,6 +217,18 @@ func (e *Engine) Decide(ctx context.Context, in Input) Decision {
 	jti, _ := claims["jti"].(string)
 	if jti == "" {
 		return e.finish(receipt.DecisionDeny, receipt.ClassViolation, "token.jti-absent", tokenHash, "")
+	}
+
+	// Audience. Step 3 of the eight-step engine, which this form factor does
+	// not run (GATEWAY-PROFILES.md §1.1). Without it any validly-signed,
+	// unexpired token from the same TTS is accepted here, including one minted
+	// for a different executing domain.
+	//
+	// Read as a string and compared exactly. A non-string aud yields "" and
+	// fails, because Config.Audience cannot be "" — the construction guard is
+	// what makes this comparison safe rather than accidentally permissive.
+	if aud, _ := claims["aud"].(string); aud != e.cfg.Audience {
+		return e.finish(receipt.DecisionDeny, receipt.ClassViolation, "token.audience-mismatch", tokenHash, "")
 	}
 
 	// Lifetime bound. A gateway PEP does not walk the chain, so revoking the

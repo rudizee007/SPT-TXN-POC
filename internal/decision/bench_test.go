@@ -42,7 +42,8 @@ func benchEngine(b *testing.B) (*Engine, Input) {
 			// Model the real cost: return claims with a fresh jti each call so
 			// the replay cache admits every iteration (mirrors distinct tokens).
 			return map[string]any{"jti": token, intent.Claim: digest,
-				"exp": float64(time.Now().Add(30 * time.Second).Unix())}, nil
+				"exp": float64(time.Now().Add(30 * time.Second).Unix()),
+				"aud": "aud.bench"}, nil
 		},
 		Emit: func(r *receipt.Receipt) (string, error) {
 			// Sign (the real emitter's dominant cost) but skip disk I/O — the
@@ -52,6 +53,7 @@ func benchEngine(b *testing.B) (*Engine, Input) {
 			}
 			return r.Hash()
 		},
+		Audience:       "aud.bench",
 		MaxTokenTTL:    time.Minute,
 		ReplayCapacity: 1 << 20,
 	})
@@ -90,9 +92,11 @@ func TestDecideP99Budget(t *testing.T) {
 		PEP: "p", PolicyHash: "h",
 		Verify: func(ctx context.Context, token string) (map[string]any, error) {
 			return map[string]any{"jti": token, intent.Claim: digest,
-				"exp": float64(time.Now().Add(30 * time.Second).Unix())}, nil
+				"exp": float64(time.Now().Add(30 * time.Second).Unix()),
+				"aud": "aud.bench"}, nil
 		},
 		Emit:           func(r *receipt.Receipt) (string, error) { _ = r.Sign(logKey); return r.Hash() },
+		Audience:       "aud.bench",
 		MaxTokenTTL:    time.Minute,
 		ReplayCapacity: 1 << 20,
 	})

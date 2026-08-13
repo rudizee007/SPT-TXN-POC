@@ -42,6 +42,7 @@ func stubEngine(t *testing.T, upstream, method, path, token string) *decision.En
 			}
 			return map[string]any{"jti": tok, intent.Claim: digest}, nil
 		},
+		Audience:    "aud.test",
 		MaxTokenTTL: time.Minute,
 		Emit:        func(r *receipt.Receipt) (string, error) { _ = r.Sign(logKey); return r.Hash() },
 	})

@@ -16,11 +16,6 @@ import (
 // harness wires an Engine with a stub verifier and an in-memory emitter that
 // records every receipt, so tests can assert on the evidence as well as the
 // decision.
-// exp is a valid, in-bounds expiry for the harness's MaxTokenTTL. Claims
-// without one are now refused (token.exp-absent), so fixtures that mean to
-// exercise a LATER check must carry a plausible expiry to reach it.
-func (h *harness) exp() float64 { return float64(time.Now().Add(30 * time.Second).Unix()) }
-
 type harness struct {
 	engine    *Engine
 	receipts  []*receipt.Receipt
@@ -30,6 +25,9 @@ type harness struct {
 	verifyErr error
 	emitErr   error
 }
+
+// The executing domain these fixtures answer for.
+const audTest = "aud.test"
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
@@ -58,6 +56,7 @@ func newHarness(t *testing.T) *harness {
 			h.receipts = append(h.receipts, r)
 			return mustHash(r), nil
 		},
+		Audience:       audTest,
 		MaxTokenTTL:    time.Minute,
 		ReplayWindow:   time.Minute,
 		ReplayCapacity: 4,
@@ -68,6 +67,11 @@ func newHarness(t *testing.T) *harness {
 	h.engine = eng
 	return h
 }
+
+// exp is a valid, in-bounds expiry for the harness's MaxTokenTTL. Claims
+// without one are refused (token.exp-absent), so a fixture meaning to exercise
+// a LATER check must carry a plausible expiry to reach it.
+func (h *harness) exp() float64 { return float64(time.Now().Add(30 * time.Second).Unix()) }
 
 func mustHash(r *receipt.Receipt) string {
 	s, err := r.Hash()
@@ -87,7 +91,7 @@ func (h *harness) bindClaims(t *testing.T, jti string, in intent.Intent) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.claims = map[string]any{"jti": jti, intent.Claim: d, "exp": h.exp()}
+	h.claims = map[string]any{"jti": jti, intent.Claim: d, "exp": h.exp(), "aud": audTest}
 }
 
 func (h *harness) lastReceipt(t *testing.T) *receipt.Receipt {
@@ -143,7 +147,9 @@ func TestEveryDenyPathEmitsReceiptAndClassifies(t *testing.T) {
 			other.Tool = "payments.drain"
 			return Input{Token: "tok", Intent: other}
 		}, "intent.digest-mismatch", receipt.ClassViolation},
-		{"no intent claim", func(h *harness, t *testing.T) { h.claims = map[string]any{"jti": "jti-y", "exp": h.exp()} }, func(h *harness, t *testing.T) Input {
+		{"no intent claim", func(h *harness, t *testing.T) {
+			h.claims = map[string]any{"jti": "jti-y", "exp": h.exp(), "aud": audTest}
+		}, func(h *harness, t *testing.T) Input {
 			return Input{Token: "tok", Intent: declaredIntent()}
 		}, "intent.digest-mismatch", receipt.ClassViolation},
 	}
@@ -235,6 +241,7 @@ func TestConfigValidation(t *testing.T) {
 		// TestNewRefusesAnUnboundedOrUnmemorableLifetime, which explains what
 		// each refusal prevents — this table only asserts that absence is
 		// rejected, which is not the interesting half.
+		Audience:    audTest,
 		MaxTokenTTL: time.Minute,
 	}
 	broken := []func(Config) Config{
@@ -262,8 +269,9 @@ func TestNewRefusesAnUnboundedOrUnmemorableLifetime(t *testing.T) {
 	base := func() Config {
 		return Config{
 			PEP: "pep.test", PolicyHash: receipt.TokenHash("p"), Jurisdiction: "T",
-			Verify: func(context.Context, string) (map[string]any, error) { return nil, nil },
-			Emit:   func(*receipt.Receipt) (string, error) { return "", nil },
+			Verify:   func(context.Context, string) (map[string]any, error) { return nil, nil },
+			Emit:     func(*receipt.Receipt) (string, error) { return "", nil },
+			Audience: audTest,
 		}
 	}
 	t.Run("MaxTokenTTL is required", func(t *testing.T) {
@@ -329,5 +337,84 @@ func TestMissingExpIsRefused(t *testing.T) {
 	d := h.engine.Decide(context.Background(), Input{Token: "tok", Intent: declaredIntent()})
 	if d.Permit() || d.Rule() != "token.exp-absent" {
 		t.Fatalf("rule = %s, permit = %v; want token.exp-absent and a deny", d.Rule(), d.Permit())
+	}
+}
+
+// ── audience binding (adversarial review #3, found alongside F3) ─────────────
+
+// A gateway PEP does not run step 3 of the eight-step engine, so without this
+// check any validly-signed, unexpired token from the same TTS is accepted —
+// including one minted for a different executing domain. Every deployment under
+// one issuer would collapse into a single audience.
+func TestAudienceMustNameThisDeployment(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		aud  any
+	}{
+		{"another domain", "someone-else.execorg"},
+		{"absent", nil},
+		{"empty string", ""},
+		{"non-string", 42.0},
+		{"near miss", audTest + " "},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.bindClaims(t, "jti-aud-"+c.name, declaredIntent())
+			if c.aud == nil {
+				delete(h.claims, "aud")
+			} else {
+				h.claims["aud"] = c.aud
+			}
+			d := h.engine.Decide(context.Background(), Input{Token: "tok", Intent: declaredIntent()})
+			if d.Permit() {
+				t.Fatal("permitted a token not minted for this domain")
+			}
+			if d.Rule() != "token.audience-mismatch" {
+				t.Fatalf("rule = %s, want token.audience-mismatch", d.Rule())
+			}
+		})
+	}
+
+	// And the permit direction, so this is not satisfied by an engine that
+	// denies everything.
+	t.Run("matching audience is accepted", func(t *testing.T) {
+		h := newHarness(t)
+		h.bindClaims(t, "jti-aud-ok", declaredIntent())
+		if d := h.engine.Decide(context.Background(), Input{Token: "tok", Intent: declaredIntent()}); !d.Permit() {
+			t.Fatalf("correct audience denied: %s", d.Rule())
+		}
+	})
+}
+
+// An empty expected audience matches a token that omits aud, so a PEP
+// configured by omission would accept tokens minted for any domain. That is a
+// fail-open reachable by forgetting a field, which is why it is refused at
+// construction rather than at decision time.
+func TestNewRefusesAnEmptyAudience(t *testing.T) {
+	_, err := New(Config{
+		PEP: "p", PolicyHash: "h",
+		Verify:      func(context.Context, string) (map[string]any, error) { return nil, nil },
+		Emit:        func(*receipt.Receipt) (string, error) { return "", nil },
+		MaxTokenTTL: time.Minute,
+	})
+	if err == nil {
+		t.Fatal("constructed a PEP with no expected audience")
+	}
+}
+
+// The audience check must not consume the replay slot: a token for another
+// domain can never be accepted here, so letting it burn a jti would let an
+// attacker fill a bounded cache with tokens that were never acceptable — and a
+// full cache denies every token as unavailable.
+func TestAudienceMismatchDoesNotBurnAReplaySlot(t *testing.T) {
+	h := newHarness(t)
+	h.bindClaims(t, "jti-shared", declaredIntent())
+	h.claims["aud"] = "someone-else.execorg"
+	if d := h.engine.Decide(context.Background(), Input{Token: "tok", Intent: declaredIntent()}); d.Permit() {
+		t.Fatal("wrong audience permitted")
+	}
+	h.claims["aud"] = audTest
+	if d := h.engine.Decide(context.Background(), Input{Token: "tok", Intent: declaredIntent()}); !d.Permit() {
+		t.Fatalf("the rejected presentation burned the jti: %s", d.Rule())
 	}
 }
