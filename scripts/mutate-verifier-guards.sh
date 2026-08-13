@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mutation check for the final-hop TTL invariant (adversarial review #3, F2).
+# Mutation check for the temporal guards in the verifier (adversarial review #3).
 #
 # exp(SPT-Txn) <= exp(leaf CT) was enforced by txntoken.Issue and by nothing in
 # the verifier, which is the asymmetry DELEGATION-INTENT-MCP.md §1.2 invariant 2
@@ -7,9 +7,12 @@
 # construction AND at verification, so a malicious issuer cannot extend a
 # lifetime. This proves the new check is load-bearing rather than decorative.
 #
-#   M-A  the check is never called          (wiring)
-#   M-B  the comparison never fires         (logic)
-#   M-C  an unusable exp fails open         (fail-closed behaviour)
+#   M-A  the final-hop TTL check is never called   (wiring)
+#   M-B  the TTL comparison never fires            (logic)
+#   M-C  an unusable exp fails open                (fail-closed behaviour)
+#   M-D  iat becomes optional again                (a check a claim can switch off)
+#   M-E  exp > iat never fires                     (invariant 2, second clause)
+#   M-F  clock skew extends expiry                 (skew must reject early, never accept late)
 #
 # M-C is checked by a WHITE-BOX test. Its branches are unreachable through
 # Verify — step2Expiry and cttoken.Verify already guarantee usable exps — so an
@@ -75,9 +78,26 @@ run_mutation "M-C unusable exp fails open" \
   "	txExp, ok := intClaim(txClaims, \"exp\")
 	if false && !ok {" || rc=1
 
+run_mutation "M-D iat is optional again" \
+  "TestSec_IatIsRequiredNotOptional" \
+  "	iat, ok := txClaims[\"iat\"].(float64)
+	if !ok {" \
+  "	iat, ok := txClaims[\"iat\"].(float64)
+	if false && !ok {" || rc=1
+
+run_mutation "M-E exp > iat never fires" \
+  "TestSec_ExpMustBeStrictlyAfterIat" \
+  "	if int64(exp) <= int64(iat) {" \
+  "	if false && int64(exp) <= int64(iat) {" || rc=1
+
+run_mutation "M-F skew extends expiry" \
+  "TestSec_SkewNeverExtendsExpiry" \
+  "	if now >= int64(exp) {" \
+  "	if now >= int64(exp)+iatSkew {" || rc=1
+
 cp "$BAK" "$F"
 if [ "$rc" -eq 0 ]; then
-  echo "OK — the final-hop TTL check is load-bearing in wiring, logic and failure mode."
+  echo "OK — every temporal guard in the verifier is load-bearing."
 else
   echo "PROBLEM — a guard can be removed with the suite still green. Fix the test, not this script."
 fi

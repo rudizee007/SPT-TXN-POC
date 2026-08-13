@@ -260,3 +260,78 @@ func TestSec_TxnLifetimeAttenuationProperty(t *testing.T) {
 		}
 	}
 }
+
+// ── temporal bounds, both sides (adversarial review #3, F5) ─────────────────
+
+// The iat check previously ran only when the claim was present and numeric, so
+// omitting it — or sending a string — switched it off. A check an attacker can
+// disable by leaving a field out is not a check.
+func TestSec_IatIsRequiredNotOptional(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		iat  any
+	}{
+		{"absent", nil},
+		{"string", "1750000000"},
+		{"bool", true},
+		{"null", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := build(t)
+			reforgeTxn(t, h, func(m map[string]any) {
+				if c.iat == nil {
+					delete(m, "iat")
+					return
+				}
+				m["iat"] = c.iat
+			})
+			mustDeny(t, h.eng.Verify(context.Background(), h.in), 2)
+		})
+	}
+}
+
+// exp MUST be strictly after iat (invariant 2). An inverted or zero-length
+// window is malformed, and no clock skew makes it legitimate — this is a
+// relationship between two fields of one token.
+func TestSec_ExpMustBeStrictlyAfterIat(t *testing.T) {
+	for _, name := range []string{"equal", "inverted"} {
+		t.Run(name, func(t *testing.T) {
+			h := build(t)
+			reforgeTxn(t, h, func(m map[string]any) {
+				exp := m["exp"].(float64)
+				if name == "equal" {
+					m["iat"] = exp
+				} else {
+					m["iat"] = exp + 60
+				}
+			})
+			mustDeny(t, h.eng.Verify(context.Background(), h.in), 2)
+		})
+	}
+}
+
+// Clock skew must be able to reject early and never to accept late. A token
+// already past exp is not rescued by the iat allowance.
+func TestSec_SkewNeverExtendsExpiry(t *testing.T) {
+	h := build(t)
+	reforgeTxn(t, h, func(m map[string]any) {
+		now := float64(time.Now().Unix())
+		m["iat"] = now - 120
+		m["exp"] = now - 1 // one second past
+	})
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 2)
+}
+
+// And the permit direction: a well-formed window is still accepted, so none of
+// the above is satisfied by an engine that rejects everything.
+func TestSec_WellFormedTemporalWindowIsAccepted(t *testing.T) {
+	h := build(t)
+	reforgeTxn(t, h, func(m map[string]any) {
+		now := float64(time.Now().Unix())
+		m["iat"] = now - 5
+		m["exp"] = now + 30
+	})
+	if d := h.eng.Verify(context.Background(), h.in); !d.Allow {
+		t.Fatalf("well-formed window denied at step %d: %s", d.Step, d.Reason)
+	}
+}

@@ -261,13 +261,36 @@ func step2Expiry(txClaims map[string]any) error {
 	if now >= int64(exp) {
 		return fmt.Errorf("SPT-Txn Token expired")
 	}
+	// iat is REQUIRED, not optional.
+	//
+	// This check previously ran only `if iat, ok := ...; ok`, so omitting the
+	// claim — or sending it as a string — made it silently not run. A check that
+	// an attacker can switch off by leaving a field out is not a check. All
+	// three issuers always set iat, and `-03` §Verification step 2 requires
+	// rejecting a token outside its `iat`/`exp` bounds, so absence is malformed
+	// rather than permissive.
+	iat, ok := txClaims["iat"].(float64)
+	if !ok {
+		return fmt.Errorf("missing or non-numeric iat claim")
+	}
+
+	// exp MUST be strictly after iat (DELEGATION-INTENT-MCP.md §1.2 invariant 2).
+	// Enforced with no skew allowance: this is a relationship between two fields
+	// of one token, not a comparison against a clock, so no amount of drift makes
+	// an inverted or zero-length window legitimate.
+	if int64(exp) <= int64(iat) {
+		return fmt.Errorf("SPT-Txn Token exp %d is not after iat %d", int64(exp), int64(iat))
+	}
+
 	// VER-3: reject a token whose iat is in the future beyond a small skew. exp
 	// alone does not catch a token issued (or back-/forward-dated) with a future
-	// iat. Lenient by iatSkew to avoid clock-skew false rejects.
-	if iat, ok := txClaims["iat"].(float64); ok {
-		if int64(iat) > now+iatSkew {
-			return fmt.Errorf("SPT-Txn Token iat is in the future")
-		}
+	// iat.
+	//
+	// iatSkew is applied ASYMMETRICALLY and deliberately: it widens tolerance for
+	// a forward-dated iat and is never added to exp. Skew may cause a verifier to
+	// reject early; it must never let one accept late.
+	if int64(iat) > now+iatSkew {
+		return fmt.Errorf("SPT-Txn Token iat is in the future")
 	}
 	return nil
 }
