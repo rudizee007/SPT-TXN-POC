@@ -2,8 +2,6 @@ module github.com/rudizee007/spt-txn-poc
 
 go 1.25.7
 
-
-
 require (
 	filippo.io/mldsa v0.0.0-20260711112038-ff3f469cee29
 	github.com/consensys/gnark v0.15.0
@@ -11,6 +9,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0
 	github.com/miekg/pkcs11 v1.1.2
 	github.com/rs/zerolog v1.34.0
+	github.com/rudizee007/spt-txn-pep v0.4.0
 	golang.org/x/crypto v0.52.0
 	golang.org/x/sys v0.45.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217

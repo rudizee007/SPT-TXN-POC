@@ -13,7 +13,6 @@ id_rsa*
 id_ed25519*
 secring*
 
-
 # ── ZK trusted-setup artifacts (regenerate with cmd/zk-setup; large) ──────
 *.pk
 *.vk
