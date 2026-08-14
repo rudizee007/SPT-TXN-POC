@@ -7,7 +7,7 @@
 - A privacy-preserving FATF Travel Rule (Recommendation 16, the "crypto travel rule") compliance layer for VASPs and CASPs.
 - An accountability and authorization layer for agentic / AI-agent payments that composes with x402 (HTTP 402 machine-to-machine payments): it decides whether an autonomous agent may pay, within what scope, and who the accountable human is, before settlement.
 - Blockchain-agnostic: a ledger is a target behind an adapter, never a dependency.
-- Defined in its own Internet-Draft, `draft-coetzee-oauth-spt-txn-tokens` (revision -02), which extends the OAuth Transaction Tokens work (draft-ietf-oauth-transaction-tokens) and aligns with the OAuth 2.0 Security Best Current Practice (RFC 9700).
+- Defined in its own Internet-Draft, `draft-coetzee-oauth-spt-txn-tokens` (revision -03), which extends the OAuth Transaction Tokens work (draft-ietf-oauth-transaction-tokens) and aligns with the OAuth 2.0 Security Best Current Practice (RFC 9700).
 
 ## Core concepts
 
@@ -26,7 +26,7 @@ The framework binds an authorization token to a specific ledger transaction via 
 ## Papers and specifications
 
 - [SPT-Txn framework paper (PDF)](https://foss.violetskysecurity.com/papers/spt-txn-framework-expanded-v2.pdf): the comprehensive framework — token chain, zkDID and zkDNS, the cryptographic design (Poseidon2, BN254 vs BLS12-381, Groth16 vs PLONK), the post-quantum migration plan, the FATF Travel Rule deployment, and a CycloneDX CBOM. DOI 10.5281/zenodo.20870193.
-- [SPT-Txn Internet-Draft — draft-coetzee-oauth-spt-txn-tokens (revision -02)](https://datatracker.ietf.org/doc/draft-coetzee-oauth-spt-txn-tokens/): extends draft-ietf-oauth-transaction-tokens, adding algorithm agility and a post-quantum migration path.
+- [SPT-Txn Internet-Draft — draft-coetzee-oauth-spt-txn-tokens (revision -03)](https://datatracker.ietf.org/doc/draft-coetzee-oauth-spt-txn-tokens/): extends draft-ietf-oauth-transaction-tokens, adding algorithm agility and a post-quantum migration path.
 - Public technical comments to NIST SP 800-133r3 (Recommendation for Cryptographic Key Generation).
 
 ## Project

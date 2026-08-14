@@ -584,7 +584,7 @@
   </div>
 
   <div class="hero-ctas">
-    <a href="https://datatracker.ietf.org/doc/draft-coetzee-oauth-spt-txn-tokens/" target="_blank" class="btn-primary">IETF Draft -02 ↗</a>
+    <a href="https://datatracker.ietf.org/doc/draft-coetzee-oauth-spt-txn-tokens/" target="_blank" class="btn-primary">IETF Draft -03 ↗</a>
     <a href="#tokens" class="btn-ghost">How It Works</a>
   </div>
 </section>
@@ -601,7 +601,7 @@
       <span style="color:var(--violet-l);">how fresh its attestation is</span>,
       and emits a <span style="color:var(--violet-l);">cryptographic receipt</span> proving the decision.
     </p>
-    <p style="font-size:0.98rem; color:var(--muted); font-style:italic; margin:1.4rem 0 0;">No shipping product completes that sentence today.</p>
+    <p style="font-size:0.98rem; color:var(--muted); font-style:italic; margin:1.4rem 0 0;">As of August 2026, no shipping product completes that sentence.</p>
   </blockquote>
 </section>
 
@@ -855,38 +855,38 @@
       </div>
       <div class="step">
         <div class="step-n">02</div>
-        <div class="step-title">Issuer Trust</div>
-        <p class="step-body">Confirm the issuer is registered in the Trust Registry (a locally cached, signed snapshot whose root is anchored on-chain), with the correct role and active status at the token's issued-at time.</p>
+        <div class="step-title">Temporal Validity</div>
+        <p class="step-body">Verify issued-at and expiry bounds, and that expiry is strictly after issued-at. Clock skew tolerance is bounded by deployment policy and applied asymmetrically: it may cause a verifier to reject early, never to accept late. Expired tokens fail unconditionally.</p>
       </div>
       <div class="step">
         <div class="step-n">03</div>
-        <div class="step-title">Temporal Validity</div>
-        <p class="step-body">Verify issued-at and expiry bounds. Clock skew tolerance bounded by deployment policy. Expired tokens fail unconditionally.</p>
+        <div class="step-title">Audience</div>
+        <p class="step-body">Confirm the token names this enforcement point. A capability minted for one executing domain cannot be presented at another, so a token that leaks sideways is inert rather than useful.</p>
       </div>
       <div class="step">
         <div class="step-n">04</div>
-        <div class="step-title">Revocation Check</div>
-        <p class="step-body">Check revocation status against a cached revocation set. Staleness policy is deployment-configurable. Online check available but not required for core enforcement.</p>
+        <div class="step-title">Revocation</div>
+        <p class="step-body">Check revocation status against a cached, signed status list. A snapshot past its own validity window is treated as unavailable, not as valid — stale revocation data is never trusted. Online check available but not required for core enforcement.</p>
       </div>
       <div class="step">
         <div class="step-n">05</div>
-        <div class="step-title">Scope Verification</div>
-        <p class="step-body">Confirm the token's declared scope is a strict subset of its parent's scope. Scope widening at any hop is a hard failure. The attenuation graph is verified end-to-end.</p>
+        <div class="step-title">Sender Constraint</div>
+        <p class="step-body">Confirm the presenter possesses the key the token was bound to, by DPoP proof of possession (RFC 9449). A token captured in transit is useless to anyone but its holder, and each proof is single-use within its freshness window.</p>
       </div>
       <div class="step">
         <div class="step-n">06</div>
-        <div class="step-title">Delegation Depth</div>
-        <p class="step-body">Verify the delegation depth has not exceeded the maximum declared in the CAT. Prevents unbounded re-delegation chains in agentic contexts.</p>
+        <div class="step-title">Chain</div>
+        <p class="step-body">Walk the entire chain from the root CAT — there is no fast path for a &ldquo;trusted&rdquo; intermediate. Every hop's issuer must be registered in the Trust Registry (a locally cached, signed snapshot whose root is anchored on-chain) with the correct role and active status at that hop's issued-at time; delegation depth must stay within the bound the CAT declared; no hop may outlive its parent; and the humanAnchor commitment must be identical at every hop. That commitment is a one-way zkDID value carrying no name or PII, freshly randomized on every issuance, so it is unlinkable across transactions. Nothing that identifies a person is ever placed on-chain.</p>
       </div>
       <div class="step">
         <div class="step-n">07</div>
-        <div class="step-title">Human Anchor</div>
-        <p class="step-body">Verify the humanAnchor commitment is consistent across the full token chain. The ZK commitment to the authorizing human propagates unchanged from CAT to SPT-Txn Token, a one-way zkDID commitment that carries no name or PII, and is freshly randomized on every issuance, so it is unlinkable across transactions. Nothing that identifies a person is ever placed on-chain.</p>
+        <div class="step-title">Scope</div>
+        <p class="step-body">Evaluate the request against the chain-intersection of every scope from root to leaf. A dimension a hop declines to restate is inherited, not relaxed. Widening at any hop is a hard failure, so authority can only ever narrow.</p>
       </div>
       <div class="step">
         <div class="step-n">08</div>
-        <div class="step-title">Scope Hash Binding</div>
-        <p class="step-body">Verify the transaction context hash matches the scope hash committed in the token. The authorization is bound to this specific transaction, so it is not transferable or replayable.</p>
+        <div class="step-title">Context Binding</div>
+        <p class="step-body">Verify the transaction-context hash matches the commitment in the token. The authorization is bound to this specific transaction, so it is neither transferable nor replayable.</p>
       </div>
     </div>
 
@@ -920,17 +920,23 @@
     </div>
     <script>
     (function(){
-      var steps=['Signature Verification','Issuer Trust','Temporal Validity','Revocation Check','Scope Verification','Delegation Depth','Human Anchor','Scope Hash Binding'];
+      // Step names and order follow draft-coetzee-oauth-spt-txn-tokens §Verification.
+      // Keep this array, the cards above, and the draft in agreement — a visitor
+      // who compares them and finds three different answers has learned something
+      // about the engine that is not true.
+      var steps=['Signature','Temporal Validity','Audience','Revocation','Sender Constraint','Chain','Scope','Context Binding'];
       var scenarios=[
         {k:'valid', label:'Valid token',               fail:0, note:''},
         {k:'sig',   label:'Forged signature',          fail:1, note:'signature does not match the issuer key'},
-        {k:'iss',   label:'Untrusted issuer',          fail:2, note:'issuer absent from the Trust Registry snapshot'},
-        {k:'exp',   label:'Expired token',             fail:3, note:'past its expiry bound'},
+        {k:'exp',   label:'Expired token',             fail:2, note:'past its expiry bound'},
+        {k:'aud',   label:'Wrong audience',            fail:3, note:'minted for a different enforcement point'},
         {k:'rev',   label:'Revoked key',               fail:4, note:'issuer key present in the revocation set'},
-        {k:'scope', label:'Widened scope',             fail:5, note:'child scope exceeds its parent: attenuation violated'},
+        {k:'holder',label:'Presented by another party',fail:5, note:'presenter does not hold the key the token was bound to'},
+        {k:'iss',   label:'Untrusted issuer',          fail:6, note:'a hop’s issuer is absent from the Trust Registry snapshot'},
         {k:'depth', label:'Exceeded delegation depth', fail:6, note:'re-delegated beyond the CAT-declared bound'},
-        {k:'anchor',label:'Broken human-anchor',       fail:7, note:'humanAnchor commitment differs across the chain'},
-        {k:'txn',   label:'Altered transaction',       fail:8, note:'tx-context hash does not match the committed scope hash'}
+        {k:'anchor',label:'Broken human-anchor',       fail:6, note:'humanAnchor commitment differs across the chain'},
+        {k:'scope', label:'Widened scope',             fail:7, note:'child scope exceeds its parent: attenuation violated'},
+        {k:'txn',   label:'Altered transaction',       fail:8, note:'tx-context hash does not match the committed context hash'}
       ];
       var sel=scenarios[0];
       var sc=document.getElementById('teScenarios'),stepsEl=document.getElementById('teSteps'),verdict=document.getElementById('teVerdict'),runBtn=document.getElementById('teRun');
@@ -1055,7 +1061,7 @@
 <section id="travelrule">
   <div class="section-inner">
     <div class="section-eyebrow">Applied · FATF Travel Rule</div>
-    <h2 class="section-title">Privacy-preserving Travel Rule, running today.</h2>
+    <h2 class="section-title">Privacy-preserving Travel Rule, demonstrated end-to-end.</h2>
     <p class="section-body" style="color:var(--violet-l); margin-bottom:0.9rem;"><strong style="color:var(--violet-m);">The problem:</strong> Complying with the crypto Travel Rule today means shipping your customer&rsquo;s full name, account, and exact amount to every counterparty, turning a compliance obligation into a standing data-breach and privacy liability.</p>
     <p class="section-body">SPT-Txn carries a payload-level zero-knowledge attestation over the inter-VASP Travel Rule Protocol (TRP). Plain TRP and TRISA encrypt in transit, but still deliver the full originator/beneficiary PII to the counterparty to receive and store. SPT-Txn discloses the FATF-required fields, proves the rest in zero knowledge, minimizes what else leaves the VASP (including hiding the exact amount where the jurisdiction permits), and exposes nothing on-ledger or to third parties. Which fields must appear on the wire is a regulatory question set per jurisdiction: FATF Recommendation 16 requires institutions to obtain, hold, and transmit specified originator/beneficiary information, and acceptance of reduced or zero-knowledge disclosure is jurisdiction-specific and not assumed here.</p>
     <p class="section-body"><strong style="color:var(--violet-m);">No names on the blockchain.</strong> When a payment settles on a public chain (for example an agentic x402 payment on Solana, where the anchor rides on-chain in an SPL&nbsp;Memo), the only human-related value written to the ledger is the humanAnchor: a rotating, one-way commitment, never a name and never PII. Because it is freshly randomized per issuance, on-chain observers cannot even link a person&rsquo;s payments to one another. Identity stays off-chain; the ledger records <em>accountability</em>, recoverable only under lawful process, not <em>who</em>.</p>
@@ -1159,7 +1165,7 @@
       <p class="tk-body" style="margin-top:0.5rem; margin-bottom:0;">The <strong>humanAnchor</strong> is a commitment format; the root that establishes the <em>person</em> behind it is a swappable interface. SPT-Txn consumes any verified personhood or uniqueness attestation through <strong>one provider seam</strong>: it ships reference adapters that verify <strong>Civic Pass</strong> and <strong>Solana Attestation Service</strong> credentials, with <strong>.zkdid&trade;</strong> proposed as a privacy-superior swap-in. The issuance and offline-verification path is unchanged when the root is swapped, so no single identity provider is a dependency. A one-command demo (<code>cmd/civicdemo</code>) verifies an attestation, resolves a context-specific nullifier, and seals the anchor into a CAT.</p>
     </div>
     <div style="margin-top:1.4rem; border:1px solid var(--border); border-radius:10px; padding:1rem 1.2rem;">
-      <div class="section-eyebrow" style="color:var(--violet-l);">Live · gates x402 agent payments on any chain</div>
+      <div class="section-eyebrow" style="color:var(--violet-l);">Live · gates x402 agent payments — demonstrated on XRPL, designed chain-agnostic</div>
       <p class="tk-body" style="margin-top:0.5rem; margin-bottom:0;"><strong>x402</strong> is the HTTP-native agent-payment standard (Coinbase, and Google's AP2, build on it). x402 settles the payment; <strong>SPT-Txn gates it</strong>: before the agent pays, the gate checks it holds a human-anchored capability whose scope covers the spend, stamps a privacy-preserving <strong>humanAnchor</strong> into the on-ledger transaction, and the merchant re-runs the full eight-step verifier <em>offline</em> before delivering, trusting the authorization, not just that money arrived. No PII on-ledger; for regulated transfers it carries a FATF R.16 (Travel Rule) attestation. The complete loop (authorize → settle → verify → deliver, with an over-scope payment cryptographically <strong>DENied</strong> before anything is signed) is <strong>demonstrated end-to-end on XRPL</strong> <em>(through mainnet)</em>, and <strong>designed to run unchanged</strong> on the other supported chains (Hedera, Aptos, Ethereum, Base, Solana, NEAR) behind the same gate, verifier, and attestation; only a ~200-line ledger submitter differs per chain.</p>
     </div>
     <div style="margin-top:1.4rem; border:1px solid var(--border); border-radius:10px; padding:1rem 1.2rem;">
@@ -1603,6 +1609,10 @@ border-radius:0 8px 8px 0;padding:11px 14px;line-height:1.55;}
         <div class="arch-label">Verifiers run</div>
         <div class="arch-content"><strong>VASP, wallet, chain, or agent: the transaction path lives entirely here.</strong> Embed the library, cache the registry snapshot, verify offline and in-process across N stateless replicas. Optionally anchor the registry root on-chain for tamper-evidence, a periodic write, never read in the hot path.</div>
       </div>
+      <div class="arch-layer">
+        <div class="arch-label">Free vs paid</div>
+        <div class="arch-content"><strong>Running one enforcement point is free. Operating a fleet of them &mdash; and proving compliance with them &mdash; is paid.</strong> Apache-2.0, free, and never gated: the verifier and decision core, every adapter and PEP, the token and decision-API formats, signed receipt emission, and status-list verification. Commercial: hosted issuer registry and snapshot distribution at fleet scale, retention and indexing, control mappings and compliance packs, fleet management and support. The line is mechanism versus service &mdash; <em>verifying</em> a status list is free; <em>hosting and distributing</em> one across a fleet is paid. <strong>No security feature is ever behind the paywall</strong>, because a security feature you have to buy is one your smallest deployment does without.</div>
+      </div>
     </div>
 
     <p class="section-body" style="max-width:820px; margin-top:2rem;"><strong>Deployment is portable, and FIPS-ready.</strong> The reference host is hardened OpenBSD (pledge/unveil, privilege separation), a security-by-design choice, not a requirement. The same Go binary runs in a <strong>FIPS 140-3</strong> environment for regulated buyers: enable Go's native FIPS mode on a FIPS-validated Linux (RHEL / AlmaLinux / Rocky) so the classical cryptography runs through the CMVP-validated Go Cryptographic Module (certificate #5247), or route issuer keys to a FIPS 140-3 HSM over PKCS#11: signing already goes through a standard crypto.Signer interface, so it is a configuration swap. The zero-knowledge predicate layer sits outside FIPS by nature and stays a distinct, opt-in component.</p>
@@ -1622,9 +1632,9 @@ border-radius:0 8px 8px 0;padding:11px 14px;line-height:1.55;}
 
     <div class="pub-grid">
       <div class="pub-card">
-        <div class="pub-type">IETF Internet-Draft · Revision -02</div>
+        <div class="pub-type">IETF Internet-Draft · Revision -03</div>
         <div class="pub-title">Sovereign Policy Token Transactions (SPT-Txn)</div>
-        <p class="pub-body">Individual Internet-Draft extending the OAuth Transaction Tokens work and aligning with the OAuth 2.0 Security BCP (RFC 9700), presented to the OAuth Working Group for technical review. Revision -02 adds algorithm agility and a post-quantum migration path.</p>
+        <p class="pub-body">Individual Internet-Draft extending the OAuth Transaction Tokens work and aligning with the OAuth 2.0 Security BCP (RFC 9700), presented to the OAuth Working Group for technical review. Revision -03 is the current published version; datatracker is the authoritative source for what it contains.</p>
         <a href="https://datatracker.ietf.org/doc/draft-coetzee-oauth-spt-txn-tokens/" target="_blank" class="pub-link">IETF Datatracker ↗</a>
       </div>
       <div class="pub-card">
@@ -1755,14 +1765,14 @@ border-radius:0 8px 8px 0;padding:11px 14px;line-height:1.55;}
     <div class="milestone">
       <div class="ms-id" style="font-size:0.75rem;">INT</div>
       <div class="ms-body">
-        <strong>Trust Registry &amp; CAT issuer</strong>: internal, socket-only by design. The mutating issuance endpoints are never edge-exposed (verified by the security audit).
+        <strong>Trust Registry &amp; CAT issuer</strong>: internal, socket-only by design. The mutating issuance endpoints are never edge-exposed — enforced by socket-only binding and OpenBSD <code>unveil</code>, and confirmed by our own review. No part of this system has been externally audited.
       </div>
     </div>
   </div>
 </div>
 <div style="margin-top:3rem; border-top:1px solid var(--border); padding-top:2rem;">
   <div class="section-eyebrow">Ledger-agnostic · demonstrated across chains</div>
-  <p class="section-body" style="margin-top:1rem; max-width:760px;">SPT-Txn binds an authorization to a specific transaction without depending on any chain. The binding is implemented and tested behind one Go adapter interface for twenty ledgers (a single EVM adapter serves the EVM chains), and the attestation-anchor footprint is live across seven chains (Ethereum through mainnet; Arbitrum, Starknet, Aptos, Sui, Hedera, and Solana on their test networks). Chains are integration targets, never dependencies; the authorization verifies offline with no chain at all.</p>
+  <p class="section-body" style="margin-top:1rem; max-width:760px;">SPT-Txn binds an authorization to a specific transaction without depending on any chain. The binding is implemented and tested behind one Go adapter interface for twenty ledgers (a single EVM adapter serves the EVM chains), and the attestation-anchor footprint is live across seven chains (Ethereum through mainnet; Arbitrum, Starknet, Aptos, Sui, Hedera, and Solana on their test networks). <strong>Two footprints reach mainnet, and they do different things:</strong> Ethereum carries on-chain ZK verification and anchoring, and XRPL carries the complete x402 loop &mdash; authorize &rarr; settle &rarr; verify. <strong>Every other footprint is a test network.</strong> That split is deliberate rather than incidental: chains are integration targets, never dependencies, and the authorization verifies offline with no chain at all.</p>
   <p id="anchorLive" style="margin-top:0.9rem; font-family:'Space Mono',monospace; font-size:0.8rem; color:var(--muted);">Reading the live on-chain anchor…</p>
   <div style="margin-top:1.4rem; max-width:920px;">
     <div style="font-family:'Space Mono',monospace; font-size:0.68rem; letter-spacing:1.5px; color:var(--muted); margin-bottom:0.5rem;">LAYER 1</div>
@@ -1797,9 +1807,17 @@ border-radius:0 8px 8px 0;padding:11px 14px;line-height:1.55;}
   <div style="margin-top:1.8rem; border:1px solid var(--violet-m); border-radius:10px; background:rgba(123,47,190,0.08); padding:1.1rem 1.2rem;">
     <div class="section-eyebrow" style="color:var(--violet-l);">Live · zero-knowledge verified on-chain</div>
     <p class="section-body" style="margin-top:0.5rem; margin-bottom:0.7rem; max-width:720px;">A selective-disclosure proof (<strong>amount ≥ threshold, with the amount itself hidden</strong>) is verified on <strong>Ethereum mainnet</strong> (and on Ethereum + Arbitrum Sepolia) by a gnark Groth16 verifier (BN254), and the attestation is anchored <strong>only if the proof checks out</strong>. A tampered proof reverts and anchors nothing. Verify a predicate without revealing the data, enforced on-chain.</p>
-    <a href="https://sepolia.etherscan.io/address/0x311612c4E2D7E93CF5d80C0138B55C8A723B95ef" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">verifier 0x311612…95ef ↗</a>
-    &nbsp;·&nbsp;
-    <a href="https://sepolia.etherscan.io/tx/0x57dc3614ccb0fd882ce66d4c060345804ec56c686c1eee131ea68ce62eecd76c" target="_blank" style="font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--violet-l);">verified-anchor tx ↗</a>
+    <div style="font-family:'Space Mono',monospace;font-size:0.72rem;line-height:1.9;">
+      <span style="color:var(--muted);">Ethereum&nbsp;mainnet</span>&nbsp;
+      <a href="https://etherscan.io/address/0xb64e248338E90290B3188d2c44A8e327a646Ab01" target="_blank" style="color:var(--violet-l);">verifier 0xb64e24…46Ab01 ↗</a>
+      &nbsp;·&nbsp;
+      <a href="https://etherscan.io/tx/0x7273f74db58bd8e2311cb78fe603efc826bcdb8409c6221e8112cf155d8ca731" target="_blank" style="color:var(--violet-l);">verified-anchor tx 0x7273f7…ca731 ↗</a>
+      <br>
+      <span style="color:var(--muted);">Ethereum&nbsp;Sepolia</span>&nbsp;
+      <a href="https://sepolia.etherscan.io/address/0x311612c4E2D7E93CF5d80C0138B55C8A723B95ef" target="_blank" style="color:var(--violet-l);">verifier 0x311612…95ef ↗</a>
+      &nbsp;·&nbsp;
+      <a href="https://sepolia.etherscan.io/tx/0x57dc3614ccb0fd882ce66d4c060345804ec56c686c1eee131ea68ce62eecd76c" target="_blank" style="color:var(--violet-l);">verified-anchor tx 0x57dc36…d76c ↗</a>
+    </div>
     <p class="section-body" style="margin-top:0.8rem; margin-bottom:0; max-width:720px; font-size:0.92rem;">Beyond on-chain proofs, the <strong>agentic delegation chain is itself provable in zero-knowledge</strong>: a Groth16 proof that every hidden hop carries a <strong>registered issuer's signature over its scope</strong>, verified in-circuit (Baby Jubjub EdDSA), so an AI agent proves its authority chain is valid without revealing the intermediate scopes.</p>
     <p class="section-body" style="margin-top:0.8rem; margin-bottom:0; max-width:720px; font-size:0.92rem;">The same primitive gates <strong>real-world-asset compliance</strong>: a permissioned, ERC-3643-aligned token whose transfers succeed only between holders who proved eligibility in zero knowledge, with <strong>no PII on-chain</strong>. Eligibility is bound to the holder's address and to a <strong>trusted claim issuer's signature verified in-circuit</strong> (the ERC-3643 trusted-issuer role, made privacy-preserving), so <strong>a stolen proof replayed from another address is rejected on-chain (<code>ProofInvalid</code>)</strong>, demonstrated end-to-end on Ethereum Sepolia.</p>
   </div>
@@ -1942,7 +1960,7 @@ border-radius:0 8px 8px 0;padding:11px 14px;line-height:1.55;}
       <span class="hero-tag">OAuth 2.0 Security BCP · RFC 9700</span>
       <span class="hero-tag">NIST SP 800-207</span>
       <span class="hero-tag">NIST SP 800-162 ABAC</span>
-      <span class="hero-tag">FIPS 203 · 204</span>
+      <span class="hero-tag">FIPS 203 impl · 204 planned</span>
       <span class="hero-tag">FATF R.16 · IVMS101</span>
     </div>
     <p style="margin-top:1.6rem;">
@@ -1974,6 +1992,11 @@ border-radius:0 8px 8px 0;padding:11px 14px;line-height:1.55;}
       <a href="/terms.html">Terms</a>
     </div>
     <div class="footer-copy">
+      <strong>What &ldquo;Live&rdquo; means here:</strong> a running demonstration endpoint you can exercise yourself, not a production
+      deployment. SPT-Txn is a proof of concept and a specification effort &mdash; nothing in it has been externally audited
+      or certified, and it is not in production use. Performance figures are our own measurements on the hardware named
+      beside them. We would rather you knew that before you read the rest than after.
+      <br><br>
       Rudolf J. Coetzee · Violet Sky Security SEZC · Cayman Islands Special Economic Zone ·
       draft-coetzee-oauth-spt-txn-tokens is an individual IETF Internet-Draft, not endorsed by the IETF. ·
       SPT-Txn is independently developed. Integration with .zkdid™ and .zkdns™ is proposed and not yet implemented or endorsed. .zkdid™ and .zkdns™ are trademarks associated with Toby Bolton&rsquo;s public-interest protocol initiative. Where this site uses the generic terms &ldquo;zkDID&rdquo; and &ldquo;zkDNS&rdquo; (for example &ldquo;zkDID commitment&rdquo;), they denote the generic zero-knowledge decentralized-identifier and naming primitives and are distinct from the .zkdid™ and .zkdns™ protocol and marks. ·
