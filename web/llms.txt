@@ -25,6 +25,7 @@ The framework binds an authorization token to a specific ledger transaction via 
 
 ## Papers and specifications
 
+- [PQChecker — post-quantum posture across a transaction chain](https://foss.violetskysecurity.com/PQChecker.html): offline-verifiable TLS posture check across every hop a transaction traverses. Separates the two clocks PQ migration runs on — key agreement is retroactively at risk, authentication is not — and reports the weakest hop rather than one host. Diagnostic, not assurance.
 - [SPT-Txn framework paper (PDF)](https://foss.violetskysecurity.com/papers/spt-txn-framework-expanded-v2.pdf): the comprehensive framework — token chain, zkDID and zkDNS, the cryptographic design (Poseidon2, BN254 vs BLS12-381, Groth16 vs PLONK), the post-quantum migration plan, the FATF Travel Rule deployment, and a CycloneDX CBOM. DOI 10.5281/zenodo.20870193.
 - [SPT-Txn Internet-Draft — draft-coetzee-oauth-spt-txn-tokens (revision -03)](https://datatracker.ietf.org/doc/draft-coetzee-oauth-spt-txn-tokens/): extends draft-ietf-oauth-transaction-tokens, adding algorithm agility and a post-quantum migration path.
 - Public technical comments to NIST SP 800-133r3 (Recommendation for Cryptographic Key Generation).

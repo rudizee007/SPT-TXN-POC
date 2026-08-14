@@ -78,12 +78,16 @@ REPLACEMENTS = [
 
 
 def main() -> int:
-    applied, already, missing = [], [], []
+    applied, already, missing, absent = [], [], [], []
 
     for fname, old, new, label in REPLACEMENTS:
         path = os.path.join(HERE, fname)
         if not os.path.exists(path):
-            missing.append(f"{fname}: file not found ({label})")
+            # Not a failure. The script is often run from a staging directory
+            # holding only the file being deployed; a file that is not here
+            # cannot be wrong here. Reporting it as blocking taught the operator
+            # to ignore a red line, which is the opposite of the point.
+            absent.append(f"{fname}: not in this directory ({label})")
             continue
         s = io.open(path, encoding="utf8").read()
         if new in s and old not in s:
@@ -117,7 +121,8 @@ def main() -> int:
                 "step: exp->2, aud->3, rev->4, holder->5, iss/depth/anchor->6, scope->7, "
                 "txn->8.")
 
-    for group, items in (("applied", applied), ("already correct", already), ("NEEDS ATTENTION", missing)):
+    for group, items in (("applied", applied), ("already correct", already),
+                         ("not present here (fine)", absent), ("NEEDS ATTENTION", missing)):
         if items:
             print(f"\n{group}:")
             for i in items:

@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PQChecker — post-quantum posture across a transaction chain</title>
+<meta name="description" content="Offline-verifiable post-quantum TLS posture check. Eight steps, two clocks, weakest-hop across a chain. No backend, no data leaves your browser.">
+<style>
+/* ============================================================
+   PQChecker — Violet Sky Security FOSS
+   Instrument-panel direction. No webfonts: the page must render
+   with the network off, because that is the security claim.
+   ============================================================ */
+:root{
+  --ink:#0B0D14;
+  --panel:#141826;
+  --panel-2:#1A1F31;
+  --rule:#262C40;
+  --rule-hi:#37405C;
+  --txt:#E6E8F0;
+  --muted:#8891A8;
+  --dim:#5C6480;
+
+  --pq:#A78BFA;        /* quantum-safe  */
+  --pq-deep:#7C5CE0;
+  --classic:#E8A33D;   /* classical, works today, harvestable */
+  --fail:#E05252;      /* fails closed  */
+  --unknown:#4E5670;
+
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--ink);color:var(--txt);
+  font-family:var(--sans);font-size:15px;line-height:1.55;
+  font-variant-numeric:tabular-nums;
+  background-image:
+    radial-gradient(900px 500px at 15% -10%,rgba(124,92,224,.13),transparent 60%),
+    radial-gradient(700px 400px at 95% 0%,rgba(232,163,61,.05),transparent 60%);
+}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+
+/* ---------- micro-typography: the personality lives here ---------- */
+.eyebrow{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--dim);
+}
+.lbl{
+  font-family:var(--mono);font-size:10px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--muted);
+}
+h1{
+  font-size:clamp(30px,6.5vw,50px);line-height:1.02;margin:14px 0 0;
+  font-weight:700;letter-spacing:-.03em;
+}
+h1 span{color:var(--pq)}
+h2{font-size:15px;letter-spacing:-.01em;margin:0;font-weight:650}
+.thesis{max-width:62ch;color:var(--muted);margin:14px 0 0;font-size:15.5px}
+.thesis b{color:var(--txt);font-weight:600}
+
+header{padding:52px 0 28px;border-bottom:1px solid var(--rule)}
+
+/* ---------- panels ---------- */
+.panel{
+  background:var(--panel);border:1px solid var(--rule);border-radius:3px;
+  margin-top:22px;
+}
+.panel-hd{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:12px 16px;border-bottom:1px solid var(--rule);
+}
+.panel-hd .lbl{margin-left:auto}
+.panel-bd{padding:16px}
+
+/* ---------- controls ---------- */
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:6px;flex:1 1 220px;min-width:0}
+input[type=text],textarea,select{
+  background:var(--ink);color:var(--txt);border:1px solid var(--rule-hi);
+  border-radius:2px;padding:9px 10px;font-family:var(--mono);font-size:13px;
+  width:100%;
+}
+textarea{min-height:130px;resize:vertical;line-height:1.5}
+input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible,.tab:focus-visible{
+  outline:2px solid var(--pq);outline-offset:2px;
+}
+button{
+  background:var(--pq-deep);color:#fff;border:1px solid var(--pq);
+  border-radius:2px;padding:9px 16px;font-family:var(--mono);font-size:12px;
+  letter-spacing:.08em;text-transform:uppercase;cursor:pointer;
+}
+button:hover{background:var(--pq)}
+button.ghost{background:transparent;border-color:var(--rule-hi);color:var(--muted)}
+button.ghost:hover{border-color:var(--pq);color:var(--txt);background:transparent}
+
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--rule);margin-top:28px;flex-wrap:wrap}
+.tab{
+  background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);
+  padding:11px 15px;font-family:var(--mono);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;cursor:pointer;border-radius:0;
+}
+.tab[aria-selected=true]{color:var(--pq);border-bottom-color:var(--pq)}
+.tab:hover{color:var(--txt)}
+
+/* ---------- verdict ---------- */
+.verdict{
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  padding:18px 16px;border:1px solid var(--rule);border-left-width:3px;
+  background:var(--panel-2);border-radius:3px;
+}
+.verdict-code{font-family:var(--mono);font-size:23px;letter-spacing:-.01em;font-weight:600}
+.verdict-why{color:var(--muted);font-size:13.5px;flex:1 1 240px;min-width:0}
+.v-pq{border-left-color:var(--pq)} .v-pq .verdict-code{color:var(--pq)}
+.v-classic{border-left-color:var(--classic)} .v-classic .verdict-code{color:var(--classic)}
+.v-fail{border-left-color:var(--fail)} .v-fail .verdict-code{color:var(--fail)}
+.v-unknown{border-left-color:var(--unknown)} .v-unknown .verdict-code{color:var(--muted)}
+
+/* ---------- eight-step engine ---------- */
+.steps{display:flex;flex-direction:column}
+.step{
+  display:grid;grid-template-columns:34px 1fr auto;gap:14px;align-items:start;
+  padding:13px 16px;border-bottom:1px solid var(--rule);cursor:pointer;
+  background:none;border-left:none;border-right:none;border-top:none;
+  text-align:left;width:100%;color:inherit;font-family:inherit;font-size:inherit;
+  text-transform:none;letter-spacing:normal;border-radius:0;
+}
+.step:hover{background:var(--panel-2)}
+.step:last-child{border-bottom:none}
+.step-n{font-family:var(--mono);font-size:11px;color:var(--dim);padding-top:3px;letter-spacing:.06em}
+.step-name{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;color:var(--txt)}
+.step-detail{color:var(--muted);font-size:13px;margin-top:4px}
+.step-detail code{font-family:var(--mono);font-size:12px;color:var(--txt);background:var(--ink);padding:1px 5px;border-radius:2px}
+.pill{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  padding:3px 8px;border-radius:2px;border:1px solid currentColor;white-space:nowrap;margin-top:2px;
+}
+.p-pass{color:var(--pq)} .p-warn{color:var(--classic)} .p-fail{color:var(--fail)} .p-skip{color:var(--unknown)}
+.step.is-fail{background:linear-gradient(90deg,rgba(224,82,82,.09),transparent 55%)}
+.step.is-warn{background:linear-gradient(90deg,rgba(232,163,61,.07),transparent 55%)}
+
+/* ---------- horizon: the signature element ---------- */
+.horizon{padding:20px 16px 8px}
+.horizon svg{width:100%;height:auto;display:block;overflow:visible}
+.hz-axis{stroke:var(--rule-hi);stroke-width:1}
+.hz-tick{fill:var(--dim);font-family:var(--mono);font-size:9px;letter-spacing:.1em}
+.hz-lane-lbl{fill:var(--muted);font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase}
+.hz-bar{rx:1}
+.hz-qday{fill:rgba(224,82,82,.16)}
+.hz-qday-edge{stroke:var(--fail);stroke-width:1;stroke-dasharray:3 3}
+.hz-note{fill:var(--fail);font-family:var(--mono);font-size:9.5px;letter-spacing:.1em}
+.sliders{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;padding:4px 16px 18px}
+.slider label{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.slider output{font-family:var(--mono);font-size:13px;color:var(--pq)}
+input[type=range]{width:100%;accent-color:var(--pq-deep);margin-top:7px}
+
+/* ---------- horizon anchors ---------- */
+.anchors{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 4px;align-items:center}
+.chip{
+  background:transparent;border:1px solid var(--rule-hi);color:var(--muted);
+  border-radius:2px;padding:6px 11px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+}
+.chip:hover{border-color:var(--pq);color:var(--txt);background:transparent}
+.chip[aria-pressed=true]{border-color:var(--pq);color:var(--pq);background:rgba(124,92,224,.12)}
+.anchor-note{
+  padding:6px 16px 14px;color:var(--dim);font-size:12.5px;max-width:74ch;
+}
+.anchor-note a{color:var(--muted)}
+
+/* ---------- chain ---------- */
+.hops{display:flex;flex-direction:column;gap:0}
+.hop{
+  display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;
+  padding:12px 16px;border-bottom:1px solid var(--rule);
+}
+.hop:last-child{border-bottom:none}
+.hop-i{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.1em}
+.hop-host{font-family:var(--mono);font-size:13px;overflow-wrap:anywhere}
+.hop-role{color:var(--muted);font-size:12px;margin-top:2px}
+.hop-bar{width:5px;align-self:stretch;border-radius:2px;min-height:30px}
+.weakest{
+  padding:13px 16px;border-top:1px solid var(--rule);
+  color:var(--muted);font-size:13px;background:var(--panel-2);
+}
+.weakest b{color:var(--txt)}
+
+/* ---------- downgrade ladder ---------- */
+.ladder{display:flex;flex-direction:column}
+.rung{
+  display:grid;grid-template-columns:20px 1fr auto;gap:14px;align-items:start;
+  padding:12px 16px;border-bottom:1px solid var(--rule);position:relative;
+}
+.rung:last-child{border-bottom:none}
+.rung-rail{
+  width:2px;background:var(--rule-hi);position:relative;align-self:stretch;
+  min-height:26px;margin-left:9px;
+}
+.rung.held .rung-rail{background:var(--pq)}
+.rung.forced .rung-rail{background:var(--fail)}
+.rung-dot{
+  position:absolute;left:-4px;top:4px;width:10px;height:10px;border-radius:50%;
+  background:var(--ink);border:2px solid var(--rule-hi);
+}
+.rung.held .rung-dot{border-color:var(--pq)}
+.rung.forced .rung-dot{border-color:var(--fail);background:var(--fail)}
+.rung-name{font-family:var(--mono);font-size:12.5px;letter-spacing:.03em}
+.rung-meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.rung-note{color:var(--dim);font-size:12.5px;margin-top:4px}
+.rung.forced .rung-name{color:var(--fail)}
+.floor{
+  padding:14px 16px;border-top:1px solid var(--rule);background:var(--panel-2);
+  font-size:13.5px;color:var(--muted);
+}
+.floor b{color:var(--txt)}
+.floor .big{font-family:var(--mono);font-size:15px;color:var(--fail);display:block;margin-top:5px}
+.floor .big.ok{color:var(--pq)}
+
+/* ---------- receipt ---------- */
+pre.receipt{
+  font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--muted);
+  background:var(--ink);border:1px solid var(--rule);border-radius:2px;
+  padding:14px;overflow:auto;max-height:340px;margin:0;
+}
+pre.receipt .k{color:var(--pq)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:0}
+.grid2>div{padding:14px 16px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.kv{font-family:var(--mono);font-size:13px;margin-top:5px;overflow-wrap:anywhere}
+
+.note{
+  border-left:2px solid var(--rule-hi);padding:2px 0 2px 14px;color:var(--muted);
+  font-size:13.5px;margin:16px 0 0;
+}
+.note b{color:var(--txt);font-weight:600}
+footer{margin-top:44px;padding-top:22px;border-top:1px solid var(--rule);color:var(--dim);font-size:12.5px}
+footer a{color:var(--muted)}
+a{color:var(--pq)}
+.hidden{display:none !important}
+@media (max-width:620px){
+  .hop{grid-template-columns:auto 1fr auto}
+  .hop .pill{grid-column:2/-1;justify-self:start}
+  .step{grid-template-columns:26px 1fr;gap:10px}
+  .step .pill{grid-column:2;justify-self:start}
+}
+@media (prefers-reduced-motion:no-preference){
+  .step,.hop{transition:background .12s ease}
+  .hz-bar{transition:width .25s ease,x .25s ease}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">foss.violetskysecurity.com / tools</div>
+  <h1>PQChecker<span>.</span></h1>
+  <p class="thesis">
+    Every other post-quantum checker answers one question about one host: does it speak ML-KEM.
+    This one runs eight steps against <b>every hop a transaction actually traverses</b>, separates the
+    two clocks that PQ migration runs on, and fails closed at the exact step. Posture is not inherited:
+    a quantum-safe front door in front of a classical hop is classical end to end.
+    <b>No backend, no data leaves your browser</b> — the handshakes happen in a local probe, this page
+    only verifies and renders the receipt.
+  </p>
+</header>
+
+<div class="tabs" role="tablist">
+  <button class="tab" role="tab" aria-selected="true"  data-view="demo">Sample chain</button>
+  <button class="tab" role="tab" aria-selected="false" data-view="scan">Scan a site</button>
+  <button class="tab" role="tab" aria-selected="false" data-view="verify">Verify a receipt</button>
+  <button class="tab" role="tab" aria-selected="false" data-view="about">How it measures</button>
+</div>
+
+<!-- =============== VERIFY =============== -->
+<section id="view-verify" class="hidden">
+  <div class="panel">
+    <div class="panel-hd"><h2>Paste a probe receipt</h2><span class="lbl">offline · local only</span></div>
+    <div class="panel-bd">
+      <p class="note" style="margin-top:0">
+        Produce one with <code style="font-family:var(--mono)">pqprobe -chain chain.json -out receipt.json</code>.
+        The probe opens the TLS connections; this page never does. Verification is Ed25519 over the
+        canonical receipt body, in WebCrypto, in this tab.
+      </p>
+      <div class="field" style="margin-top:14px">
+        <span class="lbl">receipt json</span>
+        <textarea id="receiptIn" spellcheck="false" placeholder='{"v":1,"issued":"...","hops":[...],"sig":"..."}'></textarea>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="btnVerify">Verify and render</button>
+        <button class="ghost" id="btnClear">Clear</button>
+        <span id="verifyMsg" class="lbl" style="align-self:center"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== SCAN =============== -->
+<section id="view-scan" class="hidden">
+  <div class="panel">
+    <div class="panel-hd"><h2>Scan a host</h2><span class="lbl">live · leaves your browser</span></div>
+    <div class="panel-bd">
+      <div class="row">
+        <div class="field" style="flex:1 1 340px">
+          <span class="lbl">hostname</span>
+          <input type="text" id="scanHost" spellcheck="false" autocapitalize="off"
+                 autocorrect="off" placeholder="example.com" inputmode="url">
+        </div>
+        <button id="btnScan">Scan</button>
+      </div>
+      <p class="note" id="scanMsg" style="margin-top:14px">
+        Hostname only — no scheme, no path, no IP addresses. Port 443. One scan is roughly fifteen
+        outbound handshakes, so the endpoint is rate limited and results take a few seconds.
+        Unlike the other two tabs, this one <b>does</b> send the hostname to this server, which performs
+        the handshakes on your behalf. Live results are returned unsigned; only curated chains are signed.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- =============== ABOUT =============== -->
+<section id="view-about" class="hidden">
+  <div class="panel">
+    <div class="panel-hd"><h2>What each step actually tests</h2><span class="lbl">engine v1</span></div>
+    <div class="panel-bd" id="aboutSteps"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-hd"><h2>Why two clocks</h2></div>
+    <div class="panel-bd">
+      <p style="margin-top:0;color:var(--muted)">
+        <b style="color:var(--txt)">Confidentiality is retroactive.</b> Traffic recorded today under a classical
+        key agreement is decryptable the day a cryptographically relevant quantum computer exists. The exposure
+        window opened the moment the data crossed the wire. Key agreement is therefore urgent now, and the
+        deadline is set by how long your data stays sensitive — not by Q-Day.
+      </p>
+      <p style="color:var(--muted)">
+        <b style="color:var(--txt)">Authentication is not retroactive.</b> Forging a signature requires a quantum
+        computer at the moment of the attack. A classical certificate chain is not a harvest risk. It is a
+        cliff: it must be migrated before Q-Day, not before your data ages out. Tools that collapse these into
+        one score mislead in both directions — they panic about certificates and under-price the KEM.
+      </p>
+      <p style="color:var(--muted);margin-bottom:0">
+        Step 08 is the Mosca inequality, wired to live measurements rather than a questionnaire:
+        if <code style="font-family:var(--mono);color:var(--txt)">shelf-life + migration-time &gt; time-to-Q-Day</code>
+        and step 04 did not negotiate a hybrid group, the exposure has already started and no future
+        remediation closes it.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- =============== DEMO / RESULTS =============== -->
+<section id="view-demo">
+
+  <div class="panel">
+    <div class="panel-hd">
+      <h2>Sample chain</h2>
+      <span class="lbl" id="chainSrc">synthetic · agentic payment path</span>
+    </div>
+    <div class="panel-bd" style="padding-bottom:8px">
+      <div class="row">
+        <div class="field" style="flex:1 1 300px">
+          <span class="lbl">inject a fault</span>
+          <select id="tamper">
+            <option value="none">None — chain as measured</option>
+            <option value="strip">Downgrade: MITM strips the hybrid group from ClientHello</option>
+            <option value="floor">Floor: settlement hop still accepts TLS 1.2</option>
+            <option value="root">Authentication: ML-DSA leaf under a classical root</option>
+            <option value="shelf">Horizon: retention raised to 12 years on a classical hop</option>
+            <option value="hop">Chain: issuer hop replaced with a classical-only endpoint</option>
+          </select>
+        </div>
+        <button class="ghost" id="btnReset">Reset</button>
+      </div>
+      <p class="note">
+        Pick a fault and watch the engine stop at the step that catches it. The same eight steps run whether
+        the endpoint is a VASP settlement rail or an agent's tool endpoint — the check does not care who holds
+        the connection, only what the handshake proves.
+      </p>
+    </div>
+  </div>
+
+  <div id="verdictBox" class="verdict v-unknown" style="margin-top:22px" role="status" aria-live="polite">
+    <span class="verdict-code" id="verdictCode">—</span>
+    <span class="verdict-why" id="verdictWhy">Select a chain to run the engine.</span>
+  </div>
+
+  <!-- signature element -->
+  <div class="panel">
+    <div class="panel-hd"><h2>Exposure horizon</h2><span class="lbl" id="hzAnchorLbl">two clocks · one axis</span></div>
+    <div class="horizon"><svg id="hz" viewBox="0 0 720 190" role="img"
+      aria-label="Timeline comparing confidentiality and authentication exposure windows against the selected planning horizon."></svg></div>
+    <div class="anchors" role="group" aria-label="Planning horizon anchor">
+      <span class="lbl" style="margin-right:2px">anchor</span>
+      <button class="chip" data-anchor="eth"   data-year="2029">Ethereum 2029</button>
+      <button class="chip" data-anchor="nist30" data-year="2030">NIST 2030</button>
+      <button class="chip" data-anchor="nist35" data-year="2035" aria-pressed="true">NIST 2035</button>
+      <button class="chip" data-anchor="custom">Custom</button>
+    </div>
+    <p class="anchor-note" id="anchorNote"></p>
+    <div class="sliders">
+      <div class="slider">
+        <label for="sShelf"><span class="lbl">Data shelf life</span><output id="oShelf">6 yr</output></label>
+        <input type="range" id="sShelf" min="1" max="25" value="6">
+      </div>
+      <div class="slider">
+        <label for="sMig"><span class="lbl">Migration time</span><output id="oMig">3 yr</output></label>
+        <input type="range" id="sMig" min="1" max="12" value="3">
+      </div>
+      <div class="slider">
+        <label for="sQ"><span class="lbl">Planning horizon</span><output id="oQ">2035</output></label>
+        <input type="range" id="sQ" min="2028" max="2045" value="2035">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Chain</h2><span class="lbl">verdict = weakest hop</span></div>
+    <div class="hops" id="hops"></div>
+    <div class="weakest" id="weakest"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">
+      <h2>Engine</h2>
+      <span class="lbl" id="engineHost">—</span>
+    </div>
+    <div class="steps" id="steps"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">
+      <h2>Downgrade ladder</h2>
+      <span class="lbl" id="ladderHost">—</span>
+    </div>
+    <div class="panel-bd" style="padding-bottom:0">
+      <div class="row">
+        <button id="btnLadder">Force downgrade</button>
+        <span class="lbl" id="ladderMsg" style="align-self:center"></span>
+      </div>
+      <p class="note">
+        Withholds capabilities from the client side, one rung at a time, and records the worst handshake
+        this hop will still complete. Nothing is intercepted or injected — each rung is an ordinary outbound
+        connection with a restricted ClientHello, which is the only thing a client can measure.
+      </p>
+    </div>
+    <div class="ladder" id="ladder"></div>
+    <div class="floor" id="floor"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">
+      <h2>Receipt</h2>
+      <span class="lbl" id="receiptState">unsigned · synthetic</span>
+    </div>
+    <div class="grid2" id="receiptMeta"></div>
+    <div class="panel-bd">
+      <pre class="receipt" id="receiptOut"></pre>
+      <div class="row" style="margin-top:12px">
+        <button id="btnDownload">Download receipt</button>
+        <button class="ghost" id="btnCopy">Copy JSON</button>
+        <span class="lbl" id="copyMsg" style="align-self:center"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>
+    PQChecker is a diagnostic, not an assurance. It reports what a handshake negotiated at one moment from one
+    vantage point. Support is not preference and preference is not enforcement — steps 03, 04 and 05 exist
+    precisely because those three are routinely conflated.
+  </p>
+  <p>
+    Group codepoints per <a href="https://datatracker.ietf.org/doc/draft-ietf-tls-ecdhe-mlkem/">draft-ietf-tls-ecdhe-mlkem</a>.
+    Apache-2.0 · Violet Sky Security SEZC.
+  </p>
+</footer>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Engine definition — eight ordered steps.
+   Order matters: later steps are conditioned on earlier ones,
+   and the engine reports the FIRST step that fails.
+   ============================================================ */
+const STEPS = [
+  {id:"REACH",    name:"Reachability",        blurb:"TLS 1.3 endpoint answers on the named host and port. No 1.3, no post-quantum path of any kind."},
+  {id:"FLOOR",    name:"Version floor",       blurb:"Probes TLS 1.0/1.1/1.2. Anything below 1.3 has no hybrid group defined, so an accepted 1.2 handshake is a standing downgrade target."},
+  {id:"KEM-OFFER",name:"Hybrid group offered",blurb:"Offers X25519MLKEM768 (0x11EC), SecP256r1MLKEM768 (0x11EB) and SecP384r1MLKEM1024 (0x11ED) individually. Support only."},
+  {id:"KEM-PREF", name:"Hybrid group preferred",blurb:"Offers a realistic modern client list and records what the server actually selects. A host can support ML-KEM and still choose X25519 every time."},
+  {id:"DOWNGRADE",name:"Downgrade resistance",blurb:"Offers classical groups only. If the handshake still completes, post-quantum is advisory: an on-path attacker strips the group and harvests."},
+  {id:"SIG-LEAF", name:"Leaf signature",      blurb:"Reads the leaf certificate's signature algorithm OID. ML-DSA is 2.16.840.1.101.3.4.3.17/18/19, SLH-DSA .20 onward. Not a harvest risk — a Q-Day forgery risk."},
+  {id:"SIG-CHAIN",name:"Chain signature",     blurb:"Walks intermediates to the trust anchor. A post-quantum leaf under a classical intermediate is classical authentication; the weakest link sets the level."},
+  {id:"HORIZON",  name:"Exposure horizon",    blurb:"Mosca: shelf-life + migration time against the Q-Day estimate, conditioned on step 04. Fails closed when the exposure window is already open."}
+];
+
+const GROUPS = {
+  "X25519MLKEM768":      {cp:"0x11EC", pq:true},
+  "SecP256r1MLKEM768":   {cp:"0x11EB", pq:true},
+  "SecP384r1MLKEM1024":  {cp:"0x11ED", pq:true},
+  "X25519Kyber768Draft00":{cp:"0x6399",pq:true, legacy:true},
+  "X25519":              {cp:"0x001D", pq:false},
+  "secp256r1":           {cp:"0x0017", pq:false},
+  "secp384r1":           {cp:"0x0018", pq:false}
+};
+
+const PQ_SIGS = ["ML-DSA-44","ML-DSA-65","ML-DSA-87","SLH-DSA-SHA2-128s","SLH-DSA-SHA2-192s"];
+const isPqSig = s => PQ_SIGS.some(p => (s||"").startsWith(p.split("-").slice(0,2).join("-")));
+
+/* ------------------------------------------------------------
+   Synthetic sample chain: an agentic payment path.
+   Shape mirrors what pqprobe emits, so the renderer is identical
+   for real receipts.
+   ------------------------------------------------------------ */
+// The baseline is a chain that already passes. That is deliberate: a fault
+// picker is only legible if the clean state is clean, otherwise every injected
+// fault is masked by whichever hop was already the weakest.
+function baseChain(){
+  return [
+    {host:"agent-gw.example",       role:"Agent egress gateway", port:443,
+     tls13:true, minVersion:"1.3",
+     supported:["X25519MLKEM768","X25519","secp256r1"],
+     negotiated:"X25519MLKEM768",
+     classicalOnlyAccepted:false,
+     leafSig:"ML-DSA-65", chainSigs:["ML-DSA-65","ML-DSA-87"]},
+
+    {host:"api.psp.example",        role:"Payment service provider", port:443,
+     tls13:true, minVersion:"1.3",
+     supported:["X25519MLKEM768","SecP256r1MLKEM768","X25519","secp256r1"],
+     negotiated:"X25519MLKEM768",
+     classicalOnlyAccepted:false,
+     leafSig:"ML-DSA-65", chainSigs:["ML-DSA-65","ML-DSA-87"]},
+
+    {host:"issuer-auth.example",    role:"Issuer authorization", port:443,
+     tls13:true, minVersion:"1.3",
+     supported:["X25519MLKEM768","SecP256r1MLKEM768","X25519"],
+     negotiated:"X25519MLKEM768",
+     classicalOnlyAccepted:false,
+     leafSig:"ML-DSA-65", chainSigs:["ML-DSA-65","ML-DSA-87"]},
+
+    {host:"settle.rail.example",    role:"Settlement rail", port:443,
+     tls13:true, minVersion:"1.3",
+     supported:["X25519MLKEM768","SecP384r1MLKEM1024","X25519"],
+     negotiated:"X25519MLKEM768",
+     classicalOnlyAccepted:false,
+     leafSig:"ML-DSA-87", chainSigs:["ML-DSA-87","ML-DSA-87"]}
+  ];
+}
+
+// Each fault targets one step and one hop, and returns the hop to focus so the
+// engine readout jumps to where it broke.
+function applyTamper(t){
+  const c = baseChain();
+  switch(t){
+    case "strip":  // on-path attacker removes the hybrid group from every ClientHello
+      c.forEach(h=>{ h.negotiated="X25519"; h.classicalOnlyAccepted=true; });
+      return {chain:c, focus:0, step:"KEM-PREF"};
+    case "floor":  // settlement hop still terminates TLS 1.2
+      c[3].minVersion="1.2"; c[3].classicalOnlyAccepted=true;
+      return {chain:c, focus:3, step:"FLOOR"};
+    case "root":   // post-quantum leaf, classical issuer
+      c[2].chainSigs=["ML-DSA-65","sha256WithRSAEncryption"];
+      return {chain:c, focus:2, step:"SIG-CHAIN"};
+    case "hop":    // issuer replaced with a classical-only endpoint
+      c[2] = {host:"issuer-legacy.example", role:"Issuer authorization (legacy)", port:443,
+              tls13:true, minVersion:"1.2",
+              supported:["X25519","secp256r1"], negotiated:"X25519",
+              classicalOnlyAccepted:true,
+              leafSig:"sha256WithRSAEncryption",
+              chainSigs:["sha256WithRSAEncryption","sha256WithRSAEncryption"]};
+      return {chain:c, focus:2, step:"KEM-OFFER"};
+    case "shelf":  // retention raised past Q-Day on an otherwise classical path
+      c.forEach(h=>{ h.negotiated="X25519"; h.classicalOnlyAccepted=true; });
+      return {chain:c, focus:0, step:"HORIZON", shelf:14};
+    default:
+      return {chain:c, focus:0, step:null};
+  }
+}
+
+/* ------------------------------------------------------------
+   Evaluation. Returns per-step results plus a hop verdict.
+   Verdicts, strongest to weakest:
+     PQ-ENFORCED  hybrid negotiated AND classical-only refused
+     PQ-HYBRID    hybrid negotiated, classical still accepted
+     PQ-CAPABLE   hybrid supported but not selected
+     CLASSICAL    no post-quantum key agreement at all
+     FAIL         cannot establish a 1.3 handshake
+   ------------------------------------------------------------ */
+function evalHop(h, horizon){
+  const r = [];
+  const push = (id,state,detail)=>r.push({id,state,detail});
+
+  if(!h.tls13){ push("REACH","fail","No TLS 1.3. Hybrid key agreement is defined for 1.3 only.");
+    STEPS.slice(1).forEach(s=>push(s.id,"skip","Not reached — engine stopped at 01."));
+    return {steps:r, verdict:"FAIL", why:"No TLS 1.3 endpoint."}; }
+  push("REACH","pass",`TLS 1.3 on <code>${h.host}:${h.port}</code>.`);
+
+  const lowFloor = h.minVersion !== "1.3";
+  push("FLOOR", lowFloor?"warn":"pass",
+    lowFloor ? `Accepts TLS <code>${h.minVersion}</code>. No hybrid group exists below 1.3, so this is a standing downgrade path regardless of what 1.3 negotiates.`
+             : "Refuses everything below TLS 1.3.");
+
+  const pqSupported = (h.supported||[]).filter(g=>GROUPS[g]&&GROUPS[g].pq);
+  push("KEM-OFFER", pqSupported.length?"pass":"fail",
+    pqSupported.length ? `Accepts ${pqSupported.map(g=>`<code>${g} ${GROUPS[g].cp}</code>`).join(", ")}.`
+                       : "Rejects all three hybrid ML-KEM groups. Key agreement is classical, full stop.");
+
+  const neg = h.negotiated;
+  const negPq = GROUPS[neg] && GROUPS[neg].pq;
+  push("KEM-PREF", negPq?"pass":(pqSupported.length?"warn":"fail"),
+    negPq ? `Selects <code>${neg}</code> (${GROUPS[neg].cp}).`
+          : pqSupported.length
+            ? `Supports a hybrid group but selects <code>${neg}</code>. Support is not preference — server-side ordering decides, and it is choosing classical.`
+            : `Selects <code>${neg}</code>. Classical key agreement — harvestable today.`);
+
+  push("DOWNGRADE", h.classicalOnlyAccepted?"warn":"pass",
+    h.classicalOnlyAccepted
+      ? "Completes a handshake with classical groups only. Post-quantum is advisory: an on-path attacker removes the group from ClientHello and the session proceeds, harvestable."
+      : "Refuses a classical-only ClientHello. Post-quantum is enforced, not merely offered.");
+
+  const leafPq = isPqSig(h.leafSig);
+  push("SIG-LEAF", leafPq?"pass":"warn",
+    leafPq ? `Leaf signed with <code>${h.leafSig}</code>.`
+           : `Leaf signed with <code>${h.leafSig}</code>. Not a harvest risk — signatures cannot be forged retroactively — but it must be migrated before Q-Day, not before your data ages out.`);
+
+  const chainPq = (h.chainSigs||[]).every(isPqSig);
+  const anyPq = (h.chainSigs||[]).some(isPqSig);
+  push("SIG-CHAIN", chainPq?"pass":(anyPq?"warn":"warn"),
+    chainPq ? `Full path post-quantum: ${h.chainSigs.map(s=>`<code>${s}</code>`).join(" → ")}.`
+      : anyPq ? `Mixed path: ${h.chainSigs.map(s=>`<code>${s}</code>`).join(" → ")}. A post-quantum leaf under a classical issuer is classical authentication — an adversary forges the issuer, not the leaf.`
+              : `Classical path: ${h.chainSigs.map(s=>`<code>${s}</code>`).join(" → ")}.`);
+
+  const yrsToQ = horizon.qday - horizon.now;
+  const need = horizon.shelf + horizon.mig;
+  const breach = need > yrsToQ;
+  push("HORIZON", (!negPq && breach) ? "fail" : (breach?"warn":"pass"),
+    (!negPq && breach)
+      ? `Shelf life ${horizon.shelf} + migration ${horizon.mig} = <code>${need}yr</code> against <code>${yrsToQ}yr</code> to the horizon, on a classical key agreement. The exposure window is open now. Traffic crossing this hop today is already recorded-and-waiting; migrating later does not close it.`
+      : breach
+        ? `Shelf life ${horizon.shelf} + migration ${horizon.mig} = <code>${need}yr</code> exceeds <code>${yrsToQ}yr</code> to the horizon, but this hop negotiates a hybrid group. Confidentiality is covered; the deadline now applies to the certificate path.`
+        : `Shelf life ${horizon.shelf} + migration ${horizon.mig} = <code>${need}yr</code> fits inside <code>${yrsToQ}yr</code> to the horizon.`);
+
+  let verdict, why;
+  if(!negPq && !pqSupported.length){ verdict="CLASSICAL"; why="No post-quantum key agreement offered or negotiated."; }
+  else if(!negPq){ verdict="PQ-CAPABLE"; why="Hybrid group supported but not selected."; }
+  else if(h.classicalOnlyAccepted || lowFloor){ verdict="PQ-HYBRID"; why="Hybrid negotiated, classical still reachable."; }
+  else { verdict="PQ-ENFORCED"; why="Hybrid negotiated and classical refused."; }
+  return {steps:r, verdict, why};
+}
+
+const RANK = {"FAIL":0,"CLASSICAL":1,"PQ-CAPABLE":2,"PQ-HYBRID":3,"PQ-ENFORCED":4};
+const VCLASS = {"FAIL":"v-fail","CLASSICAL":"v-fail","PQ-CAPABLE":"v-classic","PQ-HYBRID":"v-pq","PQ-ENFORCED":"v-pq"};
+const VCOLOR = {"FAIL":"var(--fail)","CLASSICAL":"var(--fail)","PQ-CAPABLE":"var(--classic)","PQ-HYBRID":"var(--pq)","PQ-ENFORCED":"var(--pq)"};
+
+/* ------------------------------------------------------------ state ------------ */
+const DEF = {shelf:6, mig:3, qday:2035};
+
+/* Published anchors. These are policy and engineering deadlines, NOT
+   predictions of when a cryptographically relevant quantum computer exists.
+   Treating a compliance date as a threat date is the same category error the
+   two-clock model exists to correct, so the axis is labelled by anchor. */
+const ANCHORS = {
+  eth: {year:2029, label:"ETHEREUM 2029",
+        note:'Ethereum Foundation — the Lean Ethereum roadmap targets 2029 for completing core L1 post-quantum infrastructure. An engineering completion target for one protocol, not a threat forecast. <a href="https://ethereum.org/roadmap/future-proofing/quantum-resistance/" rel="noopener">ethereum.org</a>'},
+  nist30:{year:2030, label:"NIST 2030 · DEPRECATED",
+        note:'NIST IR 8547 — RSA, ECDSA, ECDH, DSA and finite-field DH are deprecated after 2030. Continued use becomes a documented risk acceptance rather than a default. <a href="https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf" rel="noopener">IR 8547</a>'},
+  nist35:{year:2035, label:"NIST 2035 · DISALLOWED",
+        note:'NIST IR 8547 — the same algorithms are disallowed after 2035, in legacy systems too; the risk-acceptance option ends. Well-formed hybrids remain permitted. UK NCSC sets the same 2035 completion date. <a href="https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf" rel="noopener">IR 8547</a>'},
+  custom:{year:null, label:"CUSTOM",
+        note:"Your own estimate. Nothing published anchors this line — set it from your own threat model and say so if you publish the receipt."}
+};
+let ANCHOR = "nist35";
+
+function setAnchor(key, moveSlider){
+  ANCHOR = key;
+  document.querySelectorAll(".chip").forEach(c =>
+    c.setAttribute("aria-pressed", String(c.dataset.anchor === key)));
+  el("anchorNote").innerHTML = ANCHORS[key].note;
+  if(moveSlider && ANCHORS[key].year){
+    el("sQ").value = ANCHORS[key].year;
+    syncOutputs();
+  }
+}
+let CHAIN = baseChain();
+let RESULTS = [];
+let FOCUS = 0;
+let RECEIPT_META = {source:"synthetic", signed:false, issuer:null, verified:null};
+
+const el = id => document.getElementById(id);
+const horizon = () => ({
+  now: new Date().getFullYear(),
+  shelf:+el("sShelf").value, mig:+el("sMig").value, qday:+el("sQ").value
+});
+
+/* ------------------------------------------------------------ render ----------- */
+function run(){
+  const hz = horizon();
+  RESULTS = CHAIN.map(h => ({hop:h, ...evalHop(h,hz)}));
+
+  let weakIdx = 0;
+  RESULTS.forEach((r,i)=>{ if(RANK[r.verdict] < RANK[RESULTS[weakIdx].verdict]) weakIdx = i; });
+  const chainVerdict = RESULTS[weakIdx].verdict;
+
+  const vb = el("verdictBox");
+  vb.className = "verdict " + VCLASS[chainVerdict];
+  el("verdictCode").textContent = chainVerdict;
+  el("verdictWhy").innerHTML =
+    `Chain of ${CHAIN.length} hops. Weakest is <b style="color:var(--txt)">${RESULTS[weakIdx].hop.host}</b> — ` +
+    RESULTS[weakIdx].why + " A chain is exactly as quantum-safe as its weakest hop; strength does not propagate forward.";
+
+  renderHops(weakIdx, chainVerdict);
+  if(FOCUS >= RESULTS.length) FOCUS = weakIdx;
+  renderSteps();
+  renderHorizon(hz, chainVerdict);
+  el("ladder").innerHTML = ""; el("floor").innerHTML = "";
+  el("ladderHost").textContent = RESULTS[FOCUS].hop.host;
+  el("ladderMsg").textContent = "";
+  renderReceipt(chainVerdict, RESULTS[weakIdx].hop.host);
+}
+
+function renderHops(weakIdx, chainVerdict){
+  el("hops").innerHTML = RESULTS.map((r,i)=>`
+    <div class="hop" role="button" tabindex="0" data-i="${i}" style="${i===FOCUS?'background:var(--panel-2)':''}">
+      <div class="hop-bar" style="background:${VCOLOR[r.verdict]}"></div>
+      <div>
+        <div class="hop-host">${r.hop.host}</div>
+        <div class="hop-role">${r.hop.role}</div>
+      </div>
+      <span class="hop-i">${String(i+1).padStart(2,"0")}/${String(RESULTS.length).padStart(2,"0")}</span>
+      <span class="pill ${r.verdict.startsWith("PQ-ENF")||r.verdict==="PQ-HYBRID"?"p-pass":r.verdict==="PQ-CAPABLE"?"p-warn":"p-fail"}">${r.verdict}</span>
+    </div>`).join("");
+
+  el("hops").querySelectorAll(".hop").forEach(n=>{
+    const go = ()=>{ FOCUS = +n.dataset.i; run(); };
+    n.addEventListener("click", go);
+    n.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); go(); } });
+  });
+
+  el("weakest").innerHTML =
+    `<b>Chain verdict ${chainVerdict}</b> — set by hop ${String(weakIdx+1).padStart(2,"0")}, ` +
+    `<b>${RESULTS[weakIdx].hop.host}</b>. ` +
+    (RESULTS.filter(r=>RANK[r.verdict]>=3).length
+      ? `${RESULTS.filter(r=>RANK[r.verdict]>=3).length} of ${RESULTS.length} hops negotiate a hybrid group, which is the number a single-host checker would report if you pointed it at the front door.`
+      : "No hop negotiates a hybrid group.");
+}
+
+function renderSteps(){
+  const r = RESULTS[FOCUS];
+  el("engineHost").textContent = r.hop.host;
+  const cls = {pass:"p-pass",warn:"p-warn",fail:"p-fail",skip:"p-skip"};
+  const rowcls = {fail:"is-fail",warn:"is-warn",pass:"",skip:""};
+  el("steps").innerHTML = STEPS.map((s,i)=>{
+    const res = r.steps.find(x=>x.id===s.id) || {state:"skip",detail:"Not evaluated."};
+    return `<button class="step ${rowcls[res.state]}" type="button" aria-label="${s.name}: ${res.state}">
+      <span class="step-n">${String(i+1).padStart(2,"0")}</span>
+      <span>
+        <span class="step-name">${s.id}</span>
+        <span class="step-detail">${res.detail}</span>
+      </span>
+      <span class="pill ${cls[res.state]}">${res.state}</span>
+    </button>`;
+  }).join("");
+}
+
+/* --------- signature element: the dual-clock horizon --------- */
+function renderHorizon(hz, chainVerdict){
+  const W=720,H=190, L=104, R=W-24, y0=2026, y1=2046;
+  const x = y => L + (y-y0)/(y1-y0)*(R-L);
+  const now = hz.now;
+  const confEnd = now + hz.shelf;                 // data stays sensitive until here
+  const authEnd = hz.qday;                        // certificates must be migrated by here
+  const migEnd  = now + hz.mig;
+  const pqOK = RANK[chainVerdict] >= 3;
+
+  const ticks = [];
+  for(let y=y0; y<=y1; y+=4) ticks.push(`
+    <line class="hz-axis" x1="${x(y)}" y1="150" x2="${x(y)}" y2="156"/>
+    <text class="hz-tick" x="${x(y)}" y="169" text-anchor="middle">${y}</text>`);
+
+  const lane = (yy, label, x1, x2, fill, opacity) => `
+    <text class="hz-lane-lbl" x="0" y="${yy+13}">${label}</text>
+    <rect class="hz-bar" x="${x1}" y="${yy}" width="${Math.max(2,x2-x1)}" height="18" fill="${fill}" opacity="${opacity}"/>`;
+
+  el("hzAnchorLbl").textContent = "two clocks · " + ANCHORS[ANCHOR].label.toLowerCase();
+  el("hz").innerHTML = `
+    <rect class="hz-qday" x="${x(hz.qday)}" y="14" width="${R-x(hz.qday)}" height="128"/>
+    <line class="hz-qday-edge" x1="${x(hz.qday)}" y1="8" x2="${x(hz.qday)}" y2="150"/>
+    <text class="hz-note" x="${x(hz.qday)+6}" y="20">${ANCHORS[ANCHOR].label.split(" · ")[0]} ${hz.qday}</text>
+
+    ${lane(30, "Confidentiality", x(now), x(confEnd), pqOK ? "var(--pq)" : "var(--fail)", pqOK?.85:.9)}
+    ${lane(62, "Authentication",  x(now), x(authEnd), "var(--classic)", .8)}
+    ${lane(94, "Migration",       x(now), x(migEnd),  "var(--rule-hi)", 1)}
+
+    <line class="hz-axis" x1="${L}" y1="150" x2="${R}" y2="150"/>
+    ${ticks.join("")}
+    <text class="hz-lane-lbl" x="0" y="185" fill="${pqOK?"var(--pq)":"var(--fail)"}">${
+      pqOK ? "COVERED — hybrid key agreement closes the harvest window"
+           : (confEnd > hz.qday ? "OPEN — data recorded today is still sensitive at the horizon"
+                                : "CLOSING — data ages out before the horizon")}</text>`;
+}
+
+
+/* ------------------------------------------------------------ ladder ----------
+   Derives the ladder from measured hop facts when a real receipt supplies one,
+   and simulates it for the synthetic sample. Each rung answers: if a client
+   withholds this, does the server still complete?
+
+   The detectable flag is the substance. RFC 8446 4.1.3 puts a sentinel in the
+   last eight bytes of ServerHello.random when a 1.3-capable server negotiates
+   lower, and that value is covered by the server's signature — so a forced
+   VERSION downgrade is caught by the client and aborted. There is no equivalent
+   for supported_groups. Stripping ML-KEM produces a correctly signed handshake
+   that is indistinguishable from a server which never supported it. The whole
+   asymmetry is why step 05 exists and why "supports PQ" is not "cannot be
+   downgraded out of PQ".
+   ------------------------------------------------------------------------- */
+function ladderFor(hop){
+  if(Array.isArray(hop.ladder) && hop.ladder.length) return hop.ladder;
+  const pq = (GROUPS[hop.negotiated]||{}).pq;
+  const low = hop.minVersion !== "1.3";
+  return [
+    {name:"Baseline", withheld:"nothing", connected:true, detectable:false,
+     version:"1.3", group:hop.negotiated,
+     note:"What a current browser negotiates."},
+    {name:"Hybrid stripped", withheld:"all ML-KEM groups",
+     connected: hop.classicalOnlyAccepted, detectable:false,
+     version:"1.3", group:"X25519",
+     note:"No downgrade sentinel exists for supported_groups. A client cannot detect this."},
+    {name:"TLS 1.3 stripped", withheld:"TLS 1.3",
+     connected: low, detectable:true, version: low?"1.2":"",
+     note:"RFC 8446 4.1.3 sentinel lets a 1.3 client detect and abort this."},
+    {name:"Forward secrecy stripped", withheld:"all ECDHE/DHE suites",
+     connected:false, detectable:true,
+     note:"RSA key transport. Session keys recoverable from the server's long-term key."},
+    {name:"Legacy versions", withheld:"everything above TLS 1.0",
+     connected:false, detectable:true, note:"Deprecated by RFC 8996."}
+  ];
+}
+
+function renderLadder(){
+  const hop = RESULTS[FOCUS].hop;
+  const rungs = ladderFor(hop);
+  el("ladderHost").textContent = hop.host;
+
+  // The forced floor is the last rung that connected AND that a real client
+  // could not have refused. A detectable rung is not a floor: the client aborts.
+  let floorIdx = 0, undetectableFloor = 0;
+  rungs.forEach((r,i)=>{
+    if(r.connected){ floorIdx = i; if(!r.detectable) undetectableFloor = i; }
+  });
+
+  el("ladder").innerHTML = rungs.map((r,i)=>{
+    const cls = !r.connected ? "" : (i>0 && !r.detectable ? "forced" : "held");
+    const state = !r.connected ? "refused" : (r.detectable && i>0 ? "detectable" : (i===0?"baseline":"forced"));
+    const pill = !r.connected ? "p-pass" : (state==="forced" ? "p-fail" : state==="detectable" ? "p-warn" : "p-skip");
+    const meta = r.connected
+      ? [r.version?("TLS "+r.version):null, r.group, r.cipher].filter(Boolean).join(" · ")
+      : "handshake refused";
+    return `<div class="rung ${cls}">
+      <div class="rung-rail"><span class="rung-dot"></span></div>
+      <div>
+        <div class="rung-name">${r.name}</div>
+        <div class="rung-meta">withholds ${r.withheld} → ${meta}</div>
+        <div class="rung-note">${r.note||""}</div>
+      </div>
+      <span class="pill ${pill}">${state}</span>
+    </div>`;
+  }).join("");
+
+  const f = rungs[undetectableFloor];
+  const clean = undetectableFloor === 0;
+  el("floor").innerHTML = clean
+    ? `<b>No undetectable downgrade available.</b> Every rung below the baseline is either refused or
+       carries a signal a TLS 1.3 client would abort on. Post-quantum key agreement is enforced here,
+       not merely offered.
+       <span class="big ok">FORCED FLOOR — baseline · ${rungs[0].group||"hybrid"}</span>`
+    : `<b>An on-path attacker can silently force this hop down to the rung below</b>, and the client
+       has no way to notice: the handshake is correctly signed and looks identical to a server that
+       never supported ML-KEM. Everything above this line is capability, not protection.
+       ${rungs[floorIdx] !== f ? `A further rung (<b>${rungs[floorIdx].name}</b>) also completes, but a
+       1.3 client detects and aborts it, so it is not part of the attacker-forcible floor.` : ""}
+       <span class="big">FORCED FLOOR — ${f.name} · ${[f.version?("TLS "+f.version):null,f.group,f.cipher].filter(Boolean).join(" · ")}</span>`;
+}
+
+el("btnLadder").addEventListener("click", ()=>{
+  renderLadder();
+  const src = RESULTS[FOCUS].hop.ladder ? "measured by pqprobe" : "derived from this hop's measured facts";
+  el("ladderMsg").textContent = src;
+  el("ladderMsg").style.color = "var(--muted)";
+  el("ladder").scrollIntoView({behavior:"smooth", block:"nearest"});
+});
+
+/* ------------------------------------------------------------ receipt ---------- */
+function receiptObject(chainVerdict){
+  const hz = horizon();
+  return {
+    v:1,
+    tool:"PQChecker/1.0",
+    issued:new Date().toISOString(),
+    source:RECEIPT_META.source,
+    horizon:{shelfLifeYears:hz.shelf, migrationYears:hz.mig, qDayEstimate:hz.qday,
+             anchor:ANCHOR, anchorLabel:ANCHORS[ANCHOR].label},
+    chainVerdict,
+    hops:RESULTS.map(r=>({
+      host:r.hop.host, role:r.hop.role, port:r.hop.port,
+      verdict:r.verdict,
+      minVersion:r.hop.minVersion,
+      negotiatedGroup:r.hop.negotiated,
+      negotiatedCodepoint:(GROUPS[r.hop.negotiated]||{}).cp || null,
+      supportedPqGroups:(r.hop.supported||[]).filter(g=>GROUPS[g]&&GROUPS[g].pq),
+      classicalOnlyAccepted:r.hop.classicalOnlyAccepted,
+      leafSignature:r.hop.leafSig,
+      chainSignatures:r.hop.chainSigs,
+      steps:r.steps.map(s=>({step:s.id, state:s.state}))
+    })),
+    controls:{
+      "NIST IR 8547":"key-establishment transition",
+      "CNSA 2.0":"ML-KEM-768 / ML-DSA-65 minimum",
+      "DORA Art.9":"ICT protection of data in transit",
+      "NIS2 Art.21(2)(h)":"cryptography and encryption policy"
+    }
+  };
+}
+
+function renderReceipt(chainVerdict, weakHost){
+  const obj = receiptObject(chainVerdict);
+  const json = JSON.stringify(obj,null,2);
+  el("receiptOut").textContent = json;
+  el("receiptOut").dataset.json = json;
+
+  el("receiptState").textContent = RECEIPT_META.signed
+    ? (RECEIPT_META.verified ? "signature verified · ed25519" : "signature INVALID")
+    : "unsigned · synthetic";
+
+  el("receiptMeta").innerHTML = [
+    ["Chain verdict", chainVerdict],
+    ["Weakest hop", weakHost],
+    ["Hops measured", String(RESULTS.length)],
+    ["Issued", obj.issued.replace("T"," ").slice(0,19)+"Z"],
+    ["Source", RECEIPT_META.source],
+    ["Signature", RECEIPT_META.signed ? (RECEIPT_META.verified?"verified":"INVALID") : "none — synthetic sample"]
+  ].map(([k,v])=>`<div><div class="lbl">${k}</div><div class="kv">${v}</div></div>`).join("");
+}
+
+/* ------------------------------------------------------------ receipt verify --- */
+const b64u = s => { s=s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="="; 
+  return Uint8Array.from(atob(s), c=>c.charCodeAt(0)); };
+
+async function verifyReceipt(text){
+  const msg = el("verifyMsg");
+  const bad = t => { msg.textContent = t; msg.style.color = "var(--fail)"; };
+
+  let env;
+  try { env = JSON.parse(text); }
+  catch { return bad("Not valid JSON. Paste the whole receipt file."); }
+
+  // Envelope shape: body is base64url of the exact bytes the signature covers.
+  // Verifying detached bytes avoids ever having to agree on a JSON
+  // canonicalisation between the Go probe and this page.
+  let obj = env, verified = null, bodyBytes = null;
+  if(typeof env.body === "string"){
+    try{
+      bodyBytes = b64u(env.body);
+      obj = JSON.parse(new TextDecoder().decode(bodyBytes));
+    } catch { return bad("Envelope body is not decodable base64url JSON."); }
+  }
+
+  if(!Array.isArray(obj.hops) || !obj.hops.length){
+    return bad("No hops in receipt. Expecting a hops array.");
+  }
+
+  if(env.sig && env.pubkey && bodyBytes){
+    try{
+      const key = await crypto.subtle.importKey("raw", b64u(env.pubkey), {name:"Ed25519"}, false, ["verify"]);
+      verified = await crypto.subtle.verify({name:"Ed25519"}, key, b64u(env.sig), bodyBytes);
+    } catch(e){
+      verified = false;
+      if(String(e && e.name) === "NotSupportedError"){
+        msg.textContent = "This browser has no Ed25519 in WebCrypto — rendering unverified.";
+        msg.style.color = "var(--classic)";
+        verified = null;
+      }
+    }
+  }
+
+  CHAIN = obj.hops.map(h=>({
+    host:h.host, role:h.role||"—", port:h.port||443,
+    tls13:h.tls13 !== false,
+    minVersion:h.minVersion||"1.3",
+    supported:h.supportedGroups||h.supportedPqGroups||[],
+    negotiated:h.negotiatedGroup||"X25519",
+    classicalOnlyAccepted:h.classicalOnlyAccepted !== false,
+    leafSig:h.leafSignature||"unknown",
+    chainSigs:h.chainSignatures||[],
+    ladder:h.downgradeLadder||null
+  }));
+  RECEIPT_META = {source:obj.source||"pqprobe", signed:!!env.sig, issuer:env.issuer||null, verified};
+  if(obj.horizon){
+    el("sShelf").value = obj.horizon.shelfLifeYears ?? DEF.shelf;
+    el("sMig").value   = obj.horizon.migrationYears ?? DEF.mig;
+    el("sQ").value     = obj.horizon.qDayEstimate ?? DEF.qday;
+    syncOutputs();
+  }
+  FOCUS = 0;
+  el("chainSrc").textContent = (obj.source||"pqprobe") + " · " + CHAIN.length + " hops";
+  el("tamper").value = "none";
+  if(!env.sig){
+    msg.textContent = "Loaded. Receipt is unsigned — the measurements are unattributed.";
+    msg.style.color = "var(--classic)";
+  } else if(verified === true){
+    msg.textContent = "Signature verified.";      msg.style.color = "var(--pq)";
+  } else if(verified === false){
+    msg.textContent = "SIGNATURE INVALID — treat every value below as untrusted.";
+    msg.style.color = "var(--fail)";
+  }
+  show("demo"); run();
+}
+
+/* ------------------------------------------------------------ wiring ----------- */
+function syncOutputs(){
+  el("oShelf").textContent = el("sShelf").value + " yr";
+  el("oMig").textContent   = el("sMig").value + " yr";
+  el("oQ").textContent     = el("sQ").value;
+}
+["sShelf","sMig","sQ"].forEach(id => el(id).addEventListener("input", ()=>{ syncOutputs(); run(); }));
+
+function resetHorizon(){ el("sShelf").value=DEF.shelf; el("sMig").value=DEF.mig; el("sQ").value=DEF.qday; syncOutputs(); setAnchor("nist35", false); }
+
+el("tamper").addEventListener("change", e=>{
+  const t = e.target.value;
+  resetHorizon();
+  const r = applyTamper(t);
+  if(r.shelf){ el("sShelf").value = r.shelf; syncOutputs(); }
+  CHAIN = r.chain;
+  FOCUS = r.focus;
+  RECEIPT_META = {source: t==="none" ? "synthetic" : "synthetic · fault:"+t, signed:false, verified:null};
+  el("chainSrc").textContent = t==="none"
+    ? "synthetic · agentic payment path"
+    : "synthetic · fault injected at step "+r.step;
+  run();
+});
+el("btnReset").addEventListener("click", ()=>{
+  el("tamper").value="none"; resetHorizon();
+  CHAIN = baseChain(); FOCUS = 0;
+  RECEIPT_META = {source:"synthetic", signed:false, verified:null};
+  el("chainSrc").textContent = "synthetic · agentic payment path";
+  run();
+});
+el("btnVerify").addEventListener("click", ()=> verifyReceipt(el("receiptIn").value));
+el("btnClear").addEventListener("click", ()=>{ el("receiptIn").value=""; el("verifyMsg").textContent=""; });
+
+el("btnDownload").addEventListener("click", ()=>{
+  const blob = new Blob([el("receiptOut").dataset.json], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pqchecker-receipt-" + new Date().toISOString().slice(0,10) + ".json";
+  a.click(); URL.revokeObjectURL(a.href);
+});
+el("btnCopy").addEventListener("click", async ()=>{
+  try{ await navigator.clipboard.writeText(el("receiptOut").dataset.json);
+       el("copyMsg").textContent="Copied."; }
+  catch{ el("copyMsg").textContent="Copy blocked — select the text instead."; }
+  setTimeout(()=>el("copyMsg").textContent="", 2200);
+});
+
+
+/* ------------------------------------------------------------ live scan -------
+   The page still performs no TLS inspection — it cannot. It hands a hostname to
+   pqscand, which validates it, refuses non-public addresses, and execs pqprobe.
+   The response is the same receipt envelope the CLI emits, so verification and
+   rendering below are shared with the offline path. Live scans arrive unsigned
+   by design: an endpoint that signed arbitrary visitor input would let anyone
+   mint a receipt carrying this site's issuer name.
+   --------------------------------------------------------------------------- */
+const SCAN_ENDPOINT = "/api/scan";
+
+async function runScan(){
+  const host = el("scanHost").value.trim().toLowerCase()
+                 .replace(/^https?:\/\//,"").replace(/\/.*$/,"");
+  const msg = el("scanMsg"), btn = el("btnScan");
+  const say = (t,c)=>{ msg.innerHTML = t; msg.style.color = c; };
+
+  if(!host){ say("Enter a hostname.","var(--fail)"); return; }
+  if(!/^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)+$/.test(host)){
+    say("That is not a valid hostname. Names only — no scheme, path, or IP address.","var(--fail)");
+    return;
+  }
+
+  btn.disabled = true;
+  say("Handshaking against <code style=\"font-family:var(--mono)\">"+host+"</code> — around fifteen connections, a few seconds.","var(--muted)");
+
+  try{
+    const res = await fetch(SCAN_ENDPOINT+"?host="+encodeURIComponent(host),
+                            {headers:{"Accept":"application/json"}});
+    const body = await res.json().catch(()=>null);
+    if(!res.ok){
+      say(body && body.error ? body.error : ("Scan failed ("+res.status+")."), "var(--fail)");
+      return;
+    }
+    el("receiptIn").value = JSON.stringify(body, null, 2);
+    await verifyReceipt(el("receiptIn").value);
+    el("chainSrc").textContent = "live scan · " + host;
+    say("Scanned <code style=\"font-family:var(--mono)\">"+host+"</code>. Results below are unsigned — live scans are not attributable.","var(--classic)");
+  } catch(e){
+    say("Could not reach the scan endpoint. It may not be deployed on this host.","var(--fail)");
+  } finally {
+    btn.disabled = false;
+  }
+}
+el("btnScan").addEventListener("click", runScan);
+el("scanHost").addEventListener("keydown", e=>{ if(e.key==="Enter") runScan(); });
+
+document.querySelectorAll(".chip").forEach(c =>
+  c.addEventListener("click", ()=>{ setAnchor(c.dataset.anchor, true); run(); }));
+
+// Dragging the year off a published anchor makes it custom — the label must
+// never claim NIST or the EF for a number they did not publish.
+el("sQ").addEventListener("input", ()=>{
+  const y = +el("sQ").value;
+  const match = Object.keys(ANCHORS).find(k => ANCHORS[k].year === y);
+  setAnchor(match || "custom", false);
+});
+
+function show(view){
+  ["demo","scan","verify","about"].forEach(v => el("view-"+v).classList.toggle("hidden", v!==view));
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.view===view)));
+}
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", ()=>show(t.dataset.view)));
+
+el("aboutSteps").innerHTML = STEPS.map((s,i)=>`
+  <div style="display:grid;grid-template-columns:34px 1fr;gap:14px;padding:11px 0;border-bottom:1px solid var(--rule)">
+    <span class="step-n">${String(i+1).padStart(2,"0")}</span>
+    <div><div class="step-name">${s.id} · ${s.name}</div>
+    <div class="step-detail">${s.blurb}</div></div>
+  </div>`).join("");
+
+setAnchor("nist35", false);
+syncOutputs();
+run();
+</script>
+</body>
+</html>
