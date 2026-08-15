@@ -5,7 +5,7 @@ go 1.25.7
 require (
 	filippo.io/mldsa v0.0.0-20260711112038-ff3f469cee29
 	github.com/consensys/gnark v0.15.0
-	github.com/consensys/gnark-crypto v0.20.1
+	github.com/consensys/gnark-crypto v0.21.0
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/miekg/pkcs11 v1.1.2
 	github.com/rs/zerolog v1.34.0
@@ -17,7 +17,7 @@ require (
 )
 
 require (
-	github.com/bits-and-blooms/bitset v1.24.4 // indirect
+	github.com/bits-and-blooms/bitset v1.24.6 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
