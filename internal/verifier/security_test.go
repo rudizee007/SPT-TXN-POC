@@ -335,3 +335,68 @@ func TestSec_WellFormedTemporalWindowIsAccepted(t *testing.T) {
 		t.Fatalf("well-formed window denied at step %d: %s", d.Step, d.Reason)
 	}
 }
+
+// ── audience binding fails closed (finding: empty expected audience) ─────────
+
+// An operator who never configured Audience previously accepted tokens minted
+// for anyone: `expected` defaulted to "" and an absent `aud` also read as "",
+// so the comparison passed. The failure existed only in the deployment that
+// skipped the setting, which is why no test caught it — every test sets one.
+func TestSec_UnconfiguredAudienceIsRefused(t *testing.T) {
+	h := build(t)
+	h.in.Audience = ""
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 3)
+}
+
+// An absent aud claim must be rejected outright rather than coerced to "".
+func TestSec_MissingAudClaimIsRefused(t *testing.T) {
+	h := build(t)
+	reforgeTxn(t, h, func(c map[string]any) { delete(c, "aud") })
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 3)
+}
+
+// RFC 7519 permits an array audience. This engine binds a single one, so an
+// array is a shape it has not been specified to interpret — accepting it by
+// accident is how a token minted for another member of that array is honoured.
+func TestSec_ArrayAudienceIsRefused(t *testing.T) {
+	h := build(t)
+	reforgeTxn(t, h, func(c map[string]any) {
+		c["aud"] = []any{"someone-else", h.in.Audience}
+	})
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 3)
+}
+
+// ── chain tokens are temporally checked (finding: iat never read) ────────────
+
+// A capability minted with a forward-dated iat — a grant intended to become
+// valid later — was usable immediately, because chain verification read exp
+// relationships and never looked at iat at all.
+func TestSec_ChainTokenWithFutureIATIsRefused(t *testing.T) {
+	h := build(t)
+	claims := decodeClaims(t, h.ct.Token)
+	claims["iat"] = float64(time.Now().Add(2 * time.Hour).Unix())
+	h.in.CT = forgeToken(claims, h.ctPriv)
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
+}
+
+// exp must be strictly after iat. An inverted or zero-length window is
+// malformed regardless of clock drift, so no skew allowance applies.
+func TestSec_ChainTokenWithInvertedWindowIsRefused(t *testing.T) {
+	h := build(t)
+	claims := decodeClaims(t, h.ct.Token)
+	iat, _ := claims["iat"].(float64)
+	claims["exp"] = iat // zero-length window
+	h.in.CT = forgeToken(claims, h.ctPriv)
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
+}
+
+// Absence is malformed, not permissive — the same rule step2Expiry applies to
+// the transaction token. A check an issuer can switch off by omitting a field
+// is not a check.
+func TestSec_ChainTokenMissingIATIsRefused(t *testing.T) {
+	h := build(t)
+	claims := decodeClaims(t, h.ct.Token)
+	delete(claims, "iat")
+	h.in.CT = forgeToken(claims, h.ctPriv)
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
+}

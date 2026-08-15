@@ -295,10 +295,78 @@ func step2Expiry(txClaims map[string]any) error {
 	return nil
 }
 
+// step3Audience binds the token to THIS deployment.
+//
+// Both halves fail closed, and neither did before.
+//
+// An UNSET expected audience is a configuration error, not "no audience
+// policy". Previously `expected` defaulted to "" and a token carrying no `aud`
+// also read as "", so `"" != ""` was false and the step passed: an operator who
+// forgot to configure Audience accepted tokens minted for anybody. That is the
+// worst shape of fail-open — it appears only in the deployment that skipped a
+// setting, so it never shows up in a test suite that always sets one.
+//
+// A MISSING or non-string `aud` is likewise rejected rather than coerced. The
+// old `aud, _ := ...(string)` silently produced "" for an absent claim and for
+// a JSON array (RFC 7519 permits an array audience), so an array-valued `aud`
+// was treated as empty. Rejecting is correct here: this engine states a single
+// audience, and an array is a shape it has not been specified to interpret.
+// Accepting one by accident is how a token minted for a different member of
+// that array gets honoured.
 func step3Audience(txClaims map[string]any, expected string) error {
-	aud, _ := txClaims["aud"].(string)
+	if expected == "" {
+		return fmt.Errorf("verifier has no configured audience: refusing to evaluate " +
+			"audience binding. Set Engine.Audience to this deployment's identifier — an " +
+			"unset audience would accept a token minted for any relying party")
+	}
+	raw, present := txClaims["aud"]
+	if !present {
+		return fmt.Errorf("SPT-Txn Token has no aud claim; this domain is %q", expected)
+	}
+	aud, ok := raw.(string)
+	if !ok {
+		return fmt.Errorf("aud claim is %T, not a string; this engine binds a single audience", raw)
+	}
 	if aud != expected {
 		return fmt.Errorf("audience %q does not match this domain %q", aud, expected)
+	}
+	return nil
+}
+
+// checkChainTokenTemporal applies to a CAT or CT the same intra-token temporal
+// rules step2Expiry applies to the SPT-Txn token.
+//
+// The chain previously checked only RELATIVE lifetime — exp(child) <= exp(parent)
+// — plus signature, parent-hash binding, status and scope. `iat` was written by
+// both issuers and read by neither during verification.
+//
+// Expiry against the clock is already covered transitively and is deliberately
+// not re-checked here: step2Expiry gives txn.exp > now, checkTxnLifetime gives
+// txn.exp <= leaf.exp, and each hop gives ct.exp <= parent.exp, so a live
+// transaction token implies every ancestor is unexpired.
+//
+// What was NOT covered is a token used before it was issued. A capability
+// minted with a forward-dated iat — a grant intended to become valid next month
+// — is usable immediately today, because nothing looks. The same asymmetric
+// skew rule as step2Expiry applies: tolerance widens for a forward-dated iat and
+// is never added to exp, so drift can make a verifier reject early but never
+// accept late.
+func checkChainTokenTemporal(label string, claims map[string]any) error {
+	iat, ok := intClaim(claims, "iat")
+	if !ok {
+		return fmt.Errorf("%s missing or non-numeric iat", label)
+	}
+	exp, ok := intClaim(claims, "exp")
+	if !ok {
+		return fmt.Errorf("%s missing or non-numeric exp", label)
+	}
+	// Intra-token relationship, so no skew allowance: no amount of clock drift
+	// makes an inverted or zero-length validity window legitimate.
+	if exp <= iat {
+		return fmt.Errorf("%s exp %d is not after iat %d", label, exp, iat)
+	}
+	if iat > time.Now().Unix()+iatSkew {
+		return fmt.Errorf("%s iat is in the future: the capability is not yet valid", label)
 	}
 	return nil
 }
@@ -377,6 +445,9 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 	catMax, ok := intClaim(catClaims, "delegation_depth_max")
 	if !ok {
 		return nil, fmt.Errorf("CAT missing delegation_depth_max")
+	}
+	if err := checkChainTokenTemporal("CAT", catClaims); err != nil {
+		return nil, err
 	}
 	// Per-token status-list revocation for the root CAT (no-op unless a
 	// StatusResolver is configured and the CAT carries a status claim).
@@ -482,6 +553,9 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 		if ctExp > parentExp {
 			return nil, fmt.Errorf("CT[%d] outlives its parent (exp %d > %d): TTL must attenuate", i, ctExp, parentExp)
 		}
+		if err := checkChainTokenTemporal(fmt.Sprintf("CT[%d]", i), ctClaims); err != nil {
+			return nil, err
+		}
 
 		// Per-token status-list revocation for this hop: a revoked intermediate
 		// invalidates the whole chain, not just the leaf.
@@ -561,6 +635,14 @@ func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in I
 	if err != nil {
 		return nil, fmt.Errorf("CAT: %w", err)
 	}
+	// The endpoints are the only hops this path sees in clear, so they get the
+	// same intra-token temporal rules as the non-ZK walk. This does NOT give the
+	// ZK path parity: the INTERMEDIATE hops remain unchecked for lifetime and
+	// revocation because they are hidden, which is a known open finding tracked
+	// privately. Checking what is visible is not a substitute for it.
+	if err := checkChainTokenTemporal("CAT", catClaims); err != nil {
+		return nil, err
+	}
 	anchor, ok := catClaims["human_anchor"].(string)
 	if !ok || anchor == "" {
 		return nil, fmt.Errorf("CAT missing humanAnchor")
@@ -585,6 +667,9 @@ func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in I
 	leaf, err := e.verifyChainToken(ctx, in.CT, cttoken.Verify)
 	if err != nil {
 		return nil, fmt.Errorf("leaf CT: %w", err)
+	}
+	if err := checkChainTokenTemporal("leaf CT", leaf); err != nil {
+		return nil, err
 	}
 
 	// Bind the proof to the PRESENTED tokens: the leaf-scope commitment (CLeaf) is
