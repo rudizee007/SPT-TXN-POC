@@ -133,7 +133,7 @@ jobs:
           subject-path: 'dist/*'
 
       - name: Attest SBOM
-        uses: actions/attest-sbom@v1
+        uses: actions/attest-sbom@v4
         with:
           subject-path: 'dist/*'
           sbom-path: 'dist/sbom.cyclonedx.json'
