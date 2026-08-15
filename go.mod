@@ -8,7 +8,7 @@ require (
 	github.com/consensys/gnark-crypto v0.20.1
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/miekg/pkcs11 v1.1.2
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.35.1
 	github.com/rudizee007/spt-txn-pep v0.4.0
 	golang.org/x/crypto v0.55.0
 	golang.org/x/sys v0.47.0
