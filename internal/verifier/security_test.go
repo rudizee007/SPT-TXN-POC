@@ -342,9 +342,16 @@ func TestSec_WellFormedTemporalWindowIsAccepted(t *testing.T) {
 // for anyone: `expected` defaulted to "" and an absent `aud` also read as "",
 // so the comparison passed. The failure existed only in the deployment that
 // skipped the setting, which is why no test caught it — every test sets one.
+// BOTH halves are required to reproduce it. An unset Audience alone still
+// rejected, because the token's real aud did not equal "". The hole opened only
+// when the expected audience was unset AND the token carried no aud, so both
+// sides coerced to "" and the comparison passed. The first version of this test
+// set only `Audience = ""` and passed against the vulnerable code — caught by
+// scripts/mutate-audience-and-chain-temporal.sh, not by review.
 func TestSec_UnconfiguredAudienceIsRefused(t *testing.T) {
 	h := build(t)
 	h.in.Audience = ""
+	reforgeTxn(t, h, func(c map[string]any) { delete(c, "aud") })
 	mustDeny(t, h.eng.Verify(context.Background(), h.in), 3)
 }
 
@@ -371,22 +378,45 @@ func TestSec_ArrayAudienceIsRefused(t *testing.T) {
 // A capability minted with a forward-dated iat — a grant intended to become
 // valid later — was usable immediately, because chain verification read exp
 // relationships and never looked at iat at all.
+// The window must stay VALID and sit inside the parent's, or a different rule
+// fires and this test proves nothing about the future-iat check. The first
+// version moved iat two hours out and left exp alone, so `exp <= iat` caught it
+// and disabling the future-iat rule changed nothing — the mutation survived.
+//
+// Parent CAT TTL is one hour, so iat +30m / exp +50m is forward-dated well
+// beyond the 60s skew while remaining a coherent window within the parent's.
 func TestSec_ChainTokenWithFutureIATIsRefused(t *testing.T) {
 	h := build(t)
 	claims := decodeClaims(t, h.ct.Token)
-	claims["iat"] = float64(time.Now().Add(2 * time.Hour).Unix())
+	claims["iat"] = float64(time.Now().Add(30 * time.Minute).Unix())
+	claims["exp"] = float64(time.Now().Add(50 * time.Minute).Unix())
 	h.in.CT = forgeToken(claims, h.ctPriv)
 	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
 }
 
 // exp must be strictly after iat. An inverted or zero-length window is
 // malformed regardless of clock drift, so no skew allowance applies.
+// Isolating this one takes care, and the first attempt did not. Setting
+// exp = iat made the leaf expire about now, so checkTxnLifetime (txn.exp <=
+// leaf.exp) rejected first and disabling the exp>iat rule changed nothing.
+//
+// Every other rule must pass simultaneously:
+//   - leaf.iat = now+50s — forward-dated but INSIDE the 60s skew, so the
+//     future-iat rule stays quiet;
+//   - leaf.exp = now+40s — before its own iat, the violation under test, and
+//     still far inside the parent CAT's one-hour window;
+//   - txn.exp = now+30s — after now (step 2) and within leaf.exp, so
+//     checkTxnLifetime is satisfied and cannot claim the kill.
+//
+// That leaves the inverted window as the only broken invariant.
 func TestSec_ChainTokenWithInvertedWindowIsRefused(t *testing.T) {
 	h := build(t)
+	now := time.Now().Unix()
 	claims := decodeClaims(t, h.ct.Token)
-	iat, _ := claims["iat"].(float64)
-	claims["exp"] = iat // zero-length window
+	claims["iat"] = float64(now + 50)
+	claims["exp"] = float64(now + 40)
 	h.in.CT = forgeToken(claims, h.ctPriv)
+	reforgeTxn(t, h, func(c map[string]any) { c["exp"] = float64(now + 30) })
 	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
 }
 
