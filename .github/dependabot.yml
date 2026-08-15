@@ -1,0 +1,54 @@
+# Dependabot — one entry per Go module.
+#
+# `directory:` is per-manifest and Dependabot does not recurse, so a module
+# without an entry here is a module nobody is proposing updates for. That is how
+# `clients/xrpl-pay` reached golang.org/x/crypto v0.23.0 while the root module
+# sat on a current version: the root was maintained, the leaves were not, and
+# nothing said so.
+#
+# If you add a module, add it here in the same commit. The CI govulncheck job
+# discovers modules dynamically and will fail on an unpatched one — that job is
+# the backstop, this file is the thing that prevents the backstop from firing.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: gomod
+    directory: "/clients/aptos-pay"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/clients/cardano-anchor"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/clients/eth-pay"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/clients/hcs-anchor"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/clients/hedera-pay"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/clients/near-pay"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/clients/sol-pay"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/clients/trisa-transport"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/clients/xrpl-pay"
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: "/internal/wlapi/spire"
+    schedule: { interval: weekly }
+
+  # The CI workflows are a supply chain too — a pinned action that never updates
+  # is a pinned vulnerability.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }

@@ -33,6 +33,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -154,11 +155,11 @@ func main() {
 	in := utxos[0]
 
 	txBuilder := cardano.NewTxBuilder(pparams)
-	txBuilder.AddInputs(cardano.NewTxInput(in.TxHash, uint64(in.Index), in.Amount)) // LIB-CHECK: UTxO fields
+	txBuilder.AddInputs(cardano.NewTxInput(in.TxHash, narrowToUint(uint64(in.Index), "UTxO output index"), in.Amount)) // LIB-CHECK: UTxO fields
 	txBuilder.AddOutputs(cardano.NewTxOutput(receiver, cardano.NewValue(cardano.Coin(lovelace))))
 	txBuilder.AddAuxiliaryData(&cardano.AuxiliaryData{
 		Metadata: cardano.Metadata{
-			*label: map[string]interface{}{
+			narrowToUint(*label, "metadata label"): map[string]interface{}{
 				"spt_txn_context_hash": anchor,
 				"v":                    1,
 			},
@@ -199,6 +200,32 @@ func main() {
 		return
 	}
 	fmt.Printf("\n  SUBMITTED\n    tx hash  : %s\n    explorer : %s\n", h, explorer)
+}
+
+// narrowToUint converts a uint64 to the platform-width `uint` that cardano-go's
+// API takes, refusing rather than truncating.
+//
+// The bare conversion is the obvious fix and it is wrong in a way that produces
+// no error. `uint` is 32-bit on a 32-bit build, and both values narrowed here
+// are legitimately 64-bit upstream:
+//
+//   - CIP-10 defines a metadata label as a uint64, and this tool takes it from
+//     -label. Truncating it does not fail — it writes the anchor under a
+//     DIFFERENT label, so the transaction succeeds, the explorer shows metadata,
+//     and every verifier looking for the configured label finds nothing. A
+//     silent wrong answer is the worst of the three possible outcomes.
+//   - A UTxO output index truncating would select a different input to spend.
+//
+// Neither is reachable on the 64-bit builds this is used on today, which is
+// exactly why it is worth writing down: the guard costs one comparison, and the
+// failure it prevents is invisible at the point it occurs and misattributed
+// everywhere else.
+func narrowToUint(v uint64, what string) uint {
+	if v > math.MaxUint {
+		log.Fatalf("%s is %d, which does not fit in uint on this %d-bit platform — "+
+			"refusing to truncate silently", what, v, strconv.IntSize)
+	}
+	return uint(v)
 }
 
 func explorerURL(network, hash string) string {

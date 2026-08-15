@@ -30,6 +30,33 @@
       "spt_txn_context_hash": "a7efd681177e60d16ee15ee04f6d548828b69431b2d12b5d2b3b63c1cafb5826"
     },
     {
+      "chain": "bsc",
+      "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "BNB",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "fb2f6d78968e3452ebe1817e1b0b62d97909cc5c75d7bd4722434a0e3a5a0589"
+    },
+    {
+      "chain": "morph",
+      "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "ETH",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "e52cc6ffdaba70dd043e504c3d0d15a1fa9200343bd79bd62ab719bbf4228ca9"
+    },
+    {
+      "chain": "xlayer",
+      "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
+      "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",
+      "amount": "5000.00",
+      "currency": "OKB",
+      "timestamp": 1750000000,
+      "spt_txn_context_hash": "eeefc6dbcdef2a74e3fba9c7b61f993799896b49d29c737166fc80b912ff045e"
+    },
+    {
       "chain": "optimism",
       "originator": "0x0102030405060708090a0b0c0d0e0f1011121314",
       "beneficiary": "0xfFEEdDcCBbAa99887766554433221100ffEEddCc",

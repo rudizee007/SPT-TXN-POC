@@ -96,10 +96,81 @@ jobs:
       # Pinned, not @latest: an unpinned tool install in CI is a mutable
       # dependency, which contradicts the pinned-dependencies commitment this
       # very job exists to enforce.
-      - name: govulncheck
+      #
+      # EVERY MODULE, not just the root. `./...` does not descend into a
+      # directory that has its own go.mod, and this repository has eleven of
+      # them — the root plus nine `clients/*` and `internal/wlapi/spire`. For as
+      # long as this job ran `govulncheck ./...` from the root it reported a
+      # truthful zero about one module and never looked at the other ten, while
+      # `clients/xrpl-pay` sat on golang.org/x/crypto v0.23.0 and GitHub counted
+      # 29 critical advisories the gate could not see.
+      #
+      # The module list is discovered, never hardcoded: a hardcoded list goes
+      # stale the first time someone adds a client, and it goes stale silently.
+      # The count is asserted for the same reason the sibling scripts assert it —
+      # a scan over zero modules exits 0 and looks exactly like success.
+      - name: govulncheck — every module
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-          "$(go env GOPATH)"/bin/govulncheck ./...
+          # Pinned to v1.7.0, not v1.1.4. v1.1.4 was built against go1.24 and
+          # CANNOT LOAD a module whose go directive is 1.25 — it prints
+          # "No vulnerabilities found." and THEN fails with a package-loading
+          # error. Anything reading its output rather than its exit code gets a
+          # clean bill of health from a scan that examined nothing.
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          BIN="$(go env GOPATH)/bin/govulncheck"
+          # `dirname`, not sed. The first version of this used
+          # `sed 's#/\?go\.mod$##'`; `\?` is a GNU extension, BSD sed reads it as
+          # a literal `?`, and on macOS every path came back unchanged. Every
+          # `cd` then failed, the chain continued, and the scan ran in the ROOT
+          # eleven times — eleven green results over one module. The bug this
+          # job exists to prevent, committed while writing the job.
+          mods=""
+          for m in $(git ls-files '*go.mod'); do
+            mods="$mods $(dirname "$m")"
+          done
+          n=$(printf '%s\n' $mods | grep -c . || true)
+          if [ "$n" -lt 2 ]; then
+            echo "::error::module discovery found $n module(s); this repo has several." >&2
+            echo "The scan is broken, not the repo. Fix discovery; do not narrow the gate." >&2
+            exit 1
+          fi
+          echo "scanning $n modules:$mods"
+          # THREE outcomes, not two. govulncheck exits 0 for "no vulnerabilities",
+          # 3 for "vulnerabilities found", and 1 for "could not run". Treating any
+          # non-zero as failure conflates a finding with an outage — the same
+          # collapse the decision core is forbidden from making, for the same
+          # reason: an operator cannot tell an attack from a broken tool.
+          #
+          # Exit 3 means the scan WORKED. It counts as scanned, and it fails the
+          # job on its own merits.
+          fail=0
+          scanned=0
+          for d in $mods; do
+            echo "── $d"
+            # `cd || exit` inside the subshell: a failed cd must not fall through
+            # to a scan of whatever directory we happen to be standing in.
+            ( cd "$d" || exit 1; "$BIN" ./... )
+            rc=$?
+            case "$rc" in
+              0) scanned=$((scanned + 1));;
+              3) scanned=$((scanned + 1))
+                 echo "::error::$d has reachable vulnerabilities" >&2
+                 fail=1;;
+              *) echo "::error::$d DID NOT SCAN (exit $rc) — this is not a clean result" >&2
+                 fail=1;;
+            esac
+          done
+          # Assert the DENOMINATOR, not just the absence of findings. A tool that
+          # cannot load a module reports zero vulnerabilities in it, truthfully
+          # and uselessly. Without this line, every module failing to load looks
+          # identical to every module being clean.
+          echo "scanned $scanned of $n modules successfully"
+          if [ "$scanned" -ne "$n" ]; then
+            echo "::error::$((n - scanned)) module(s) did not scan. Zero findings from a" >&2
+            echo "module that failed to load is not a clean result." >&2
+            fail=1
+          fi
+          exit $fail
 
       # Short fuzz run on the two fail-closed surfaces: the chain-tagged canonical
       # encoder and the eight-step verifier. -run=^$ skips unit tests so only the

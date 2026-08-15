@@ -98,6 +98,93 @@ func build() (vectors, error) {
 	return v, nil
 }
 
+// classifyDrift explains WHICH KIND of drift occurred, because the two kinds
+// need opposite responses and the byte comparison cannot tell them apart.
+//
+// STALE (additions only): a new chain or anchor was added and nobody re-ran
+// `-write`. Every previously published hash is unchanged. Regenerate and commit.
+//
+// ENCODING CHANGED: a hash that was already published now computes differently.
+// That is threat #1 in docs/THREAT-MODEL.md — the issuer and the verifier
+// canonicalize a request differently and the result is authorization bypass.
+// docs/conformance-vectors.json is the public interop contract, so a changed
+// value means anyone who implemented against the docs disagrees with this code.
+// NEVER regenerate to clear it.
+//
+// This function exists because the original check reported the ENCODING CHANGED
+// message for every difference, and then did so for six weeks over three added
+// rows (bsc/morph/xlayer, added 2026-06-30, one day after the vectors were last
+// written). A gate whose only output is its worst case, fired for its most
+// benign cause, stops being read — and this one stopped being read in the
+// repository where canonicalization is the first-listed bug class.
+func classifyDrift(have []byte, rederived vectors, path string) {
+	var old vectors
+	if err := json.Unmarshal(have, &old); err != nil {
+		fmt.Fprintf(os.Stderr, "CONFORMANCE DRIFT: %s could not be parsed: %v\n", path, err)
+		return
+	}
+
+	// Index the committed hashes by the identity of the case, not by position:
+	// reordering is not drift, and treating it as such is another false alarm.
+	type key struct{ chain, orig, benef, amount, currency string }
+	oldCtx := map[key]string{}
+	for _, c := range old.ContextHashes {
+		oldCtx[key{c.Chain, c.Originator, c.Beneficiary, c.Amount, c.Currency}] = c.ContextHash
+	}
+	oldAnchor := map[string]string{}
+	for _, a := range old.HumanAnchors {
+		oldAnchor[a.Secret+"|"+a.Blinding] = a.HumanAnchor
+	}
+
+	var changed, added []string
+	for _, c := range rederived.ContextHashes {
+		k := key{c.Chain, c.Originator, c.Beneficiary, c.Amount, c.Currency}
+		prev, ok := oldCtx[k]
+		switch {
+		case !ok:
+			added = append(added, "context/"+c.Chain)
+		case prev != c.ContextHash:
+			changed = append(changed, fmt.Sprintf("context/%s: %s -> %s", c.Chain, prev, c.ContextHash))
+		}
+	}
+	for _, a := range rederived.HumanAnchors {
+		prev, ok := oldAnchor[a.Secret+"|"+a.Blinding]
+		switch {
+		case !ok:
+			added = append(added, "anchor/"+a.Secret)
+		case prev != a.HumanAnchor:
+			changed = append(changed, fmt.Sprintf("anchor/%s: %s -> %s", a.Secret, prev, a.HumanAnchor))
+		}
+	}
+
+	if len(changed) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"CONFORMANCE DRIFT — ENCODING CHANGED. %d already-published value(s) now compute differently:\n",
+			len(changed))
+		for _, c := range changed {
+			fmt.Fprintf(os.Stderr, "  %s\n", c)
+		}
+		fmt.Fprintf(os.Stderr,
+			"\nThis is the canonicalization split in docs/THREAT-MODEL.md: an issuer on this\n"+
+				"code and a verifier built from the published vectors compute different digests\n"+
+				"over the same request. %s is public and is what integrators implement against.\n"+
+				"DO NOT run -write to clear this. Find what changed the encoding.\n", path)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr,
+		"CONFORMANCE DRIFT — VECTORS ARE STALE (additions only, no published value changed).\n")
+	for _, a := range added {
+		fmt.Fprintf(os.Stderr, "  + %s\n", a)
+	}
+	if n := len(old.ContextHashes) + len(old.HumanAnchors) - len(oldCtx) - len(oldAnchor); n != 0 {
+		fmt.Fprintf(os.Stderr, "  (note: %d duplicate key(s) in the committed file)\n", n)
+	}
+	fmt.Fprintf(os.Stderr,
+		"\nThe canonical encoding is unchanged. Regenerate and commit:\n"+
+			"    go run ./cmd/conformance -write -o %s\n", path)
+}
+
 func main() {
 	write := flag.Bool("write", false, "write the vectors file")
 	check := flag.Bool("check", false, "re-derive and fail on drift")
@@ -130,7 +217,7 @@ func main() {
 			os.Exit(1)
 		}
 		if string(have) != string(out) {
-			fmt.Fprintf(os.Stderr, "CONFORMANCE DRIFT: re-derived vectors differ from %s — the canonical encoding or commitment changed.\n", *path)
+			classifyDrift(have, v, *path)
 			os.Exit(1)
 		}
 		fmt.Println("conformance vectors OK (no drift)")
