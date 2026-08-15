@@ -138,7 +138,7 @@ jobs:
           subject-path: 'dist/*'
           sbom-path: 'dist/sbom.cyclonedx.json'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ steps.v.outputs.version }}
           path: dist/
