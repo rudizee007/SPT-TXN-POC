@@ -14,10 +14,10 @@ module github.com/rudizee007/spt-txn-poc/clients/hcs-anchor
 
 go 1.25.13
 
-require github.com/hiero-ledger/hiero-sdk-go/v2 v2.80.0
+require github.com/hiero-ledger/hiero-sdk-go/v2 v2.83.0
 
 require (
-	github.com/btcsuite/btcd/btcec/v2 v2.3.6 // indirect
+	github.com/btcsuite/btcd/btcec/v2 v2.5.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
