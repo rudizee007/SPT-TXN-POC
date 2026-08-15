@@ -40,6 +40,20 @@ func randRootScope(rng *rand.Rand) cattoken.CapabilityScope {
 }
 
 // narrow produces a legitimately attenuated child of parent.
+//
+// NOTE ON THE NUMERIC CASES. Generating a value <= parent is "narrowing" only
+// because every numeric dimension this generator produces is a declared CEILING
+// (tbac.numericDirection). It is not a general truth about numbers, and this
+// generator previously encoded it as one: it applied `rng.Intn(tv+1)` to any
+// numeric dimension whatever, so a floor — a minimum acceptable output, the
+// shape a swap needs — would have been generated smaller and asserted valid.
+// The property test would then have certified the sandwich bypass as correct
+// attenuation, which is worse than not testing it, because a passing property
+// test is read as proof.
+//
+// If you add a numeric dimension to randRootScope, it must be a declared
+// ceiling. tbac.TestUndeclaredNumericDimensionIsRefused holds the other half:
+// anything undeclared is rejected rather than assumed.
 func narrow(rng *rand.Rand, parent tbac.Scope) tbac.Scope {
 	child := tbac.Scope{}
 	for dim, v := range parent {

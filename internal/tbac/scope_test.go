@@ -105,3 +105,63 @@ func TestAttenuate_ReturnsIndependentCopy(t *testing.T) {
 		t.Error("Attenuate must return an independent copy, not alias the request")
 	}
 }
+
+// ---- Numeric direction: the sandwich bypass -------------------------------
+//
+// These tests exist because "child <= parent" was applied to every numeric
+// dimension by name-agnostic default. That is right for a ceiling and exactly
+// backwards for a floor, and nothing in the package said which a dimension was.
+
+func TestUndeclaredNumericDimensionIsRefused(t *testing.T) {
+	// `min_out` is the shape a swap needs: the least the agent will accept.
+	// Under the old rule a SMALLER child passed containment, which is a grant
+	// of MORE authority — permission to accept a worse rate. The dimension is
+	// undeclared, so both entry points must refuse it outright.
+	parent := tbac.Scope{"action": "swap", "min_out": 1000}
+	child := tbac.Scope{"action": "swap", "min_out": 1}
+
+	if err := tbac.Contains(parent, child); err == nil {
+		t.Fatal("SECURITY: an undeclared numeric dimension was accepted as contained; " +
+			"a lower floor is wider authority, not narrower")
+	}
+	if _, err := tbac.Intersect(parent, child); err == nil {
+		t.Fatal("SECURITY: Intersect issued a token over an undeclared numeric dimension")
+	}
+
+	// And it is refused in the direction that would have LOOKED like a
+	// violation too — the point is that the direction is unknown, so neither
+	// answer is available, not that one of them is wrong.
+	if err := tbac.Contains(parent, tbac.Scope{"action": "swap", "min_out": 5000}); err == nil {
+		t.Fatal("SECURITY: undeclared numeric accepted when the child was larger")
+	}
+}
+
+func TestUndeclaredNumericIsRefusedWhenNested(t *testing.T) {
+	// Containment recurses per dimension, so the guard has to hold at depth.
+	// A nested floor is the easiest place for one to be introduced unnoticed.
+	parent := tbac.Scope{"route": map[string]any{"min_out": 1000}}
+	child := tbac.Scope{"route": map[string]any{"min_out": 1}}
+	if err := tbac.Contains(parent, child); err == nil {
+		t.Fatal("SECURITY: nested undeclared numeric dimension was accepted")
+	}
+}
+
+func TestDeclaredCeilingStillNarrowsDownward(t *testing.T) {
+	// The guard must not break the case it is protecting: max_amount is
+	// declared, so less is still narrower and more is still a violation.
+	parent := tbac.Scope{"max_amount": 10000}
+	if err := tbac.Contains(parent, tbac.Scope{"max_amount": 5000}); err != nil {
+		t.Fatalf("a declared ceiling must still narrow downward: %v", err)
+	}
+	if err := tbac.Contains(parent, tbac.Scope{"max_amount": 10001}); err == nil {
+		t.Fatal("a declared ceiling must still reject an increase")
+	}
+	// Clamping at issuance is unchanged.
+	out, err := tbac.Intersect(parent, tbac.Scope{"max_amount": 999999})
+	if err != nil {
+		t.Fatalf("Intersect: %v", err)
+	}
+	if v, _ := out["max_amount"].(int); v != 10000 {
+		t.Fatalf("request above the ceiling must clamp to 10000, got %v", out["max_amount"])
+	}
+}

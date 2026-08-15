@@ -10,8 +10,9 @@
 // capability_scope claim produced by internal/cattoken. Containment is
 // evaluated per dimension with deterministic, documented semantics:
 //
-//   - number  child MUST be <= parent   (numeric dimensions are ceilings,
-//     e.g. max_amount, delegation limits)
+//   - number  child MUST be <= parent, but ONLY for dimensions declared as
+//     ceilings in numericDirection. An undeclared numeric dimension is an
+//     error, not a ceiling. See "Numeric direction" below.
 //   - string  child MUST equal parent   (e.g. currency=USD, action=transfer)
 //   - bool    child MUST equal parent
 //   - list    child set MUST be a subset of parent set
@@ -32,6 +33,32 @@
 // docs/spec/DELEGATION-INTENT-MCP.md §1.2. Do not rely on per-hop Contains
 // alone to bound a transaction.
 //
+// # Numeric direction
+//
+// "Narrower" is not a property of a number. It is a property of the CONSTRAINT
+// the number expresses. For a ceiling (max_amount) a smaller child is narrower.
+// For a floor — a minimum acceptable output, the shape a swap needs — a smaller
+// child is WIDER, and treating it as narrower authorizes an agent to accept an
+// arbitrarily bad rate. That is the sandwich case, and it is a live
+// authorization bypass, not a modelling nicety.
+//
+// This package therefore refuses to infer direction. Every numeric dimension
+// must be declared in numericDirection; an undeclared one is an error at both
+// the containment check and at issuance. The cost is that adding a numeric
+// dimension takes one line in a registry. The alternative — a default — is what
+// makes the bypass silent, because the wrong answer is produced by the code
+// path nobody edited.
+//
+// Direction is deliberately NOT inferred from the name. A "min_"-prefix rule
+// looks equivalent and is not: it is a guess that fails open for every name
+// that does not match the pattern, and it puts the security property in a
+// naming convention rather than in a declaration.
+//
+// Two-sided intervals (a declared floor, or a single interval-valued dimension)
+// are a separate piece of work. This file only guarantees that their absence is
+// loud: adding a floor today produces an error, where before it silently
+// inverted the containment order.
+//
 // Cedar policy interop (the richer production model) is a v2 task; the
 // interface below is what the v2 swap must preserve.
 package tbac
@@ -50,6 +77,54 @@ import (
 // numbers), so the containment logic normalises numeric types.
 type Scope map[string]any
 
+// direction records which way "narrower" runs for a numeric dimension.
+type direction int
+
+const (
+	// dirCeiling: the value is an upper bound. A child MUST be <= its parent.
+	dirCeiling direction = iota + 1
+)
+
+// numericDirection declares every numeric scope dimension this package will
+// evaluate. There is NO default entry and there must never be one: an
+// unrecognised numeric dimension has an unknown direction, and guessing is the
+// bypass this registry exists to prevent.
+//
+// Nested dimensions are looked up by their own leaf name, because Contains and
+// Intersect recurse per dimension — `region.tier` is registered as "tier".
+//
+// Adding an entry is a security decision, not bookkeeping. Ask: if a child
+// declares a SMALLER value here, does the holder end up able to do less, or
+// more? Only "less" is dirCeiling. If the answer is "more", the dimension is a
+// floor and this package cannot yet express it — do not register it as a
+// ceiling to make a test pass.
+var numericDirection = map[string]direction{
+	// The transaction amount ceiling. A child asking for less can spend less.
+	"max_amount": dirCeiling,
+	// Generic nested bound used by the `limits` object.
+	"max": dirCeiling,
+	// Privilege tier, where a lower tier grants strictly less.
+	"tier": dirCeiling,
+}
+
+// directionOf reports the declared direction for a numeric dimension.
+func directionOf(dim string) (direction, bool) {
+	d, ok := numericDirection[dim]
+	return d, ok
+}
+
+// errUndeclaredNumeric is the shared fail-closed error for a numeric dimension
+// with no declared direction. Phrased for whoever hits it at 3am: it says what
+// to do and warns against the fix that reintroduces the bug.
+func errUndeclaredNumeric(dim string) error {
+	return fmt.Errorf(
+		"numeric dimension %q has no declared direction — refusing to assume it is a ceiling. "+
+			"Declare it in tbac.numericDirection only if a SMALLER value grants strictly LESS "+
+			"authority. If a smaller value grants more (a floor, e.g. a minimum acceptable "+
+			"output), this package cannot express it yet and registering it as a ceiling "+
+			"would authorize accepting an arbitrarily bad one", dim)
+}
+
 // Contains reports whether child is fully contained within parent. It returns
 // nil when child is a valid attenuation of parent, or a descriptive error
 // naming the dimension that failed. The error text is suitable for the
@@ -60,7 +135,7 @@ func Contains(parent, child Scope) error {
 		if !ok {
 			return fmt.Errorf("scope dimension %q not present in parent (cannot grant unheld authority)", dim)
 		}
-		if err := valueContained(pv, cv); err != nil {
+		if err := valueContained(dim, pv, cv); err != nil {
 			return fmt.Errorf("scope dimension %q: %w", dim, err)
 		}
 	}
@@ -108,7 +183,7 @@ func Intersect(permitted, requested Scope) (Scope, error) {
 			out[dim] = pv // request did not restrict this axis; carry the ceiling
 			continue
 		}
-		gv, err := glb(pv, rv)
+		gv, err := glb(dim, pv, rv)
 		if err != nil {
 			return nil, fmt.Errorf("scope dimension %q: %w", dim, err)
 		}
@@ -124,18 +199,30 @@ func Intersect(permitted, requested Scope) (Scope, error) {
 
 // glb returns the greatest lower bound of a permitted value and a requested
 // value under the same containment order used by Contains.
-func glb(permitted, requested any) (any, error) {
-	// Numbers: the lower of the two ceilings (a request above the ceiling is
-	// clamped down, never honored).
+func glb(dim string, permitted, requested any) (any, error) {
+	// Numbers: for a ceiling the greatest lower bound is the LOWER of the two,
+	// so a request above the ceiling is clamped down rather than honoured. That
+	// is only correct for a declared ceiling — for a floor the glb is the higher
+	// value, and applying the ceiling rule would issue a token weaker than the
+	// policy permits in the one direction that matters. Fail closed instead.
 	if pr, pok := toRat(permitted); pok {
 		rr, rok := toRat(requested)
 		if !rok {
 			return nil, fmt.Errorf("type mismatch: permitted is numeric, requested is %T", requested)
 		}
-		if rr.Cmp(pr) <= 0 {
-			return requested, nil
+		d, ok := directionOf(dim)
+		if !ok {
+			return nil, errUndeclaredNumeric(dim)
 		}
-		return permitted, nil
+		switch d {
+		case dirCeiling:
+			if rr.Cmp(pr) <= 0 {
+				return requested, nil
+			}
+			return permitted, nil
+		default:
+			return nil, errUndeclaredNumeric(dim)
+		}
 	}
 	switch p := permitted.(type) {
 	case string:
@@ -220,17 +307,31 @@ func TxnScope(parent Scope, tc ledger.TxnContext) (Scope, error) {
 	return out, nil
 }
 
-func valueContained(parent, child any) error {
-	// Numbers: child must not exceed parent (exact big.Rat comparison).
+func valueContained(dim string, parent, child any) error {
+	// Numbers: the comparison depends on the DECLARED direction of the
+	// dimension, never on the number. An undeclared dimension fails closed
+	// rather than defaulting to a ceiling.
 	if pr, pok := toRat(parent); pok {
 		cr, cok := toRat(child)
 		if !cok {
 			return fmt.Errorf("type mismatch: parent is numeric, child is %T", child)
 		}
-		if cr.Cmp(pr) > 0 {
-			return fmt.Errorf("value %s exceeds parent ceiling %s", cr.RatString(), pr.RatString())
+		d, ok := directionOf(dim)
+		if !ok {
+			return errUndeclaredNumeric(dim)
 		}
-		return nil
+		switch d {
+		case dirCeiling:
+			if cr.Cmp(pr) > 0 {
+				return fmt.Errorf("value %s exceeds parent ceiling %s", cr.RatString(), pr.RatString())
+			}
+			return nil
+		default:
+			// Unreachable while dirCeiling is the only member, and deliberately
+			// present: adding a direction without handling it here must fail
+			// closed rather than fall through to "contained".
+			return errUndeclaredNumeric(dim)
+		}
 	}
 
 	switch p := parent.(type) {
