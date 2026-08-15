@@ -12,6 +12,15 @@
 id_rsa*
 id_ed25519*
 secring*
+# SD-JWT runtime artifacts. Disclosures carry HOLDER CLAIMS — names, dates of
+# birth, account identifiers — so the exposure is PII, not key material: none of
+# the patterns above match a `sdjwt.json`, and gitleaks looks for credentials and
+# has no opinion about a birthdate. The blanket pattern was removed in bd49b4d
+# because, having no slash, it also matched `internal/sdjwt/sdjwt.go` and blocked
+# the source file. Narrowed rather than dropped — the negation exempts the source
+# and keeps the guard.
+sdjwt.*
+!sdjwt.go
 
 # ── ZK trusted-setup artifacts (regenerate with cmd/zk-setup; large) ──────
 *.pk
