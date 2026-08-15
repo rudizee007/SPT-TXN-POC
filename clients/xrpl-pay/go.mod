@@ -5,7 +5,7 @@
 //   cd clients/xrpl-pay && go mod tidy && go build ./...
 module github.com/rudizee007/spt-txn-poc/clients/xrpl-pay
 
-go 1.24
+go 1.25.0
 
 require github.com/Peersyst/xrpl-go v0.1.12
 
@@ -22,5 +22,5 @@ require (
 	github.com/tyler-smith/go-bip32 v1.0.0 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
-	golang.org/x/crypto v0.23.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 )
