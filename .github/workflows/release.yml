@@ -38,7 +38,7 @@ jobs:
         with:
           fetch-depth: 0   # buildvcs + git describe need full history
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: false   # pinned toolchain: reproducibility beats freshness
@@ -85,7 +85,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: false
