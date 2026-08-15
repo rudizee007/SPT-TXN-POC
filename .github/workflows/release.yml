@@ -184,7 +184,7 @@ jobs:
           in the source tree is the separate cryptographic BOM.
           EOF
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           body_path: NOTES.md
