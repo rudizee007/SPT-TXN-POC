@@ -15,7 +15,7 @@ go 1.25.13
 require github.com/echovl/cardano-go v0.1.13
 
 require (
-	filippo.io/edwards25519 v1.0.0 // indirect
+	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/blockfrost/blockfrost-go v0.1.0 // indirect
 	github.com/echovl/ed25519 v0.2.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
