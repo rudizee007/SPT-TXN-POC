@@ -135,7 +135,29 @@ func TestSignVerifyToken(t *testing.T) {
 		t.Fatalf("wrong key accepted: %v", err)
 	}
 	// Tampered signature.
-	if _, err := VerifyToken(tok[:len(tok)-2]+"AA", uri, pub, now); err == nil {
+	//
+	// The mutation must be GUARANTEED, not probable. This previously did
+	// `tok[:len(tok)-2]+"AA"`, which is a no-op whenever the token already ends
+	// in "AA" — verification then correctly succeeds and the test reports
+	// "tampered signature accepted", blaming the verifier for the test's own
+	// failure to tamper. An Ed25519 signature is 86 base64url characters whose
+	// last carries only 4 significant bits, so that is roughly 1 run in 1024,
+	// with a fresh keypair each time. It failed in CI on 2026-08-15 and passed
+	// locally on the next run, which is how long a flake like this survives.
+	//
+	// Mutate a character well inside the signature segment, choose a
+	// replacement that differs from what is there, and assert the string
+	// actually changed before drawing any conclusion from the result.
+	i := len(tok) - 10
+	repl := byte('A')
+	if tok[i] == repl {
+		repl = 'B'
+	}
+	tampered := tok[:i] + string(repl) + tok[i+1:]
+	if tampered == tok {
+		t.Fatal("the tamper was a no-op — this test proves nothing in this state")
+	}
+	if _, err := VerifyToken(tampered, uri, pub, now); err == nil {
 		t.Fatal("tampered signature accepted")
 	}
 }
