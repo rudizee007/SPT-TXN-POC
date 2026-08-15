@@ -5,7 +5,7 @@
 //   cd clients/xrpl-pay && go mod tidy && go build ./...
 module github.com/rudizee007/spt-txn-poc/clients/xrpl-pay
 
-go 1.25.0
+go 1.25.13
 
 require github.com/Peersyst/xrpl-go v0.1.12
 

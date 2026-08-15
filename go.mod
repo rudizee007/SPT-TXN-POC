@@ -1,6 +1,6 @@
 module github.com/rudizee007/spt-txn-poc
 
-go 1.25.7
+go 1.25.13
 
 require (
 	filippo.io/mldsa v0.0.0-20260711112038-ff3f469cee29

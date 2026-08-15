@@ -69,9 +69,37 @@ jobs:
       # Jubjub are research-grade, NOT FIPS-approved primitives, so the FIPS
       # claim is scoped to the token/auth crypto path.
       # See docs/PLATFORM-AND-OSS-STRATEGY.md §2a for the exact boundary.
-      - name: Test auth path under fips140=on
+      # TWO DISTINCT CLAIMS, and only the second is the one a review board is
+      # asking about.
+      #
+      # GODEBUG=fips140=on runs the CURRENT toolchain's crypto under FIPS-mode
+      # restrictions. Useful — it proves the auth path does not reach for a
+      # non-approved primitive — but the code it exercises is whatever shipped
+      # in this Go release, which is not a validated artifact.
+      #
+      # GOFIPS140=v1.0.0 builds against the frozen snapshot that CMVP issued
+      # Certificate #5247 to, shipped as lib/fips140/v1.0.0.zip. That is the
+      # validated module. It is selected independently of the Go version, which
+      # is why bumping the toolchain for stdlib security patches does not
+      # disturb the FIPS position: fixes land in the calling standard library
+      # code, the module stays frozen.
+      #
+      # Neither job makes THIS PRODUCT validated. The module is validated; we
+      # build against it. Any external material must say it that way.
+      - name: Auth path under FIPS mode (current tree)
         env:
           GODEBUG: fips140=on
+        run: >
+          go test -count=1
+          ./internal/verifier/...
+          ./internal/cattoken/...
+          ./internal/dpop/...
+          ./internal/sdjwt/...
+          ./internal/trustregistry/...
+
+      - name: Auth path against the CMVP-validated module (v1.0.0, cert #5247)
+        env:
+          GOFIPS140: v1.0.0
         run: >
           go test -count=1
           ./internal/verifier/...

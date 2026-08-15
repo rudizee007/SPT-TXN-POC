@@ -6,7 +6,7 @@
 //   cd clients/hedera-pay && go mod tidy && go build -o hedera-pay .
 module github.com/rudizee007/spt-txn-poc/clients/hedera-pay
 
-go 1.25.7
+go 1.25.13
 
 require github.com/hiero-ledger/hiero-sdk-go/v2 v2.80.0
 

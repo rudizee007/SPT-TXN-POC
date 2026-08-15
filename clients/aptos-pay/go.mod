@@ -8,7 +8,7 @@
 //   go mod tidy && go build -o aptos-pay .
 module github.com/rudizee007/spt-txn-poc/clients/aptos-pay
 
-go 1.25.0
+go 1.25.13
 
 require github.com/aptos-labs/aptos-go-sdk v1.13.0
 

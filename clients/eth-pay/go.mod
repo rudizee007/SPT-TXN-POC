@@ -8,7 +8,7 @@
 //   go mod tidy && go build -o eth-pay .
 module github.com/rudizee007/spt-txn-poc/clients/eth-pay
 
-go 1.25.0
+go 1.25.13
 
 require github.com/ethereum/go-ethereum v1.17.4
 

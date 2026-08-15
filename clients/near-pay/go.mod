@@ -10,7 +10,7 @@
 //   go mod tidy && go build -o near-pay .
 module github.com/rudizee007/spt-txn-poc/clients/near-pay
 
-go 1.25.0
+go 1.25.13
 
 require (
 	github.com/eteu-technologies/golang-uint128 v1.1.2-eteu

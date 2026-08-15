@@ -5,7 +5,7 @@
 // interface and attest.Identity; the parent never depends on this module.
 module github.com/rudizee007/spt-txn-poc/internal/wlapi/spire
 
-go 1.25.7
+go 1.25.13
 
 require (
 	github.com/rudizee007/spt-txn-poc v0.0.0

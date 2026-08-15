@@ -12,7 +12,7 @@
 // REST); only `create-topic` and `anchor` pull in the SDK.
 module github.com/rudizee007/spt-txn-poc/clients/hcs-anchor
 
-go 1.25.7
+go 1.25.13
 
 require github.com/hiero-ledger/hiero-sdk-go/v2 v2.80.0
 

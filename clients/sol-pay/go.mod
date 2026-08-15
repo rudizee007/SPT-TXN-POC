@@ -9,7 +9,7 @@
 //   go mod tidy && go build -o sol-pay .
 module github.com/rudizee007/spt-txn-poc/clients/sol-pay
 
-go 1.25.0
+go 1.25.13
 
 require github.com/gagliardetto/solana-go v1.22.0
 
