@@ -149,8 +149,14 @@ jobs:
             echo "── $d"
             # `cd || exit` inside the subshell: a failed cd must not fall through
             # to a scan of whatever directory we happen to be standing in.
-            ( cd "$d" || exit 1; "$BIN" ./... )
-            rc=$?
+            # `|| rc=$?`, NOT a bare call followed by `rc=$?`. Actions runs this
+            # with `bash -e`, so a bare non-zero exit aborts the whole script
+            # before the assignment happens — the first version died at module 2
+            # of 11 and never printed the "scanned N of M" line that exists to
+            # catch exactly that. The left side of `||` is a checked context, so
+            # `set -e` does not fire and the loop survives a finding.
+            rc=0
+            ( cd "$d" || exit 1; "$BIN" ./... ) || rc=$?
             case "$rc" in
               0) scanned=$((scanned + 1));;
               3) scanned=$((scanned + 1))
