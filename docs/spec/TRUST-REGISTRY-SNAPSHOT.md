@@ -127,6 +127,14 @@ the gate is regenerated with it.
 
 ### 3.4 Algorithm binding — adopt before deployment (NORMATIVE for the format)
 
+> **Implementation status — NOT YET IMPLEMENTED as of 2026-08-15.** The reference
+> implementation does not carry `alg` in the signing input, and the domain tag is
+> still `spt-cp/trust-snapshot-v1`. **The `-v1` vectors in
+> `pkg/trustsnapshot/testdata/trust-snapshot-signing-v1.kat.json` remain the
+> current CI gate and the current interop contract.** Do not build to this
+> section yet: a snapshot carrying `alg` will not verify against the shipped
+> verifier. This note is removed when `-v2` lands.
+
 The signing input MUST carry an explicit algorithm/suite identifier (`alg`),
 covered by the signature. Without it, the choice of signature suite is not a
 signed statement, and a verifier that accepts more than one suite cannot detect a
