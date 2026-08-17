@@ -30,7 +30,30 @@ Registered suites:
 | `suite_id` | Algorithms | Status |
 |---|---|---|
 | `EdDSA` | Ed25519 | current default |
-| `HYBRID-Ed25519-MLDSA65` | Ed25519 **and** ML-DSA-65 (FIPS 204), both signatures required at signing | transition suite |
+| `HYBRID-Ed25519-ML-DSA-65` | Ed25519 **and** ML-DSA-65 (FIPS 204), both signatures required at signing | transition suite, commercial |
+| `HYBRID-Ed25519-ML-DSA-87` | Ed25519 **and** ML-DSA-87 (FIPS 204), both signatures required at signing | transition suite, NSS track |
+| `ML-DSA-87` | ML-DSA-87 (FIPS 204) alone, no classical component | CNSA 2.0 end state |
+
+Component names are spelled as IANA registered them for JOSE and COSE. The
+`HYBRID-*` suites are **dual-signature envelopes**, not the composite signatures
+of `draft-ietf-jose-pq-composite-sigs`: a composite produces one signature under
+one identifier and cannot be verified partially, and this profile requires
+verify-either during transition, which needs two separable signatures.
+
+**Why ML-DSA-87 and a pure suite exist.** CNSA 2.0 mandates ML-DSA-87 at all
+classification levels and contains **no classical signature algorithm**. Hybrid
+is therefore a transition mechanism rather than an end state, and a suite table
+offering only classical and hybrid cannot express where the standard lands. A
+deployment that migrates to `HYBRID-Ed25519-ML-DSA-65` is post-quantum and is
+**not** CNSA 2.0 compliant; the two are not the same claim.
+
+**Transport constrains which suite a profile can use.** Measured 2026-08-15: a
+minimal chain (CAT, leaf CT, SPT-Txn, DPoP) is 2,683 bytes under `EdDSA`, and
+substituting any ML-DSA hybrid puts it past a common 8 KB proxy header cap —
+15.6 KB at ML-DSA-44, 20.3 KB at 65, 27.3 KB at 87. Verification cost is not the
+constraint (60 µs for ML-DSA-87 against a ~10 ms budget); size is. So
+header-borne profiles remain `EdDSA` until the chain moves out of headers, while
+OT (Modbus, OPC UA) and NSS profiles are not header-bound.
 
 `alg: none`, unknown suites, and empty suite ids are rejected by allowlist.
 An unimplemented-but-known suite (e.g. hybrid on a build without the PQC
@@ -66,6 +89,6 @@ signature is valid. Floors are policy-bundle data, hashed into every receipt.
   PQC primitive is gated.
 - Key rotation and algorithm rotation share one mechanism: suites bind to
   keys in the trust registry; an issuer may be live with `EdDSA` and
-  `HYBRID-Ed25519-MLDSA65` keys simultaneously during an overlap window.
+  `HYBRID-Ed25519-ML-DSA-65` keys simultaneously during an overlap window.
 - TLS and at-rest layers are deliberately out of scope here (tracked
   separately); this spec covers token/receipt envelopes.

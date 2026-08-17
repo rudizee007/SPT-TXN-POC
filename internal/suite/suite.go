@@ -28,9 +28,34 @@ import (
 )
 
 // Registered suite identifiers.
+//
+// The component names are spelled as IANA registered them for JOSE and COSE
+// (`ML-DSA-44`, `ML-DSA-65`, `ML-DSA-87`), so an implementer reading this and a
+// JOSE registry sees the same strings. `SuiteHybrid65` was previously
+// `HYBRID-Ed25519-MLDSA65`; the change is an ENCODING change rather than a
+// rename, because the identifier is the ML-DSA domain-separation context and
+// therefore inside the signature computation.
+//
+// The HYBRID suites are DUAL-SIGNATURE ENVELOPES, not the composite signatures
+// of draft-ietf-jose-pq-composite-sigs. A composite produces one signature under
+// one identifier and cannot be verified partially; this profile requires
+// verify-either during transition and verify-both in strict mode, which needs
+// two separable signatures. The divergence is deliberate.
 const (
-	SuiteEdDSA  = "EdDSA"                  // Ed25519, current default
-	SuiteHybrid = "HYBRID-Ed25519-MLDSA65" // Ed25519 AND ML-DSA-65 (FIPS 204)
+	SuiteEdDSA = "EdDSA" // Ed25519 (RFC 8032). Classical. Current default.
+
+	// SuiteHybrid65 — transition suite for commercial deployments.
+	SuiteHybrid65 = "HYBRID-Ed25519-ML-DSA-65"
+
+	// SuiteHybrid87 — transition suite on the NSS track. CNSA 2.0 mandates
+	// ML-DSA-87 at all classification levels, so a deployment migrating toward
+	// it transitions through this rather than through SuiteHybrid65.
+	SuiteHybrid87 = "HYBRID-Ed25519-ML-DSA-87"
+
+	// SuiteMLDSA87 — CNSA 2.0 end state. ML-DSA-87 alone, no classical
+	// component, because CNSA 2.0 contains no classical signature algorithm.
+	// Hybrid is a transition mechanism; this is where the standard lands.
+	SuiteMLDSA87 = "ML-DSA-87"
 )
 
 // signingTag domain-separates envelope signatures system-wide.

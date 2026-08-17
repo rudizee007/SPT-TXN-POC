@@ -84,13 +84,13 @@ func TestSuiteIDCoveredBySignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env.Suite = SuiteHybrid // attacker rewrites dispatch field
+	env.Suite = SuiteHybrid65 // attacker rewrites dispatch field
 	if err := Verify(env, PublicKeySet{Ed25519: pub}, ModeVerifyEither, nil, ""); err == nil {
 		t.Fatal("suite-rewritten envelope verified")
 	}
 	// And the reverse: signing input for one suite never verifies as another.
 	in1 := SigningInput(SuiteEdDSA, []byte("p"))
-	in2 := SigningInput(SuiteHybrid, []byte("p"))
+	in2 := SigningInput(SuiteHybrid65, []byte("p"))
 	if bytes.Equal(in1, in2) {
 		t.Fatal("signing inputs not domain-separated by suite")
 	}
@@ -130,7 +130,7 @@ func TestFloorRejectsBeforeSignatureDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	floors := Floors{"EU-STRICT": {SuiteHybrid}, "GLOBAL": {SuiteEdDSA, SuiteHybrid}}
+	floors := Floors{"EU-STRICT": {SuiteHybrid65}, "GLOBAL": {SuiteEdDSA, SuiteHybrid65}}
 
 	// Valid classical signature, but the profile demands hybrid: violation.
 	if err := Verify(env, PublicKeySet{Ed25519: pub}, ModeVerifyBoth, floors, "EU-STRICT"); !errors.Is(err, ErrBelowFloor) {
@@ -151,9 +151,9 @@ func TestFloorRejectsBeforeSignatureDispatch(t *testing.T) {
 func TestHybridModes(t *testing.T) {
 	edPub, edPriv := edKeys(t)
 	pqKey := fakePQKey{secret: []byte("k")}
-	good := hybridSuite{pq: fakePQ{}}
+	good := hybridSuite{id: SuiteHybrid65, pq: fakePQ{}}
 
-	input := SigningInput(SuiteHybrid, []byte("p"))
+	input := SigningInput(SuiteHybrid65, []byte("p"))
 	sigs, err := good.Sign(PrivateKeySet{Ed25519: edPriv, PQ: pqKey}, input)
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +171,7 @@ func TestHybridModes(t *testing.T) {
 	}
 
 	// PQ half broken → either passes, both fails (transition semantics).
-	broken := hybridSuite{pq: fakePQ{broken: true}}
+	broken := hybridSuite{id: SuiteHybrid65, pq: fakePQ{broken: true}}
 	if err := broken.Verify(keys, input, sigs, ModeVerifyEither); err != nil {
 		t.Fatalf("verify-either rejected valid classical half: %v", err)
 	}
@@ -204,12 +204,12 @@ func TestHybridModes(t *testing.T) {
 // ── stub behavior in default builds ─────────────────────────────────────
 
 func TestHybridUnavailableFailsClosed(t *testing.T) {
-	impl, err := lookup(SuiteHybrid)
+	impl, err := lookup(SuiteHybrid65)
 	if err != nil {
 		t.Fatalf("hybrid suite not registered: %v", err)
 	}
 	_, edPriv := edKeys(t)
-	input := SigningInput(SuiteHybrid, []byte("p"))
+	input := SigningInput(SuiteHybrid65, []byte("p"))
 
 	if _, ok := impl.(hybridSuite); ok && !impl.(hybridSuite).pq.Available() {
 		// Default build: both operations must fail closed as UNAVAILABLE
@@ -220,5 +220,58 @@ func TestHybridUnavailableFailsClosed(t *testing.T) {
 		if err := impl.Verify(PublicKeySet{}, input, [][]byte{{1}, {2}}, ModeVerifyBoth); !errors.Is(err, ErrSuiteUnavailable) {
 			t.Fatalf("stub Verify: %v", err)
 		}
+	}
+}
+
+// Every PQ suite is REGISTERED in every build, including builds that cannot
+// perform it. An unregistered suite and an unavailable one are different
+// operational facts: "I have never heard of this" sends an operator to the
+// allowlist, "I know it and cannot do it in this build" sends them to the build
+// tags. Collapsing them wastes the distinction the error types exist to make.
+//
+// This is the stub build's contract and nothing asserted it before the value
+// space grew to four.
+func TestAllSuitesRegisteredInEveryBuild(t *testing.T) {
+	for _, id := range []string{SuiteEdDSA, SuiteHybrid65, SuiteHybrid87, SuiteMLDSA87} {
+		impl, err := lookup(id)
+		if err != nil {
+			t.Fatalf("%s is not registered: %v — a registered-but-unimplemented "+
+				"suite must still be allowlisted, or it is indistinguishable from "+
+				"one nobody has specified", id, err)
+		}
+		if impl.ID() != id {
+			t.Errorf("%s resolved to an implementation reporting ID %q", id, impl.ID())
+		}
+	}
+	if _, err := lookup("HYBRID-Ed25519-MLDSA65"); err == nil {
+		t.Error("the pre-rename identifier is still registered; it must not be, " +
+			"or both spellings would verify and the encoding change would be cosmetic")
+	}
+}
+
+// The pure ML-DSA suite carries exactly one signature. Shape is checked before
+// anything cryptographic, so a malformed envelope cannot reach the backend.
+func TestPureMLDSAEnvelopeShape(t *testing.T) {
+	impl, err := lookup(SuiteMLDSA87)
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	input := SigningInput(SuiteMLDSA87, []byte("p"))
+
+	// Two signatures is a hybrid envelope wearing a pure suite's label.
+	if err := impl.Verify(PublicKeySet{}, input, [][]byte{{1}, {2}}, ModeVerifyBoth); !errors.Is(err, ErrBadEnvelope) {
+		t.Errorf("two signatures under a single-signature suite: got %v, want ErrBadEnvelope", err)
+	}
+	if err := impl.Verify(PublicKeySet{}, input, nil, ModeVerifyBoth); !errors.Is(err, ErrBadEnvelope) {
+		t.Errorf("no signatures: got %v, want ErrBadEnvelope", err)
+	}
+	if err := impl.Verify(PublicKeySet{}, input, [][]byte{{}}, ModeVerifyBoth); !errors.Is(err, ErrBadEnvelope) {
+		t.Errorf("empty signature: got %v, want ErrBadEnvelope", err)
+	}
+	// Mode is meaningless for one signature, but the ZERO value stays invalid:
+	// a forgotten configuration must not silently mean anything, and that
+	// invariant should not weaken just because this suite would not have cared.
+	if err := impl.Verify(PublicKeySet{}, input, [][]byte{{1}}, Mode(0)); !errors.Is(err, ErrBadMode) {
+		t.Errorf("unconfigured mode: got %v, want ErrBadMode", err)
 	}
 }

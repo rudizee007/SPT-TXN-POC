@@ -292,7 +292,7 @@ func main() {
 	env, err := suite.Seal(suite.SuiteEdDSA, []byte("policy-decision-envelope"), suite.PrivateKeySet{Ed25519: logPriv})
 	check(err, "seal envelope")
 	check(suite.Verify(env, suite.PublicKeySet{Ed25519: logPub}, suite.ModeVerifyBoth, nil, ""), "verify envelope")
-	env.Suite = suite.SuiteHybrid // attacker rewrites the dispatch field
+	env.Suite = suite.SuiteHybrid65 // attacker rewrites the dispatch field
 	if err := suite.Verify(env, suite.PublicKeySet{Ed25519: logPub}, suite.ModeVerifyEither, nil, ""); err != nil {
 		fmt.Printf("   suite downgrade  : REJECTED (id is inside the signed bytes)\n")
 	} else {
