@@ -125,15 +125,41 @@ The current vectors pin the format as it stands today (no algorithm field —
 a `-v2` set; that is a deliberate, pre-deployment format bump, not a drift, and
 the gate is regenerated with it.
 
-### 3.4 Algorithm binding — adopt before deployment (NORMATIVE for the format)
+### 3.4 Algorithm binding (NORMATIVE)
 
-> **Implementation status — NOT YET IMPLEMENTED as of 2026-08-15.** The reference
-> implementation does not carry `alg` in the signing input, and the domain tag is
-> still `spt-cp/trust-snapshot-v1`. **The `-v1` vectors in
-> `pkg/trustsnapshot/testdata/trust-snapshot-signing-v1.kat.json` remain the
-> current CI gate and the current interop contract.** Do not build to this
-> section yet: a snapshot carrying `alg` will not verify against the shipped
-> verifier. This note is removed when `-v2` lands.
+**Implemented 2026-08-15.** The signing input carries `alg` under domain
+`spt-cp/trust-snapshot-v2`, in both the Go reference implementation and the Rust
+control plane, gated by the regenerated cross-language vectors.
+
+Registered values, matching `internal/suite` and the IANA JOSE/COSE spellings:
+
+| `alg` | Construction |
+|---|---|
+| `EdDSA` | Ed25519 (RFC 8032). |
+| `HYBRID-Ed25519-ML-DSA-65` | Ed25519 **and** ML-DSA-65 (FIPS 204). Two signatures, both present. |
+| `HYBRID-Ed25519-ML-DSA-87` | Ed25519 **and** ML-DSA-87 (FIPS 204). NSS track. |
+| `ML-DSA-87` | ML-DSA-87 alone. CNSA 2.0 end state — that suite contains no classical algorithm. |
+
+Allowlist, byte-exact and case-sensitive. A verifier MUST reject a value outside
+the set, MUST reject one outside its own accept-set (which may be narrower), and
+MUST verify under exactly the named suite — never trial-verify against each
+accepted suite, which reintroduces the ambiguity `alg` removes.
+
+The `HYBRID-*` entries are **dual-signature envelopes**, not the composite
+signatures of `draft-ietf-jose-pq-composite-sigs`: a composite cannot be verified
+partially, and this profile needs verify-either during transition.
+
+**What this closes, and what it does not.** `alg` is inside the signed object, so
+relabelling fails — an attacker cannot take a hybrid-signed snapshot, call it
+`EdDSA`, drop the ML-DSA component and present it to a verifier accepting both.
+It does **not** prevent a publisher genuinely signing with a weaker suite; that
+is the accept-set, which is policy. The format removes the ambiguity, the
+deployment removes the permission.
+
+`alg` is populated from the **signer**, never from configuration, and
+`sign_snapshot` refuses to sign a snapshot whose declaration does not match the
+signer it is handed. A declaration contradicting its own signature is worse than
+none: it is a signed statement about how it was signed that is false.
 
 The signing input MUST carry an explicit algorithm/suite identifier (`alg`),
 covered by the signature. Without it, the choice of signature suite is not a

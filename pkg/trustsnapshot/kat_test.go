@@ -24,6 +24,7 @@ type katFile struct {
 	Vectors []struct {
 		Name  string `json:"name"`
 		Input struct {
+			Alg            string   `json:"alg"`
 			ID             string   `json:"id"`
 			IssuedMs       uint64   `json:"issued_ms"`
 			IssuerIDs      []string `json:"issuer_ids"`
@@ -73,7 +74,7 @@ func TestSigningInputMatchesKAT(t *testing.T) {
 	for _, v := range k.Vectors {
 		v := v
 		t.Run(v.Name, func(t *testing.T) {
-			in := SigningInput(v.Input.ID, v.Input.IssuedMs, v.Input.IssuerIDs, v.Input.DigestHex, v.Input.PrevSnapshotID)
+			in := SigningInput(v.Input.Alg, v.Input.ID, v.Input.IssuedMs, v.Input.IssuerIDs, v.Input.DigestHex, v.Input.PrevSnapshotID)
 			if got := hex.EncodeToString(in); got != v.ExpectedSigningInputHex {
 				t.Fatalf("signing input mismatch\n got %s\nwant %s", got, v.ExpectedSigningInputHex)
 			}
@@ -106,16 +107,34 @@ func TestTrapsAreRejected(t *testing.T) {
 		digestHex string
 	}
 	v1.id, v1.issuedMs, v1.issuerIDs, v1.digestHex = "snap-1", 1000, []string{"iss-a", "iss-b"}, "deadbeef"
-	golden := ed25519.Sign(priv, SigningInput(v1.id, v1.issuedMs, v1.issuerIDs, v1.digestHex, nil))
+	golden := ed25519.Sign(priv, SigningInput(AlgEdDSA, v1.id, v1.issuedMs, v1.issuerIDs, v1.digestHex, nil))
 
 	// Trap A: declaration/macro order instead of sorted keys.
-	trapA := []byte(`{"domain":"` + SnapshotSigDomain + `","id":"snap-1","issued_ms":1000,"issuer_ids":["iss-a","iss-b"],"digest_hex":"deadbeef","prev_snapshot_id":null}`)
+	trapA := []byte(`{"domain":"` + SnapshotSigDomain + `","alg":"` + AlgEdDSA + `","id":"snap-1","issued_ms":1000,"issuer_ids":["iss-a","iss-b"],"digest_hex":"deadbeef","prev_snapshot_id":null}`)
 	if ed25519.Verify(pub, trapA, golden) {
 		t.Fatal("trap A (macro order) unexpectedly verified — canonicalization not enforced")
 	}
 	// Trap B: prev_snapshot_id omitted (wire-form mirror).
-	trapB := []byte(`{"digest_hex":"deadbeef","domain":"` + SnapshotSigDomain + `","id":"snap-1","issued_ms":1000,"issuer_ids":["iss-a","iss-b"]}`)
+	trapB := []byte(`{"alg":"` + AlgEdDSA + `","digest_hex":"deadbeef","domain":"` + SnapshotSigDomain + `","id":"snap-1","issued_ms":1000,"issuer_ids":["iss-a","iss-b"]}`)
 	if ed25519.Verify(pub, trapB, golden) {
 		t.Fatal("trap B (omitted null prev) unexpectedly verified")
+	}
+	// Trap C: RELABELLING. Same snapshot, same digest, `alg` swapped to a
+	// stronger suite the publisher did not use. This is the attack `alg` exists
+	// to close — take a signature made under one suite and present it as another
+	// — and it fails because `alg` is inside the signed bytes, not beside them.
+	trapC := SigningInput(AlgMLDSA87, v1.id, v1.issuedMs, v1.issuerIDs, v1.digestHex, nil)
+	if ed25519.Verify(pub, trapC, golden) {
+		t.Fatal("trap C (alg relabelled) unexpectedly verified — alg is not covered by the signature")
+	}
+	// And the reverse: a downgrade relabelling must fail identically.
+	trapD := SigningInput(AlgHybrid65, v1.id, v1.issuedMs, v1.issuerIDs, v1.digestHex, nil)
+	if ed25519.Verify(pub, trapD, golden) {
+		t.Fatal("trap D (alg downgraded) unexpectedly verified")
+	}
+	// An unregistered value is refused by the allowlist before any of this
+	// matters, but the signature must not cover it either.
+	if RegisteredAlgs["ed25519"] || RegisteredAlgs["EDDSA"] || RegisteredAlgs[""] {
+		t.Fatal("allowlist accepts a case-variant or empty alg; identifiers are byte-exact")
 	}
 }

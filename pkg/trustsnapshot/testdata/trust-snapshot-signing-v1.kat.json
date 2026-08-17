@@ -1,7 +1,7 @@
 {
   "$schema_version": 2,
   "artifact": "trust-snapshot",
-  "sig_domain": "spt-cp/trust-snapshot-v1",
+  "sig_domain": "spt-cp/trust-snapshot-v2",
   "body_domain": "spt-cp/trust-snapshot-body-v1",
   "signature_algorithm": "ed25519",
   "hash": "sha-256",
@@ -11,13 +11,14 @@
     "independent_at": "the ENCODER **and** the SCHEMA layer, for POSITIVE vectors. On 2026-08-12 an implementation written with no sight of any existing implementation, no expected_* values and no canonical byte fragments reproduced all 30 positive-vector outputs across both artifacts — body digest, signing input and signature — byte-for-byte. The field sets were therefore DERIVED from these rules, not transcribed. This supersedes the earlier caveat that the schema layer was untested.",
     "NOT_independent_at": "the NEGATIVE vectors. Traps are specified in prose rather than in bytes: no trap names its base vector, cascade behaviour (a body-only mistake changing digest, signing input and signature) is unstated, and trapA_declaration_order cannot be reproduced from this document at all — no struct declaration order appears in it, and rule 1 explicitly disclaims the field lists as orderings. NONE of the wrong_* values was reproduced or checked by the 2026-08-12 run.",
     "evidence": "2026-08-06: a third implementation (Node/Go) written blind from canonicalization_rules alone diverged on the body field set — it included id and prev_bundle_id. See trapD_body_superset; rule 3 now enumerates the body field set. 2026-08-12: a second blind run (Python, fresh context) reproduced every positive vector in BOTH artifacts byte-for-byte on the first attempt, with 20 further values confirmed transitively. It raised 14 graded specification ambiguities — see the generator's accompanying notes — of which the negative vectors and the unstated signature encoding are the material ones. Building the blind package took four attempts: the first three leaked answers through digest_hex, wrong_signing_input_utf8 and wrong_body_utf8.",
-    "what_would_be_stronger": "a third party, in a third language, working from canonicalization_rules with no sight of the expected_* values. The 2026-08-12 run met the second and third conditions but not the first."
+    "what_would_be_stronger": "a third party, in a third language, working from canonicalization_rules with no sight of the expected_* values. The 2026-08-12 run met the second and third conditions but not the first.",
+    "v2_alg_addition": "SCOPE OF THE 2026-08-12 RUN, and what -v2 does NOT inherit. That run reproduced the -v1 field set. The `alg` field added in -v2 (2026-08-15) was transcribed into generator_blind.py from the amended canonicalization_rules by an author who had seen the specification change, so the -v2 POSITIVE VECTORS WERE NOT INDEPENDENTLY REPRODUCED. What still holds: the encoder layer (canon(): sorting, escaping, separators, null handling) is unchanged and retains its independence, and the new field was derived from the rule rather than from either implementation -- the Go and Rust sources were not consulted in producing these bytes. What is outstanding: a fresh blind run against the -v2 rules, in a fresh context, with no sight of the implementations or of any expected_* value. This file has twice carried independence claims that were false; this paragraph exists so it does not carry a third."
   },
   "canonicalization_rules": [
     "Object keys are emitted in SORTED (lexicographic by UTF-8 byte) order, NOT struct/field declaration order. Every field list stated in these rules is in declaration order for readability; NONE is an emission order.",
     "The domain tag is emitted as a member whose KEY IS THE LITERAL STRING \"domain\", in both canonical forms.",
     "BODY DIGEST field set, exactly: domain (= body_domain), id, issued_ms, issuer_ids, prev_snapshot_id. digest_hex is excluded because including it would be circular.",
-    "SIGNING INPUT field set, exactly: domain (= sig_domain), id, issued_ms, issuer_ids, digest_hex, prev_snapshot_id.",
+    "SIGNING INPUT field set, exactly: domain (= sig_domain), alg, id, issued_ms, issuer_ids, digest_hex, prev_snapshot_id. `alg` names the signature suite and is covered by the signature, so relabelling a snapshot changes the signed bytes.",
     "prev_snapshot_id is ALWAYS PRESENT with JSON null when there is no predecessor, in BOTH forms. The struct's own Serialize omits it (skip_serializing_if); the canonical forms do NOT.",
     "Compact separators: no whitespace between tokens. NO trailing newline (Go's json.Encoder.Encode appends one; strip it).",
     "No HTML escaping: '<', '>', '&' are emitted literally (Go must call Encoder.SetEscapeHTML(false)).",
@@ -25,7 +26,8 @@
     "All hex is LOWERCASE. digest_hex is embedded in the signing input as a string, so its case is load-bearing.",
     "issued_ms is a JSON integer (unsigned 64-bit), never a float or string. Values above 2^53 are exercised by a vector.",
     "issuer_ids is a JSON array in the given order (arrays are NOT sorted). An empty set is [] -- never null, never omitted.",
-    "issuer ids are restricted at registration to [A-Za-z0-9._-] or are DIDs, so no canonical field here can carry U+2028/U+2029 -- the characters Go escapes even with SetEscapeHTML(false)."
+    "issuer ids are restricted at registration to [A-Za-z0-9._-] or are DIDs, so no canonical field here can carry U+2028/U+2029 -- the characters Go escapes even with SetEscapeHTML(false).",
+    "alg is a JSON string from the registered set: \"EdDSA\", \"HYBRID-Ed25519-ML-DSA-65\", \"HYBRID-Ed25519-ML-DSA-87\", \"ML-DSA-87\". Byte-exact and case-sensitive. A verifier MUST reject a value outside the set, MUST reject a value outside its own configured accept-set, and MUST verify under exactly the named suite -- never trial-verify against each accepted suite."
   ],
   "signing_key": {
     "type": "ed25519-seed",
@@ -38,6 +40,7 @@
       "name": "v1_first_snapshot_prev_none",
       "note": "First-ever snapshot: prev_snapshot_id is null in BOTH the body digest and the signing input.",
       "input": {
+        "alg": "EdDSA",
         "id": "snap-1",
         "issued_ms": 1000,
         "issuer_ids": [
@@ -48,15 +51,16 @@
         "digest_hex": "5bb5efda9659eeb68b819502b9bcd4f2dde8b03cbe72baf2722fdb307f258648"
       },
       "expected_content_digest_hex": "5bb5efda9659eeb68b819502b9bcd4f2dde8b03cbe72baf2722fdb307f258648",
-      "expected_signing_input_utf8": "{\"digest_hex\":\"5bb5efda9659eeb68b819502b9bcd4f2dde8b03cbe72baf2722fdb307f258648\",\"domain\":\"spt-cp/trust-snapshot-v1\",\"id\":\"snap-1\",\"issued_ms\":1000,\"issuer_ids\":[\"iss-a\",\"iss-b\"],\"prev_snapshot_id\":null}",
-      "expected_signing_input_hex": "7b226469676573745f686578223a2235626235656664613936353965656236386238313935303262396263643466326464653862303363626537326261663237323266646233303766323538363438222c22646f6d61696e223a227370742d63702f74727573742d736e617073686f742d7631222c226964223a22736e61702d31222c226973737565645f6d73223a313030302c226973737565725f696473223a5b226973732d61222c226973732d62225d2c22707265765f736e617073686f745f6964223a6e756c6c7d",
-      "expected_signing_input_sha256": "141c6acacf3154a527dd7606eab5b619659a23258fc72233cd78a624eeaace9d",
-      "expected_signature_hex": "46fedb70298dd1db5d1d17e6b803d47fd069d214d8288b0dc6956fc82aa6f1415b390bceae71f68abd6e3fc2b9975955ca3a29468791f4d6f13b2693b7ba7601"
+      "expected_signing_input_utf8": "{\"alg\":\"EdDSA\",\"digest_hex\":\"5bb5efda9659eeb68b819502b9bcd4f2dde8b03cbe72baf2722fdb307f258648\",\"domain\":\"spt-cp/trust-snapshot-v2\",\"id\":\"snap-1\",\"issued_ms\":1000,\"issuer_ids\":[\"iss-a\",\"iss-b\"],\"prev_snapshot_id\":null}",
+      "expected_signing_input_hex": "7b22616c67223a224564445341222c226469676573745f686578223a2235626235656664613936353965656236386238313935303262396263643466326464653862303363626537326261663237323266646233303766323538363438222c22646f6d61696e223a227370742d63702f74727573742d736e617073686f742d7632222c226964223a22736e61702d31222c226973737565645f6d73223a313030302c226973737565725f696473223a5b226973732d61222c226973732d62225d2c22707265765f736e617073686f745f6964223a6e756c6c7d",
+      "expected_signing_input_sha256": "1a858eddbc10b32355d1f50f70a9e517f3865e2fec8535711c6a1c420e966206",
+      "expected_signature_hex": "dbd750b01b97fb9470e766e34e552022a13d460c0a18622fd277ec17c8a230ca8ac64d816aed03b22dfaba81c19369ead629f2a94b66554609ee0f713c7f5c0e"
     },
     {
       "name": "v2_chained_snapshot_prev_some",
       "note": "Chained snapshot: prev_snapshot_id is a string.",
       "input": {
+        "alg": "EdDSA",
         "id": "snap-2",
         "issued_ms": 1712345678901,
         "issuer_ids": [
@@ -68,15 +72,16 @@
         "digest_hex": "a3df992f30139b3e70825b7c5a7f114179f16b50b90a048ca5abde69bb4f090a"
       },
       "expected_content_digest_hex": "a3df992f30139b3e70825b7c5a7f114179f16b50b90a048ca5abde69bb4f090a",
-      "expected_signing_input_utf8": "{\"digest_hex\":\"a3df992f30139b3e70825b7c5a7f114179f16b50b90a048ca5abde69bb4f090a\",\"domain\":\"spt-cp/trust-snapshot-v1\",\"id\":\"snap-2\",\"issued_ms\":1712345678901,\"issuer_ids\":[\"did:web:issuer-a\",\"did:web:issuer-b\",\"did:web:issuer-c\"],\"prev_snapshot_id\":\"snap-1\"}",
-      "expected_signing_input_hex": "7b226469676573745f686578223a2261336466393932663330313339623365373038323562376335613766313134313739663136623530623930613034386361356162646536396262346630393061222c22646f6d61696e223a227370742d63702f74727573742d736e617073686f742d7631222c226964223a22736e61702d32222c226973737565645f6d73223a313731323334353637383930312c226973737565725f696473223a5b226469643a7765623a6973737565722d61222c226469643a7765623a6973737565722d62222c226469643a7765623a6973737565722d63225d2c22707265765f736e617073686f745f6964223a22736e61702d31227d",
-      "expected_signing_input_sha256": "86b4c359f54f8b594caed955ab885caffc22d85eb44ba7f2779946a26c4834fa",
-      "expected_signature_hex": "a4f36df4468927f79a05ac8a325a2cf3acafebfba3a4612bd7a0f52c94f1f141e47e93de5ded4456a3ed3e90a3b7af0248606aac281aa84f3b20e1727d1d0f0b"
+      "expected_signing_input_utf8": "{\"alg\":\"EdDSA\",\"digest_hex\":\"a3df992f30139b3e70825b7c5a7f114179f16b50b90a048ca5abde69bb4f090a\",\"domain\":\"spt-cp/trust-snapshot-v2\",\"id\":\"snap-2\",\"issued_ms\":1712345678901,\"issuer_ids\":[\"did:web:issuer-a\",\"did:web:issuer-b\",\"did:web:issuer-c\"],\"prev_snapshot_id\":\"snap-1\"}",
+      "expected_signing_input_hex": "7b22616c67223a224564445341222c226469676573745f686578223a2261336466393932663330313339623365373038323562376335613766313134313739663136623530623930613034386361356162646536396262346630393061222c22646f6d61696e223a227370742d63702f74727573742d736e617073686f742d7632222c226964223a22736e61702d32222c226973737565645f6d73223a313731323334353637383930312c226973737565725f696473223a5b226469643a7765623a6973737565722d61222c226469643a7765623a6973737565722d62222c226469643a7765623a6973737565722d63225d2c22707265765f736e617073686f745f6964223a22736e61702d31227d",
+      "expected_signing_input_sha256": "e3865049f78551d18fcbd90f32e146d6d759513db6e8363f8ab39a6a8e451e63",
+      "expected_signature_hex": "badd7634a46e96eaec5536626cc9442c8839c432bfb459a5a7a6ccc22fa41af5a5e96e95537a35d372256474848ad37271a993fd017b8de10ff57f915f27c206"
     },
     {
       "name": "v3_empty_issuer_set",
       "note": "Every issuer revoked: issuer_ids is []. Reachable, and a Go nil slice encodes as null rather than [].",
       "input": {
+        "alg": "EdDSA",
         "id": "snap-3",
         "issued_ms": 2000,
         "issuer_ids": [],
@@ -84,15 +89,16 @@
         "digest_hex": "ddfc24674d5754d9602423cac5fa06dce847421af3221562f1205a68c7347e83"
       },
       "expected_content_digest_hex": "ddfc24674d5754d9602423cac5fa06dce847421af3221562f1205a68c7347e83",
-      "expected_signing_input_utf8": "{\"digest_hex\":\"ddfc24674d5754d9602423cac5fa06dce847421af3221562f1205a68c7347e83\",\"domain\":\"spt-cp/trust-snapshot-v1\",\"id\":\"snap-3\",\"issued_ms\":2000,\"issuer_ids\":[],\"prev_snapshot_id\":\"snap-2\"}",
-      "expected_signing_input_hex": "7b226469676573745f686578223a2264646663323436373464353735346439363032343233636163356661303664636538343734323161663332323135363266313230356136386337333437653833222c22646f6d61696e223a227370742d63702f74727573742d736e617073686f742d7631222c226964223a22736e61702d33222c226973737565645f6d73223a323030302c226973737565725f696473223a5b5d2c22707265765f736e617073686f745f6964223a22736e61702d32227d",
-      "expected_signing_input_sha256": "ba75b993db17b98ec99dabe877ba65786e3a58d0d99d74c1f7b95e52c56a442e",
-      "expected_signature_hex": "7c75738c15f8ee7f628fec39053258f0468adf231789c408c1f4a1950801981baf1ba206f9ee95c9ccb2f0cba97990d785ab41271ce620be9efabe8fed9e7e0e"
+      "expected_signing_input_utf8": "{\"alg\":\"EdDSA\",\"digest_hex\":\"ddfc24674d5754d9602423cac5fa06dce847421af3221562f1205a68c7347e83\",\"domain\":\"spt-cp/trust-snapshot-v2\",\"id\":\"snap-3\",\"issued_ms\":2000,\"issuer_ids\":[],\"prev_snapshot_id\":\"snap-2\"}",
+      "expected_signing_input_hex": "7b22616c67223a224564445341222c226469676573745f686578223a2264646663323436373464353735346439363032343233636163356661303664636538343734323161663332323135363266313230356136386337333437653833222c22646f6d61696e223a227370742d63702f74727573742d736e617073686f742d7632222c226964223a22736e61702d33222c226973737565645f6d73223a323030302c226973737565725f696473223a5b5d2c22707265765f736e617073686f745f6964223a22736e61702d32227d",
+      "expected_signing_input_sha256": "a797f954263a8e304adbae709efdc7bddda487dbb6da9995d5ad7c273cd5d6e8",
+      "expected_signature_hex": "b68c240a29db5e971c2ed8672eb400645ea0094aa96b70d31738a92ea1f24b468033f1825989f273e6bbed89b92489c6d8a20d38eafca380c31ed12aa0135b07"
     },
     {
       "name": "v4_integers_above_2_53",
       "note": "issued_ms exceeds 2^53. A JavaScript verifier using JSON.parse rounds this silently.",
       "input": {
+        "alg": "EdDSA",
         "id": "snap-4",
         "issued_ms": 9007199254740993,
         "issuer_ids": [
@@ -102,23 +108,23 @@
         "digest_hex": "6733bf0b83ff15f1991480f037737ccb901ca3442bbcf77e63bff83736fb7dac"
       },
       "expected_content_digest_hex": "6733bf0b83ff15f1991480f037737ccb901ca3442bbcf77e63bff83736fb7dac",
-      "expected_signing_input_utf8": "{\"digest_hex\":\"6733bf0b83ff15f1991480f037737ccb901ca3442bbcf77e63bff83736fb7dac\",\"domain\":\"spt-cp/trust-snapshot-v1\",\"id\":\"snap-4\",\"issued_ms\":9007199254740993,\"issuer_ids\":[\"iss-a\"],\"prev_snapshot_id\":null}",
-      "expected_signing_input_hex": "7b226469676573745f686578223a2236373333626630623833666631356631393931343830663033373733376363623930316361333434326262636637376536336266663833373336666237646163222c22646f6d61696e223a227370742d63702f74727573742d736e617073686f742d7631222c226964223a22736e61702d34222c226973737565645f6d73223a393030373139393235343734303939332c226973737565725f696473223a5b226973732d61225d2c22707265765f736e617073686f745f6964223a6e756c6c7d",
-      "expected_signing_input_sha256": "151d3f943489f09373391dacc08122b0dac2473dbac49ec80d74e4d451a96497",
-      "expected_signature_hex": "b65686284879a61ff88dab503ea7d23e580b479ad6de681cc49a9903fbc5415f770f4594c61c908190634fc061c9972fb0f82d17211683b5f79a42707e14810e"
+      "expected_signing_input_utf8": "{\"alg\":\"EdDSA\",\"digest_hex\":\"6733bf0b83ff15f1991480f037737ccb901ca3442bbcf77e63bff83736fb7dac\",\"domain\":\"spt-cp/trust-snapshot-v2\",\"id\":\"snap-4\",\"issued_ms\":9007199254740993,\"issuer_ids\":[\"iss-a\"],\"prev_snapshot_id\":null}",
+      "expected_signing_input_hex": "7b22616c67223a224564445341222c226469676573745f686578223a2236373333626630623833666631356631393931343830663033373733376363623930316361333434326262636637376536336266663833373336666237646163222c22646f6d61696e223a227370742d63702f74727573742d736e617073686f742d7632222c226964223a22736e61702d34222c226973737565645f6d73223a393030373139393235343734303939332c226973737565725f696473223a5b226973732d61225d2c22707265765f736e617073686f745f6964223a6e756c6c7d",
+      "expected_signing_input_sha256": "7f93aa16c5dd6b261f397628c24cf6a75413fa9da2bf46d1f64880ecf05c05b4",
+      "expected_signature_hex": "e38fc2b709d033598adc1db4e07e6f6e1428ac14dd19838a9ebf9e83263272e39b4fb6ff10b34c239faa68d3304c0de5fe4d04baa3460cad2e104ef3bb0d4805"
     }
   ],
   "negative_vectors": [
     {
       "name": "trapA_declaration_order",
       "why": "Keys in struct/macro order instead of sorted. A naive Go struct produces this.",
-      "wrong_signing_input_utf8": "{\"domain\":\"spt-cp/trust-snapshot-v1\",\"id\":\"snap-1\",\"issued_ms\":1000,\"issuer_ids\":[\"iss-a\",\"iss-b\"],\"digest_hex\":\"5bb5efda9659eeb68b819502b9bcd4f2dde8b03cbe72baf2722fdb307f258648\",\"prev_snapshot_id\":null}",
+      "wrong_signing_input_utf8": "{\"domain\":\"spt-cp/trust-snapshot-v2\",\"alg\":\"EdDSA\",\"id\":\"snap-1\",\"issued_ms\":1000,\"issuer_ids\":[\"iss-a\",\"iss-b\"],\"digest_hex\":\"5bb5efda9659eeb68b819502b9bcd4f2dde8b03cbe72baf2722fdb307f258648\",\"prev_snapshot_id\":null}",
       "verifies_against_v1_signature": false
     },
     {
       "name": "trapB_omitempty_prev",
       "why": "prev_snapshot_id dropped because the impl mirrored the struct's on-disk Serialize (skip_serializing_if / omitempty) instead of signing_input's always-present null. Only differs at the FIRST snapshot.",
-      "wrong_signing_input_utf8": "{\"digest_hex\":\"5bb5efda9659eeb68b819502b9bcd4f2dde8b03cbe72baf2722fdb307f258648\",\"domain\":\"spt-cp/trust-snapshot-v1\",\"id\":\"snap-1\",\"issued_ms\":1000,\"issuer_ids\":[\"iss-a\",\"iss-b\"]}",
+      "wrong_signing_input_utf8": "{\"alg\":\"EdDSA\",\"digest_hex\":\"d62876aad859be1ab25de2a472872a79a499f23e1297c834c1cac56ff56dfeb0\",\"domain\":\"spt-cp/trust-snapshot-v2\",\"id\":\"snap-1\",\"issued_ms\":1000,\"issuer_ids\":[\"iss-a\",\"iss-b\"]}",
       "verifies_against_v1_signature": false
     },
     {
