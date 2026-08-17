@@ -81,7 +81,109 @@ type Input struct {
 // derives the leaf-scope commitment (CLeaf) from them and verifies, so the proof
 // is bound to the leaf CT actually presented. The lightweight offline verifier
 // stays gnark-free; ZK chain verification is strictly opt-in.
-type ChainVerifierFunc func(proof []byte, h0 *big.Int, leafMaxAmount uint64, leafCurrency string, maxDepth uint64) error
+// regRoot is the Merkle root of the verifier's OWN registered-CT-issuer set. It
+// is the second security-critical binding on this seam and it used to be
+// invisible: the parameter did not exist, so the closure had to capture a root
+// from somewhere, and nothing here could supply, inspect or assert it. An
+// implementation that bound the proof to a root the PROVER produced would accept
+// a chain whose hops were signed by keys of the prover's choosing — a soundness
+// failure, not a freshness one — and it would look identical from this package.
+// Both in-repo examples of the call sequence (cmd/zk-bench, cmd/loadbench) feed
+// ProveChain's returned root straight back into VerifyChain, which is correct for
+// a benchmark and is the shape a reader copies.
+//
+// Passing it explicitly is a nudge, not a guarantee — a closure may ignore a
+// parameter. EnableChainZK is what turns it into an assertion.
+type ChainVerifierFunc func(proof []byte, h0, regRoot *big.Int, leafMaxAmount uint64, leafCurrency string, maxDepth uint64) error
+
+// ChainSelfTestVector is a known-good chain proof together with the public
+// inputs it was produced for.
+//
+// The OPERATOR supplies it, because only they know which artifacts their
+// injected verifier was built against; a vector shipped with this package would
+// not verify against a deployment that built its own circuit, and "skip with a
+// warning" is the shape that decays into never running. The engine supplies the
+// discipline: which perturbations to try and what each one proves.
+type ChainSelfTestVector struct {
+	Proof         []byte
+	H0            *big.Int
+	LeafMaxAmount uint64
+	LeafCurrency  string
+	MaxDepth      uint64
+}
+
+// EnableChainZK turns on the optional ZK N-hop mode, and refuses to do so unless
+// the injected verifier demonstrably binds every public input.
+//
+// WHY THIS IS A CONSTRUCTOR AND NOT A FIELD. The binding lives inside a closure
+// this package cannot read. Documenting the requirement puts the security
+// property in a comment an integrator may not reach — and the type's own comment
+// previously explained the CLeaf binding in detail while never mentioning the
+// registry root at all. So the property is asserted instead: the verifier is
+// exercised against a known-good vector, then once per public input with that
+// input perturbed, and every perturbation MUST fail. A closure that ignores an
+// input passes the baseline and fails its perturbation, here, at startup, rather
+// than in production against a chain it should have rejected.
+//
+// This is the runtime form of what scripts/mutate-*.sh do in CI: a guard that
+// has never been observed failing is indistinguishable from one that cannot.
+//
+// Groth16 verification is exact in its public inputs, so any perturbation breaks
+// the pairing check for a correctly-wired verifier. A perturbation that still
+// verifies means that input is not reaching the verification equation.
+func (e *Engine) EnableChainZK(cv ChainVerifierFunc, trustedIssuerRoot *big.Int, vec ChainSelfTestVector) error {
+	if cv == nil {
+		return fmt.Errorf("EnableChainZK: nil ChainVerifierFunc")
+	}
+	if trustedIssuerRoot == nil {
+		return fmt.Errorf("EnableChainZK: no trusted issuer root — ZK mode cannot be enabled " +
+			"without the verifier's own registered-CT-issuer set to bind proofs against")
+	}
+	if len(vec.Proof) == 0 || vec.H0 == nil {
+		return fmt.Errorf("EnableChainZK: self-test vector is incomplete (proof and H0 are required)")
+	}
+
+	if err := cv(vec.Proof, vec.H0, trustedIssuerRoot, vec.LeafMaxAmount, vec.LeafCurrency, vec.MaxDepth); err != nil {
+		return fmt.Errorf("EnableChainZK: the self-test vector does not verify through the injected "+
+			"verifier: %w. The vector and the verifier disagree — wrong artifacts, a stale "+
+			"verifying key, or a root that is not the one the vector was proved against", err)
+	}
+
+	bump := func(x *big.Int) *big.Int { return new(big.Int).Add(x, big.NewInt(1)) }
+	badProof := append([]byte(nil), vec.Proof...)
+	badProof[len(badProof)/2] ^= 0x01
+
+	probes := []struct {
+		binding string
+		proves  string
+		err     error
+	}{
+		{"H0", "the proof is bound to the presented CAT's human anchor",
+			cv(vec.Proof, bump(vec.H0), trustedIssuerRoot, vec.LeafMaxAmount, vec.LeafCurrency, vec.MaxDepth)},
+		{"RegRoot", "the proof is bound to THIS verifier's issuer set, not one the prover chose",
+			cv(vec.Proof, vec.H0, bump(trustedIssuerRoot), vec.LeafMaxAmount, vec.LeafCurrency, vec.MaxDepth)},
+		{"leafMaxAmount", "CLeaf is derived from the presented leaf's amount ceiling",
+			cv(vec.Proof, vec.H0, trustedIssuerRoot, vec.LeafMaxAmount+1, vec.LeafCurrency, vec.MaxDepth)},
+		{"leafCurrency", "CLeaf is derived from the presented leaf's currency",
+			cv(vec.Proof, vec.H0, trustedIssuerRoot, vec.LeafMaxAmount, vec.LeafCurrency+"X", vec.MaxDepth)},
+		{"maxDepth", "the chain length is bounded by D taken from the CAT",
+			cv(vec.Proof, vec.H0, trustedIssuerRoot, vec.LeafMaxAmount, vec.LeafCurrency, vec.MaxDepth+1)},
+		{"proof bytes", "the proof itself is checked rather than assumed",
+			cv(badProof, vec.H0, trustedIssuerRoot, vec.LeafMaxAmount, vec.LeafCurrency, vec.MaxDepth)},
+	}
+	for _, p := range probes {
+		if p.err == nil {
+			return fmt.Errorf("EnableChainZK: REFUSING to enable ZK chain mode — the injected "+
+				"verifier accepted a proof with %s perturbed, so it does not bind that input. "+
+				"It should establish that %s. Until it does, a ZK-mode chain proves less than "+
+				"the cleartext walk it replaces", p.binding, p.proves)
+		}
+	}
+
+	e.chainVerifier = cv
+	e.trustedIssuerRoot = trustedIssuerRoot
+	return nil
+}
 
 // Engine runs the eight-step enforcement using a Trust Registry for key
 // resolution and revocation.
@@ -89,9 +191,13 @@ type Engine struct {
 	Registry trustregistry.Registry
 	replay   *replayCache
 
-	// ChainVerifier, if set, enables the optional ZK N-hop mode (Input.ChainProof).
-	// Left nil, the engine is gnark-free and uses the cleartext chain walk only.
-	ChainVerifier ChainVerifierFunc
+	// UNEXPORTED, deliberately: set only through EnableChainZK, which refuses
+	// unless the injected verifier demonstrably binds every public input. An
+	// assignable field would let a deployment enable ZK mode with a closure that
+	// binds nothing, and nothing here could tell. Left unset, the engine is
+	// gnark-free and uses the cleartext chain walk only.
+	chainVerifier     ChainVerifierFunc
+	trustedIssuerRoot *big.Int
 
 	// StatusResolver, if set, enables per-token status-list revocation
 	// (docs/spec/STATUS-LIST.md). It holds verified, cached Status Lists and is
@@ -620,8 +726,9 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 // The intermediate hop scopes remain hidden; only the endpoints are in clear.
 // Still gated behind an explicit, operator-opted-in ChainVerifier.
 func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in Input) (map[string]any, error) {
-	if e.ChainVerifier == nil {
-		return nil, fmt.Errorf("a ZK chain proof was presented but no ChainVerifier is configured")
+	if e.chainVerifier == nil {
+		return nil, fmt.Errorf("a ZK chain proof was presented but ZK chain mode is not enabled " +
+			"(see Engine.EnableChainZK, which self-tests the injected verifier before enabling it)")
 	}
 	if in.ChainH0 == nil {
 		return nil, fmt.Errorf("ZK chain mode requires the H0 public input")
@@ -693,7 +800,7 @@ func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in I
 	if !ok {
 		return nil, fmt.Errorf("CAT missing delegation_depth_max")
 	}
-	if err := e.ChainVerifier(in.ChainProof, in.ChainH0, uint64(maxAmt), currency, uint64(catMax)); err != nil {
+	if err := e.chainVerifier(in.ChainProof, in.ChainH0, e.trustedIssuerRoot, uint64(maxAmt), currency, uint64(catMax)); err != nil {
 		return nil, fmt.Errorf("ZK chain proof invalid: %w", err)
 	}
 

@@ -78,28 +78,57 @@ func TestChainVerifierFunc_Injection(t *testing.T) {
 	// Exactly what a Domain B operator injects: derive CLeaf from the leaf scope,
 	// and bind the proof to the operator's OWN trusted registry root (regRoot is
 	// captured from the operator's registry, not carried in the proof).
-	var cv verifier.ChainVerifierFunc = func(p []byte, anchor *big.Int, leafMax uint64, leafCur string, d uint64) error {
+	// The root now arrives as a PARAMETER rather than being captured, so the
+	// engine can perturb it and prove the closure binds it.
+	var cv verifier.ChainVerifierFunc = func(p []byte, anchor, root *big.Int, leafMax uint64, leafCur string, d uint64) error {
 		cleaf := zkproof.LeafScopeCommitment(leafMax, zkproof.CurrencyCode(leafCur))
-		return art.VerifyChain(p, anchor, cleaf, regRoot, d)
+		return art.VerifyChain(p, anchor, cleaf, root, d)
 	}
 
 	// Bound to the real leaf scope (5000 USD, depth 3) → verifies.
-	if err := cv(proof, h0, 5000, "USD", 3); err != nil {
+	if err := cv(proof, h0, regRoot, 5000, "USD", 3); err != nil {
 		t.Fatalf("valid proof rejected through the seam: %v", err)
 	}
 	// A different claimed leaf scope must NOT verify (the CLeaf binding).
-	if err := cv(proof, h0, 9999, "USD", 3); err == nil {
+	if err := cv(proof, h0, regRoot, 9999, "USD", 3); err == nil {
 		t.Error("proof accepted for a leaf scope it was not made for")
 	}
 	// A different currency must NOT verify.
-	if err := cv(proof, h0, 5000, "EUR", 3); err == nil {
+	if err := cv(proof, h0, regRoot, 5000, "EUR", 3); err == nil {
 		t.Error("proof accepted for a different currency")
 	}
 
-	// The engine carries the injected verifier.
+	vec := verifier.ChainSelfTestVector{
+		Proof: proof, H0: h0, LeafMaxAmount: 5000, LeafCurrency: "USD", MaxDepth: 3,
+	}
+
+	// A correctly-wired verifier passes the whole battery and ZK mode enables.
 	eng := verifier.New(nil)
-	eng.ChainVerifier = cv
-	if eng.ChainVerifier == nil {
-		t.Error("engine did not retain the injected ChainVerifier")
+	if err := eng.EnableChainZK(cv, regRoot, vec); err != nil {
+		t.Fatalf("a correctly-wired verifier was refused: %v", err)
+	}
+
+	// And the battery is not decorative. A closure that ignores the registry
+	// root — the exact mistake the parameter was added to expose, and the shape
+	// cmd/zk-bench models — must be REFUSED, not merely warned about.
+	ignoresRoot := func(p []byte, anchor, _ *big.Int, leafMax uint64, leafCur string, d uint64) error {
+		cleaf := zkproof.LeafScopeCommitment(leafMax, zkproof.CurrencyCode(leafCur))
+		return art.VerifyChain(p, anchor, cleaf, regRoot, d) // captured, not the argument
+	}
+	eng2 := verifier.New(nil)
+	if err := eng2.EnableChainZK(ignoresRoot, regRoot, vec); err == nil {
+		t.Fatal("SECURITY: a verifier that ignores the trusted issuer root was enabled; " +
+			"it would accept a chain signed by keys the prover chose")
+	}
+
+	// A verifier that ignores the leaf scope must be refused too — same
+	// principle, different binding.
+	ignoresLeaf := func(p []byte, anchor, root *big.Int, _ uint64, _ string, d uint64) error {
+		cleaf := zkproof.LeafScopeCommitment(5000, zkproof.CurrencyCode("USD"))
+		return art.VerifyChain(p, anchor, cleaf, root, d)
+	}
+	eng3 := verifier.New(nil)
+	if err := eng3.EnableChainZK(ignoresLeaf, regRoot, vec); err == nil {
+		t.Fatal("SECURITY: a verifier that ignores the presented leaf scope was enabled")
 	}
 }
