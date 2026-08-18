@@ -131,13 +131,38 @@ type ChainSelfTestVector struct {
 // Groth16 verification is exact in its public inputs, so any perturbation breaks
 // the pairing check for a correctly-wired verifier. A perturbation that still
 // verifies means that input is not reaching the verification equation.
-func (e *Engine) EnableChainZK(cv ChainVerifierFunc, trustedIssuerRoot *big.Int, vec ChainSelfTestVector) error {
+// # maxLeafWindow bounds a known gap, and is required
+//
+// The ZK path hides intermediate hops, so it checks NEITHER their expiry NOR
+// their revocation status — the cleartext walk does both. That gap is tracked
+// privately and is not closed by this parameter.
+//
+// What this parameter does is BOUND it. Without a bound, a revoked intermediate
+// keeps granting authority until the ORIGINAL grant expires, which may be
+// months. With one, the exposure is capped at the window: the holder must
+// re-present a leaf whose lifetime fits inside it.
+//
+// Set it at or below the status-list TTL. Revocation is not instantaneous on
+// the cleartext path either — it is only as fresh as the cached status list —
+// so matching the two makes the paths comparable rather than making one
+// perfect. That comparison is the honest way to describe this to an operator.
+//
+// Required, with no default. A zero value would mean "unbounded", which is the
+// state this exists to prevent, and a default would let a deployment inherit a
+// number nobody chose for their revocation cadence.
+func (e *Engine) EnableChainZK(cv ChainVerifierFunc, trustedIssuerRoot *big.Int, maxLeafWindow time.Duration, vec ChainSelfTestVector) error {
 	if cv == nil {
 		return fmt.Errorf("EnableChainZK: nil ChainVerifierFunc")
 	}
 	if trustedIssuerRoot == nil {
 		return fmt.Errorf("EnableChainZK: no trusted issuer root — ZK mode cannot be enabled " +
 			"without the verifier's own registered-CT-issuer set to bind proofs against")
+	}
+	if maxLeafWindow <= 0 {
+		return fmt.Errorf("EnableChainZK: maxLeafWindow must be positive. The ZK path does not " +
+			"check intermediate hops for expiry or revocation, so an unbounded leaf lifetime " +
+			"means a revoked intermediate keeps granting authority until the original grant " +
+			"expires. Set this at or below your status-list TTL")
 	}
 	if len(vec.Proof) == 0 || vec.H0 == nil {
 		return fmt.Errorf("EnableChainZK: self-test vector is incomplete (proof and H0 are required)")
@@ -182,6 +207,7 @@ func (e *Engine) EnableChainZK(cv ChainVerifierFunc, trustedIssuerRoot *big.Int,
 
 	e.chainVerifier = cv
 	e.trustedIssuerRoot = trustedIssuerRoot
+	e.maxZKLeafWindow = maxLeafWindow
 	return nil
 }
 
@@ -198,6 +224,7 @@ type Engine struct {
 	// gnark-free and uses the cleartext chain walk only.
 	chainVerifier     ChainVerifierFunc
 	trustedIssuerRoot *big.Int
+	maxZKLeafWindow   time.Duration
 
 	// StatusResolver, if set, enables per-token status-list revocation
 	// (docs/spec/STATUS-LIST.md). It holds verified, cached Status Lists and is
@@ -777,6 +804,34 @@ func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in I
 	}
 	if err := checkChainTokenTemporal("leaf CT", leaf); err != nil {
 		return nil, err
+	}
+	// BOUND THE HIDDEN-HOP GAP.
+	//
+	// This path verifies neither the expiry nor the revocation status of the
+	// intermediate hops, because they are hidden. That is a known open finding
+	// and this check does not close it.
+	//
+	// It caps it. A revoked intermediate would otherwise keep granting authority
+	// until the ORIGINAL grant expired — potentially months — because nothing on
+	// this path ever consults its status. Capping the leaf's remaining lifetime
+	// forces the holder back for a fresh leaf within the window, which is the
+	// point at which a revocation the publisher has since distributed can bite.
+	//
+	// Checked against the LEAF, not the transaction token, deliberately: the
+	// leaf is the capability the hidden chain terminates in, and it is what a
+	// compromised intermediate would mint. Bounding the transaction token would
+	// bound the wrong thing — it is already short-lived by construction.
+	leafExp, ok := intClaim(leaf, "exp")
+	if !ok {
+		return nil, fmt.Errorf("leaf CT missing exp")
+	}
+	if remaining := time.Until(time.Unix(leafExp, 0)); remaining > e.maxZKLeafWindow {
+		return nil, fmt.Errorf(
+			"ZK chain mode: leaf CT has %s remaining, over the %s bound. This path does not "+
+				"check hidden hops for revocation, so a long-lived leaf extends the window in "+
+				"which a revoked intermediate still grants authority. Issue a shorter leaf, or "+
+				"present the cleartext chain",
+			remaining.Round(time.Second), e.maxZKLeafWindow)
 	}
 
 	// Bind the proof to the PRESENTED tokens: the leaf-scope commitment (CLeaf) is

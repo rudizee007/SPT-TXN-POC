@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	eddsabn254 "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
@@ -104,8 +105,21 @@ func TestChainVerifierFunc_Injection(t *testing.T) {
 
 	// A correctly-wired verifier passes the whole battery and ZK mode enables.
 	eng := verifier.New(nil)
-	if err := eng.EnableChainZK(cv, regRoot, vec); err != nil {
+	if err := eng.EnableChainZK(cv, regRoot, 5*time.Minute, vec); err != nil {
 		t.Fatalf("a correctly-wired verifier was refused: %v", err)
+	}
+
+	// An unbounded leaf window is refused. Without a bound, a revoked
+	// intermediate keeps granting authority until the original grant expires,
+	// and this path never consults its status — so "unbounded" is the exact
+	// state the parameter exists to prevent, and a zero value must not be
+	// silently read as "no limit".
+	engNoBound := verifier.New(nil)
+	if err := engNoBound.EnableChainZK(cv, regRoot, 0, vec); err == nil {
+		t.Fatal("SECURITY: ZK mode enabled with an unbounded leaf window")
+	}
+	if err := engNoBound.EnableChainZK(cv, regRoot, -time.Second, vec); err == nil {
+		t.Fatal("SECURITY: ZK mode enabled with a negative leaf window")
 	}
 
 	// And the battery is not decorative. A closure that ignores the registry
@@ -116,7 +130,7 @@ func TestChainVerifierFunc_Injection(t *testing.T) {
 		return art.VerifyChain(p, anchor, cleaf, regRoot, d) // captured, not the argument
 	}
 	eng2 := verifier.New(nil)
-	if err := eng2.EnableChainZK(ignoresRoot, regRoot, vec); err == nil {
+	if err := eng2.EnableChainZK(ignoresRoot, regRoot, 5*time.Minute, vec); err == nil {
 		t.Fatal("SECURITY: a verifier that ignores the trusted issuer root was enabled; " +
 			"it would accept a chain signed by keys the prover chose")
 	}
@@ -128,7 +142,7 @@ func TestChainVerifierFunc_Injection(t *testing.T) {
 		return art.VerifyChain(p, anchor, cleaf, root, d)
 	}
 	eng3 := verifier.New(nil)
-	if err := eng3.EnableChainZK(ignoresLeaf, regRoot, vec); err == nil {
+	if err := eng3.EnableChainZK(ignoresLeaf, regRoot, 5*time.Minute, vec); err == nil {
 		t.Fatal("SECURITY: a verifier that ignores the presented leaf scope was enabled")
 	}
 }
