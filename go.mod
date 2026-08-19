@@ -9,7 +9,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/miekg/pkcs11 v1.1.2
 	github.com/rs/zerolog v1.34.0
-	github.com/rudizee007/spt-txn-pep v0.4.0
+	github.com/rudizee007/spt-txn-pep v0.4.1
 	golang.org/x/crypto v0.55.0
 	golang.org/x/sys v0.47.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa
