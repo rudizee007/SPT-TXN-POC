@@ -72,7 +72,7 @@
 <main class="legal">
   <div class="legal-eyebrow">Legal</div>
   <h1>Privacy Policy</h1>
-  <div class="updated">Last updated: 25 June 2026</div>
+  <div class="updated">Last updated: 19 August 2026</div>
 
   <p class="lede">This site is built privacy-first, and this policy says so plainly: we collect the minimum a web server needs to run securely, we set no cookies, and we run no trackers, analytics, or advertising.</p>
 
@@ -84,12 +84,13 @@
   <ul>
     <li><strong>Server access logs</strong> — your IP address, timestamp, the request line and HTTP status, and your browser’s user-agent string, recorded by the web server and TLS proxy.</li>
     <li><strong>Firewall events</strong> — connection metadata used for automated abuse prevention (for example, rate-limiting and brute-force throttling of repeated connection attempts).</li>
+    <li><strong>Service logs</strong> — for the PQChecker live scan only: the hostname you submitted, the outcome, and how long the scan took, recorded by the scanning service. Described in full below.</li>
   </ul>
   <p>We do <strong>not</strong> use cookies, local storage, web beacons, fingerprinting, third-party analytics suites, advertising networks, or any third-party tracking on the Site. Every asset, including fonts, is served from this domain — your browser makes <strong>no third-party requests</strong>, so no data is shared with any external provider. Any analysis of traffic is performed <strong>in-house</strong> on the server access logs described above, using a self-hosted log analyzer; nothing is added to your browser and no log data leaves our server.</p>
 
   <div class="callout"><strong>Travel Rule demonstration endpoint.</strong> The technical demonstration API (the inter-VASP Travel Rule endpoint) is privacy-preserving by design: it exchanges <em>zero-knowledge attestations</em>, not personal data. Originator and beneficiary identifiers, account numbers and amounts are <strong>not transmitted in cleartext</strong> and are not stored by this Site. This is the core property the SPT-Txn framework exists to demonstrate.</p></div>
 
-  <div class="callout"><strong>PQChecker live scan.</strong> The optional <em>Scan a host</em> function is the one place the Site accepts input from you. The hostname you submit is sent to this server, which performs the TLS handshakes on your behalf and returns the result. That hostname and the outcome are written to our server logs under the retention period below, and the result is cached for roughly fifteen minutes so repeat requests for the same host cost nothing. Submissions are rate-limited by IP address. Please do not submit a hostname you consider confidential: although the scanner refuses to connect to non-public addresses, submitting an internal name still records that the name exists. Everything else in PQChecker, including receipt verification, runs entirely in your browser and sends nothing.</div>
+  <div class="callout"><strong>PQChecker live scan.</strong> The optional <em>Scan a host</em> function is the one place the Site accepts input from you. The hostname you submit is sent to this server, which performs the TLS handshakes on your behalf and returns the result. That hostname and the outcome are written to our server logs under the retention period below, and the result is cached for roughly fifteen minutes so repeat requests for the same host cost nothing. Submissions are rate-limited by IP address. The host you scan sees a connection from this server, not from you — your address is never revealed to the site being scanned. Please do not submit a hostname you consider confidential: although the scanner refuses to connect to non-public addresses, submitting an internal name still records that the name exists. Everything else in PQChecker, including receipt verification, runs entirely in your browser and sends nothing.</div>
 
   <h2>Why we process it</h2>
   <p>We process the limited log data above for our <strong>legitimate interests</strong> in operating, understanding, and protecting the Site: diagnosing faults, ensuring availability and integrity, understanding aggregate visitor traffic and trends (including distinguishing automated crawlers and bots from human visitors), and detecting and preventing abuse, attacks, and automated scanning. We do not use it to build profiles of individuals, and we do not market to you.</p>
@@ -102,6 +103,7 @@
 
   <h2>How we protect it</h2>
   <p>All traffic to the Site is encrypted in transit with TLS. The Site runs on a hardened, least-privilege server with default-deny networking and strict process isolation. Security is a design goal of this project, not an afterthought.</p>
+  <p>In keeping with that: this is a research site, it has not been externally audited, and nothing here is a production service. We say so plainly rather than implying assurances we have not earned.</p>
 
   <h2>International processing</h2>
   <p>The Site is operated by a Cayman Islands SEZC entity and may be hosted in or accessed from multiple jurisdictions. By using the Site you understand that the limited log data described above may be processed in those locations.</p>
