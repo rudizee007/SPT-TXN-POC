@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PQChecker — post-quantum posture across a transaction chain</title>
-<meta name="description" content="Offline-verifiable post-quantum TLS posture check. Eight steps, two clocks, weakest-hop across a chain. No backend, no data leaves your browser.">
+<meta name="description" content="Offline-verifiable post-quantum TLS posture check. Eight steps, two clocks, weakest-hop across a chain. Verification runs entirely in your browser; the optional live scan sends only a hostname.">
 <style>
 /* ============================================================
    PQChecker — Violet Sky Security FOSS
@@ -260,8 +260,9 @@ a{color:var(--pq)}
     This one runs eight steps against <b>every hop a transaction actually traverses</b>, separates the
     two clocks that PQ migration runs on, and fails closed at the exact step. Posture is not inherited:
     a quantum-safe front door in front of a classical hop is classical end to end.
-    <b>No backend, no data leaves your browser</b> — the handshakes happen in a local probe, this page
-    only verifies and renders the receipt.
+    <b>Verification runs entirely in your browser</b> — the handshakes happen in a local probe, this
+    page only verifies and renders the receipt. The one exception is the optional live scan, which
+    sends the hostname you type to this site and performs the handshakes there.
   </p>
 </header>
 
