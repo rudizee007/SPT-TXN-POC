@@ -6,7 +6,7 @@ require (
 	filippo.io/mldsa v0.0.0-20260711112038-ff3f469cee29
 	github.com/consensys/gnark v0.15.0
 	github.com/consensys/gnark-crypto v0.20.1
-	github.com/envoyproxy/go-control-plane/envoy v1.37.0
+	github.com/envoyproxy/go-control-plane/envoy v1.39.0
 	github.com/miekg/pkcs11 v1.1.2
 	github.com/rs/zerolog v1.34.0
 	github.com/rudizee007/spt-txn-pep v0.4.0
