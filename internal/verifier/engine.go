@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"sync"
@@ -357,6 +358,97 @@ func (e *Engine) Verify(ctx context.Context, in Input) Decision {
 	return Decision{Allow: true}
 }
 
+// SettlementFacts are the authorization facts a SETTLER needs, extracted from
+// tokens the engine has verified. Every field here comes from an issuer-signed
+// token, not from any caller-supplied summary — that is the entire point of
+// returning them.
+type SettlementFacts struct {
+	HumanAnchor string // the CAT's human_anchor, hex — who is accountable
+	MaxAmount   string // the leaf CT's max_amount ceiling, decimal — the granted limit
+	Currency    string // the leaf CT's currency, if the scope pins one
+}
+
+// VerifyForSettlement runs the enforcement engine WITHOUT step 5 (DPoP
+// proof-of-possession) and returns the signed authorization facts.
+//
+// # Why step 5 is skipped, and why that is correct rather than a shortcut
+//
+// Step 5 proves the PRESENTER holds the holder key bound in the token. That is
+// the payer-side GATE's obligation at decision time: it holds the key and
+// proves possession when it decides. A SETTLER is not re-presenting the token;
+// it is checking that a valid authorization was issued and binds THIS payment.
+// Settlement additionally requires the payer's own on-chain signature, which no
+// captured token can supply — so proof-of-possession grants a settler nothing,
+// while authenticity of the delegation (steps 1-4, 6, 7, 8) is exactly what the
+// settler must not take on trust from a JSON summary.
+//
+// This is the verification that lets a settler derive the ceiling and the
+// humanAnchor from issuer-signed tokens instead of an editable document —
+// closing the "unsigned decision" gap (review #6 A1) using the authorization
+// object the spec already defines, with no new signing key.
+//
+// It runs the SAME step functions as Verify, in the same order, minus step 5.
+// One implementation of each step; this is not a second verifier.
+func (e *Engine) VerifyForSettlement(ctx context.Context, in Input) (SettlementFacts, Decision) {
+	var facts SettlementFacts
+
+	txClaims, err := e.step1Signature(ctx, in.TxnToken)
+	if err != nil {
+		return facts, deny(1, err)
+	}
+	if err := step2Expiry(txClaims); err != nil {
+		return facts, deny(2, err)
+	}
+	if err := step3Audience(txClaims, in.Audience); err != nil {
+		return facts, deny(3, err)
+	}
+	if err := e.step4Revocation(ctx, txClaims); err != nil {
+		return facts, deny(4, err)
+	}
+	if err := e.checkStatus(txClaims); err != nil {
+		return facts, deny(4, fmt.Errorf("SPT-Txn status: %w", err))
+	}
+	// Step 5 (DPoP) deliberately omitted — see the doc comment.
+	var ctClaims map[string]any
+	if in.ChainProof != nil {
+		ctClaims, err = e.step6ChainZK(ctx, txClaims, in)
+	} else {
+		ctClaims, err = e.step6Chain(ctx, txClaims, in.CT, in.CAT, in.CTChain)
+	}
+	if err != nil {
+		return facts, deny(6, err)
+	}
+	if err := checkTxnLifetime(txClaims, ctClaims); err != nil {
+		return facts, deny(6, err)
+	}
+	if err := step7Scope(ctClaims, in.Txn); err != nil {
+		return facts, deny(7, err)
+	}
+	if err := step8Context(txClaims, in.Txn); err != nil {
+		return facts, deny(8, err)
+	}
+
+	// Facts, extracted only after every check above passed. The anchor comes
+	// from the SPT-Txn token (bound in step 6 to equal the CAT's); the ceiling
+	// from the leaf CT scope that step 7 checked the payment against.
+	if a, ok := txClaims["human_anchor"].(string); ok {
+		facts.HumanAnchor = a
+	}
+	scope, _ := ctClaims[effectiveScopeClaim].(map[string]any)
+	if scope == nil {
+		scope, _ = ctClaims["capability_scope"].(map[string]any)
+	}
+	if scope != nil {
+		if m, ok := scope["max_amount"]; ok {
+			facts.MaxAmount = fmt.Sprintf("%v", m)
+		}
+		if c, ok := scope["currency"].(string); ok {
+			facts.Currency = c
+		}
+	}
+	return facts, Decision{Allow: true}
+}
+
 // ── steps ────────────────────────────────────────────────────────────────────
 
 func (e *Engine) step1Signature(ctx context.Context, token string) (map[string]any, error) {
@@ -524,6 +616,13 @@ func (e *Engine) step4Revocation(ctx context.Context, txClaims map[string]any) e
 func (e *Engine) step5DPoP(txClaims map[string]any, token, proof, htm, htu string) error {
 	// Bind the proof to this specific token (ath) and reject replays (jti).
 	ath := dpop.ATH(token)
+	// dpop.Verify checks ath only when it is given one — correct for that package,
+	// which also serves flows with no access token. This engine is never in one of
+	// those flows: a token is being presented, so the proof must be bound to it.
+	// Assert that rather than assume it, here where the assumption is true.
+	if ath == "" {
+		return fmt.Errorf("cannot bind the DPoP proof to the presented token")
+	}
 	jkt, jti, err := dpop.Verify(proof, htm, htu, ath, 0)
 	if err != nil {
 		return fmt.Errorf("DPoP proof: %w", err)
@@ -700,9 +799,15 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 		// Every dimension present here is ⊆ its parent (checked just above)
 		// and was already present in `effective`, so this only ever tightens;
 		// dimensions this hop dropped keep their tighter ancestor value.
-		for k, v := range ctScope {
-			effective[k] = v
-		}
+		//
+		// The overlay recurses into nested objects. A shallow assignment would
+		// replace a whole nested object with the hop's version, and Contains
+		// inspects only the CHILD's keys inside an object — so a hop could drop
+		// a key *inside* an object and the ancestor's value for it would be
+		// discarded. That is the same dropped-dimension widening this block
+		// exists to defeat, one level down, and the comment above would have
+		// been false at any depth greater than zero.
+		overlayScope(effective, ctScope)
 
 		// Advance to the next hop.
 		parentClaims = ctClaims
@@ -843,9 +948,24 @@ func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in I
 	if !ok {
 		return nil, fmt.Errorf("leaf CT missing capability_scope")
 	}
-	maxAmt, ok := scope["max_amount"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("leaf CT scope missing max_amount")
+	// The ceiling becomes a uint64 PUBLIC INPUT to the proof, and that conversion
+	// is the only thing binding the proof to the presented leaf's ceiling. A bare
+	// uint64(float64) here is unsafe in three separate ways, so it is not used:
+	//
+	//   - Out of range is IMPLEMENTATION-DEFINED in Go. A wei-scale ceiling above
+	//     2^64 yields 2^63 on amd64 and saturates to 2^64-1 on arm64, so every
+	//     large ceiling collapses onto one constant and a proof for a legitimately
+	//     attenuated chain would verify against a much larger presented ceiling.
+	//   - A negative ceiling converts to the MAXIMUM uint64 on amd64 and to 0 on
+	//     arm64: the same signed token, opposite verdicts per architecture.
+	//   - A fractional ceiling truncates silently, so the proof is checked against
+	//     a number that is not the number in the token.
+	//
+	// Refusing is strictly better than substituting: the circuit range-checks the
+	// ceiling to 64 bits anyway, so a ceiling that does not fit is unprovable.
+	maxAmt, err := uint64Ceiling(scope["max_amount"])
+	if err != nil {
+		return nil, fmt.Errorf("leaf CT scope max_amount: %w", err)
 	}
 	currency, ok := scope["currency"].(string)
 	if !ok {
@@ -855,7 +975,11 @@ func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in I
 	if !ok {
 		return nil, fmt.Errorf("CAT missing delegation_depth_max")
 	}
-	if err := e.chainVerifier(in.ChainProof, in.ChainH0, e.trustedIssuerRoot, uint64(maxAmt), currency, uint64(catMax)); err != nil {
+	depth, err := uint64Depth(catMax)
+	if err != nil {
+		return nil, fmt.Errorf("CAT delegation_depth_max: %w", err)
+	}
+	if err := e.chainVerifier(in.ChainProof, in.ChainH0, e.trustedIssuerRoot, maxAmt, currency, depth); err != nil {
 		return nil, fmt.Errorf("ZK chain proof invalid: %w", err)
 	}
 
@@ -956,6 +1080,14 @@ func scopeOf(claims map[string]any) (tbac.Scope, error) {
 func intClaim(claims map[string]any, name string) (int64, bool) {
 	f, ok := claims[name].(float64)
 	if !ok {
+		return 0, false
+	}
+	// int64(f) is IMPLEMENTATION-DEFINED when f is out of range: an exp of 1e30
+	// becomes -2^63 on amd64 (reads as long expired — safe) and saturates to
+	// +2^63-1 on arm64 (reads as valid for the next 292 billion years — NOT
+	// safe). A claim that cannot be represented is not a claim this engine can
+	// evaluate, so it fails closed on both machines instead of one.
+	if math.IsNaN(f) || math.IsInf(f, 0) || f < math.MinInt64 || f >= math.MaxInt64 {
 		return 0, false
 	}
 	return int64(f), true
@@ -1073,4 +1205,115 @@ func unverifiedClaims(token string) (map[string]any, error) {
 		return nil, fmt.Errorf("parse payload: %w", err)
 	}
 	return m, nil
+}
+
+// uint64Ceiling converts a scope ceiling into the uint64 the ZK circuit takes as
+// a public input, refusing every value the conversion cannot carry faithfully.
+//
+// It exists because Go's float-to-unsigned conversion is implementation-defined
+// out of range and silent on truncation, and this particular conversion is the
+// binding between a proof and the ceiling in the token it is presented with. A
+// value that does not survive it exactly is not a ceiling this verifier can
+// enforce, and saying so is the only safe answer.
+func uint64Ceiling(v any) (uint64, error) {
+	if v == nil {
+		return 0, fmt.Errorf("missing")
+	}
+	r, ok := ratOf(v)
+	if !ok {
+		return 0, fmt.Errorf("is %T, not a number", v)
+	}
+	// Negative only. Zero is a legitimate maximally-narrow ceiling (it authorizes
+	// nothing), and refusing it here while issuance allows it would be exactly
+	// the issuer/verifier divergence this conversion is supposed to avoid.
+	if r.Sign() < 0 {
+		return 0, fmt.Errorf("must not be negative, got %s", r.RatString())
+	}
+	if !r.IsInt() {
+		return 0, fmt.Errorf("must be a whole number of base units, got %s", r.RatString())
+	}
+	n := r.Num()
+	if n.BitLen() > 64 {
+		return 0, fmt.Errorf("does not fit in the 64-bit public input the circuit range-checks (%s)", r.RatString())
+	}
+	return n.Uint64(), nil
+}
+
+// ratOf converts the numeric shapes a JWT claim can arrive as into an exact
+// rational. json.Number is parsed strictly as a decimal integer or decimal
+// fraction: big.Rat.SetString would otherwise accept hex, exponent and fraction
+// forms, which is the wide grammar ledger.ParseAmount exists to exclude.
+func ratOf(v any) (*big.Rat, bool) {
+	switch n := v.(type) {
+	case float64:
+		r := new(big.Rat)
+		if r.SetFloat64(n) == nil {
+			return nil, false // NaN or Inf
+		}
+		return r, true
+	case int:
+		return new(big.Rat).SetInt64(int64(n)), true
+	case int64:
+		return new(big.Rat).SetInt64(n), true
+	case uint64:
+		return new(big.Rat).SetUint64(n), true
+	case json.Number:
+		if _, err := ledger.ParseAmount(n.String()); err != nil {
+			return nil, false
+		}
+		r, ok := new(big.Rat).SetString(n.String())
+		return r, ok
+	}
+	return nil, false
+}
+
+// uint64Depth converts the CAT's delegation-depth budget into the uint64 public
+// input the ZK circuit takes.
+//
+// The cleartext chain path range-checks the budget at every hop (ctRem < 0); the
+// ZK path had no equivalent, and int64(-1) converted to uint64 is a
+// well-defined 2^64-1 — so a negative delegation_depth_max made the proof's
+// depth bound meaningless rather than refusing it. The ZK path exists precisely
+// so that hidden hops are not trusted, which is the last place to trust that the
+// issuer wrote a sane budget.
+func uint64Depth(n int64) (uint64, error) {
+	if n < 1 {
+		return 0, fmt.Errorf("must be >= 1, got %d", n)
+	}
+	return uint64(n), nil
+}
+
+// overlayScope writes src's dimensions onto dst, recursing into nested objects
+// so a dimension dropped inside an object keeps its tighter ancestor value.
+// Only dimensions src actually declares are replaced; everything else in dst
+// survives, which is what makes the result the intersection over the chain
+// rather than the leaf's own scope.
+func overlayScope(dst, src tbac.Scope) {
+	for k, v := range src {
+		sn, srcIsObj := asScopeObject(v)
+		dn, dstIsObj := asScopeObject(dst[k])
+		if srcIsObj && dstIsObj {
+			merged := tbac.Scope{}
+			for dk, dv := range dn {
+				merged[dk] = dv
+			}
+			overlayScope(merged, sn)
+			// Written back as map[string]any: tbac's containment algebra
+			// type-asserts nested objects to that, and a tbac.Scope there would
+			// read as a type mismatch.
+			dst[k] = map[string]any(merged)
+			continue
+		}
+		dst[k] = v
+	}
+}
+
+func asScopeObject(v any) (tbac.Scope, bool) {
+	switch t := v.(type) {
+	case tbac.Scope:
+		return t, true
+	case map[string]any:
+		return tbac.Scope(t), true
+	}
+	return nil, false
 }

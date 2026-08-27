@@ -20,6 +20,7 @@ import (
 	"github.com/rudizee007/spt-txn-poc/internal/ledger"
 	"github.com/rudizee007/spt-txn-poc/internal/trustregistry"
 	"github.com/rudizee007/spt-txn-poc/internal/verifier"
+	"github.com/rudizee007/spt-txn-poc/pkg/trustsnapshot"
 )
 
 // TxnContext is the concrete transaction the authorization is bound to.
@@ -61,11 +62,34 @@ type Verifier struct {
 	reg trustregistry.Registry
 }
 
-// FromSnapshot loads a Trust Registry snapshot (the locally-cached JSON
-// distributed to verifiers) and returns a ready Verifier. Verification then runs
-// fully offline.
-func FromSnapshot(path string) (*Verifier, error) {
-	reg, err := trustregistry.NewPersistentRegistry(path)
+// SnapshotOptions configures how a snapshot is verified before it becomes a root
+// of trust. It is a straight alias of the trustsnapshot options so an embedder
+// configures one thing, not two.
+type SnapshotOptions = trustsnapshot.Options
+
+// FromSignedSnapshot loads a Trust Registry snapshot and returns a ready
+// Verifier — but only after checking that the snapshot is the one the publisher
+// signed.
+//
+// It takes TWO files. The manifest is the signed head; the body is the record
+// set. Both are required, because the body alone carries no authenticity: a
+// verifier handed only a body has no root of trust and must fail closed
+// (docs/spec/TRUST-REGISTRY-SNAPSHOT.md §2).
+//
+// opts.PinnedKeys is the publication-key set. It is a SET so a key rotation has
+// an overlap window, and an empty set is refused — accepting whatever key turns
+// up is trust-on-first-use, which the spec forbids (§6). opts.MaxAge bounds
+// staleness (§7); a snapshot older than it is refused unless the operator has
+// explicitly set AllowStale for a disconnected segment.
+//
+// There is deliberately no unverified alternative. An earlier FromSnapshot took
+// a body alone and read it with os.ReadFile + json.Unmarshal, which made the
+// root of trust for every offline verification a matter of file permissions.
+// Replacing it rather than deprecating it is the point: a constructor that
+// builds a Verifier from unchecked bytes should not be an expressible operation,
+// because a deprecated one is a check a refactor can quietly re-adopt.
+func FromSignedSnapshot(manifestPath, bodyPath string, opts SnapshotOptions) (*Verifier, error) {
+	reg, err := trustregistry.OpenVerified(manifestPath, bodyPath, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -93,9 +117,10 @@ func (v *Verifier) IssuerKeys(ctx context.Context) ([]ed25519.PublicKey, error) 
 		for _, rec := range recs {
 			// Any 32-byte key in an issuer role, regardless of the KeyType label: a
 			// reused Ed25519 key carrying a wrong or blank KeyType would still be 32
-			// bytes, and the key-separation guard must still catch it (the snapshot
-			// is loaded without per-record validation, so a malformed-but-trusted
-			// record is possible). Issuer roles are Ed25519 today; a future PQC
+			// bytes, and the key-separation guard must still catch it. (Records are
+			// validated at load now, so a malformed record no longer reaches here —
+			// but this guard does not depend on that, and should not start to.)
+			// Issuer roles are Ed25519 today; a future PQC
 			// issuance key would not be 32 bytes and would need a matching change
 			// here and in the receipt key type.
 			if len(rec.PublicKey) == ed25519.PublicKeySize {
@@ -128,4 +153,47 @@ func (v *Verifier) Verify(ctx context.Context, in Input) Decision {
 		},
 	})
 	return Decision{Allow: d.Allow, Step: d.Step, StepName: d.StepName, Reason: d.Reason}
+}
+
+// Facts are the authorization facts a settler derives from the signed tokens
+// rather than from any summary: who is accountable, and the ceiling that was
+// granted.
+type Facts struct {
+	HumanAnchor string // CAT human_anchor, hex
+	MaxAmount   string // leaf CT max_amount ceiling, decimal
+	Currency    string // leaf CT currency, if pinned
+}
+
+// VerifyForSettlement verifies a presented CAT→CT→SPT-Txn chain for a concrete
+// transaction WITHOUT proof-of-possession and returns the signed facts.
+//
+// It is the settler's entry point: the payer-side gate proves possession when
+// it decides; the settler checks that the delegation is authentic (issuer
+// signatures, revocation, chain, scope) and binds THIS payment (the context
+// hash the settler derived independently), then reads the ceiling and anchor
+// from the verified tokens. Settlement still needs the payer's on-chain
+// signature, so omitting proof-of-possession here grants a settler nothing —
+// see verifier.VerifyForSettlement for the full argument.
+//
+// A non-ALLOW Decision means the chain is not a valid authorization for this
+// transaction; the Facts are then zero and must not be used.
+func (v *Verifier) VerifyForSettlement(ctx context.Context, in Input) (Facts, Decision) {
+	f, d := v.eng.VerifyForSettlement(ctx, verifier.Input{
+		TxnToken: in.TxnToken,
+		CT:       in.CT,
+		CTChain:  in.CTChain,
+		CAT:      in.CAT,
+		Audience: in.Audience,
+		Txn: ledger.TxnContext{
+			Chain:       in.Txn.Chain,
+			Originator:  in.Txn.Originator,
+			Beneficiary: in.Txn.Beneficiary,
+			Amount:      in.Txn.Amount,
+			Currency:    in.Txn.Currency,
+			Timestamp:   in.Txn.Timestamp,
+			Extra:       in.Txn.Extra,
+		},
+	})
+	return Facts{HumanAnchor: f.HumanAnchor, MaxAmount: f.MaxAmount, Currency: f.Currency},
+		Decision{Allow: d.Allow, Step: d.Step, StepName: d.StepName, Reason: d.Reason}
 }
