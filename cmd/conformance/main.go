@@ -18,7 +18,7 @@ import (
 	"os"
 
 	"github.com/rudizee007/spt-txn-poc/internal/ledger"
-	"github.com/rudizee007/spt-txn-poc/internal/zkhash"
+	"github.com/rudizee007/spt-txn-poc/internal/zkdid"
 )
 
 type ctxVec struct {
@@ -77,7 +77,7 @@ const ts = int64(1750000000)
 func build() (vectors, error) {
 	v := vectors{
 		Version: 1,
-		Note:    "Deterministic SPT-Txn conformance vectors: spt_txn_context_hash per chain (canonical preimage, SHA-256) and humanAnchor = zkhash.Commit(secret, blinding) hex. Signatures/timestamps in real tokens are not covered here.",
+		Note:    "Deterministic SPT-Txn conformance vectors: spt_txn_context_hash per chain (canonical preimage, SHA-256) and humanAnchor = zkdid.Compute(secret, blinding), the canonical 32-byte big-endian field element, hex-encoded to 64 characters. Signatures/timestamps in real tokens are not covered here.",
 	}
 	for _, s := range samples {
 		l, err := ledger.Get(s.chain)
@@ -92,7 +92,25 @@ func build() (vectors, error) {
 		v.ContextHashes = append(v.ContextHashes, ctxVec{s.chain, s.orig, s.ben, amount, s.cur, ts, h})
 	}
 	for _, a := range anchors {
-		h := zkhash.BigOf(zkhash.Commit([]byte(a.secret), []byte(a.blinding))).Text(16)
+		// zkdid.Compute, not BigOf(...).Text(16).
+		//
+		// Text(16) renders a big.Int as MINIMAL hex: no leading zeros, variable
+		// length. The published vector for alice@example.org was 63 characters
+		// -- not a whole number of bytes, and impossible for a 32-byte value.
+		// Roughly one anchor in sixteen starts with a zero nibble, so the
+		// defect appeared for one of the two vectors and not the other.
+		//
+		// It never reached a token: zkdid.Compute marshals the field element
+		// into a fixed [32]byte and Commitment.String hex-encodes all 32. Only
+		// this file rendered it a second way -- and this file is the artifact
+		// external implementers build against, which is the worst place to
+		// publish a shape nothing else produces. An implementer padding a
+		// 63-character anchor differently from us computes a different
+		// humanAnchor commitment for the same person.
+		//
+		// Fixed by DELETING the second rendering rather than padding it: the
+		// vector now comes from the same call the token does.
+		h := zkdid.Compute([]byte(a.secret), []byte(a.blinding)).String()
 		v.HumanAnchors = append(v.HumanAnchors, anchorVec{a.secret, a.blinding, h})
 	}
 	return v, nil
