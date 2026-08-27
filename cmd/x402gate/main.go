@@ -1,6 +1,20 @@
 // Command x402gate is a proof-of-concept payer-side gate for x402 agentic
-// payments on the XRP Ledger. x402 settles a payment; this gate decides whether
-// the agent is AUTHORIZED to make it before it signs anything.
+// payments. x402 settles a payment; this gate decides whether the agent is
+// AUTHORIZED to make it before it signs anything.
+//
+// It serves two rails from one decision engine. -chain xrpl (the default, and
+// the original behavior) decides an XRPL Payment and prints the Memo/SourceTag
+// stamping. -chain base decides an EIP-3009 settlement on Base and emits a
+// payergate.Decision document (-out) for the settlement client to consume:
+// the ceiling comes from the CAT scope, the humanAnchor from the CAT itself,
+// and the context hash from the same canonical encoding every other party
+// derives independently.
+//
+// The PAYER-side gate answers "may this agent sign?", protecting the payer
+// from a compromised agent. It is not the merchant-side gateway
+// (spt-txn-gateway), which answers "may this request be served?" — opposite
+// threat models, different keys, and the two must never merge. See
+// PAYER-GATE-PLACEMENT-ADR-2026-08-27.md.
 //
 // Given an x402 payment requirement (price, currency, merchant pay-to address)
 // and the agent's capability ceiling, it mints a real CAT -> CT -> SPT-Txn chain
@@ -29,9 +43,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/cattoken"
@@ -42,6 +59,7 @@ import (
 	"github.com/rudizee007/spt-txn-poc/internal/trustregistry"
 	"github.com/rudizee007/spt-txn-poc/internal/txntoken"
 	"github.com/rudizee007/spt-txn-poc/internal/verifier"
+	"github.com/rudizee007/spt-txn-poc/pkg/payergate"
 )
 
 const (
@@ -58,13 +76,36 @@ func main() {
 	price := flag.String("price", "1000", "x402 price to pay (XRP/drops or RLUSD amount, as the merchant declares)")
 	currency := flag.String("currency", "XRP", "payment currency: XRP or RLUSD")
 	payto := flag.String("payto", defaultPay, "merchant XRPL pay-to (classic r-address)")
-	ceiling := flag.Float64("ceiling", 5000, "the agent's capability ceiling (max it may spend under its CT)")
-	sourceTag := flag.String("sourcetag", "402", "x402 SourceTag stamped on the Payment")
+	ceiling := flag.String("ceiling", "5000", "the agent's capability ceiling as a decimal string (max it may spend under its CT)")
+	sourceTag := flag.String("sourcetag", "402", "x402 SourceTag stamped on the Payment (xrpl only)")
+	chain := flag.String("chain", "xrpl", "rail to decide for: xrpl or base")
+	payerAddr := flag.String("payer", "", "the paying account (required for -chain base; 0x-hex)")
+	anchorHex := flag.String("anchor", "", "identity anchor for the CAT, 64 hex chars. "+
+		"Empty mints a fresh commitment; supplying one makes the run deterministic and "+
+		"lets a separately-run issuing authority pre-pin the same anchor")
+	out := flag.String("out", "", "write the decision document (JSON) here — the settlement client's input")
 	flag.Parse()
 
-	l, err := ledger.Get("xrpl")
+	// The chain decides the shape of everything below; refuse the combinations
+	// that would silently hash the wrong payment rather than defaulting them.
+	switch *chain {
+	case "xrpl":
+	case "base":
+		if *payerAddr == "" {
+			log.Fatal("-chain base requires -payer: the decision binds one paying account, " +
+				"and a defaulted payer is a context hash for somebody else's payment")
+		}
+		if *currency == "XRP" {
+			log.Fatal("-chain base requires -currency to be ETH or the ERC-20 token contract " +
+				"address (0x…). XRP is the xrpl default, not a Base asset")
+		}
+	default:
+		log.Fatalf("unknown -chain %q (xrpl or base)", *chain)
+	}
+
+	l, err := ledger.Get(*chain)
 	if err != nil {
-		log.Fatalf("xrpl adapter: %v", err)
+		log.Fatalf("%s adapter: %v", *chain, err)
 	}
 
 	// ── Trust Registry + issuer keys (held locally by the verifier) ────
@@ -79,9 +120,18 @@ func main() {
 	mustReg(reg, issTTS, trustregistry.RoleTTSIssuer, ttsPub)
 
 	// ── The agent's authority: CAT -> CT bounded by the ceiling ────────
+	var identityAnchor []byte
+	if *anchorHex != "" {
+		identityAnchor, err = hex.DecodeString(strings.TrimPrefix(*anchorHex, "0x"))
+		if err != nil || len(identityAnchor) != 32 {
+			log.Fatalf("-anchor must be 32 bytes of hex (64 characters); an odd-length value " +
+				"is usually a big integer rendered with %%x, which drops leading zero nibbles")
+		}
+	}
 	cat, err := cattoken.Issue(cattoken.IssueRequest{
 		Issuer: issOrg, Subject: "alice", PrincipalName: "alice",
-		Scope:              cattoken.CapabilityScope{"action": "payment", "max_amount": *ceiling, "currency": *currency},
+		IdentityAnchor:     identityAnchor,
+		Scope:              cattoken.CapabilityScope{"action": "payment", "max_amount": json.Number(*ceiling), "currency": *currency},
 		DelegationDepthMax: 3, TTL: time.Hour, HolderPublicKey: holderPub,
 	}, orgPriv)
 	if err != nil {
@@ -89,7 +139,7 @@ func main() {
 	}
 	ct, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer: issOrg, ParentCAT: cat.Token, ParentIssuerKey: orgPub,
-		RequestedScope:  tbac.Scope{"max_amount": *ceiling, "currency": *currency},
+		RequestedScope:  tbac.Scope{"max_amount": json.Number(*ceiling), "currency": *currency},
 		HolderPublicKey: holderPub,
 	}, orgPriv)
 	if err != nil {
@@ -98,18 +148,32 @@ func main() {
 
 	anchor := cat.HumanAnchor.String()
 
-	// ── The x402 payment, as an XRPL Payment context. The humanAnchor is
-	//    carried in the Memo so it is bound into the spt_txn_context_hash. ──
+	// ── The x402 payment, as a transaction context for this rail. ──────
+	//
+	// On XRPL the humanAnchor rides in a Memo, so it is part of the context.
+	// On Base an EIP-3009 authorization has NO free field — the anchor is
+	// bound downstream as the nonce commitment instead — so the Base context
+	// deliberately carries no anchor. Putting it in Extra here would make this
+	// gate's context hash differ from the one the issuing authority and the
+	// settlement client each derive from the bare payment fields, and the
+	// mismatch would surface two processes later pointing at neither cause.
+	issuedAt := time.Now().Unix()
+	originator := agentAddr
+	extra := map[string]string{"DestinationTag": *sourceTag, "Memo": anchor}
+	if *chain == "base" {
+		originator = *payerAddr
+		extra = nil
+	}
 	tc := ledger.TxnContext{
-		Chain: "xrpl", Originator: agentAddr, Beneficiary: *payto,
-		Amount: *price, Currency: *currency, Timestamp: time.Now().Unix(),
-		Extra: map[string]string{"DestinationTag": *sourceTag, "Memo": anchor},
+		Chain: *chain, Originator: originator, Beneficiary: *payto,
+		Amount: *price, Currency: *currency, Timestamp: issuedAt,
+		Extra: extra,
 	}
 
-	fmt.Println("SPT-Txn × x402 payer-gate (XRPL)")
+	fmt.Printf("SPT-Txn × x402 payer-gate (%s)\n", *chain)
 	fmt.Println("════════════════════════════════════════════════════════════")
-	fmt.Printf("  x402 requirement     : pay %s %s to %s (SourceTag %s)\n", *price, *currency, *payto, *sourceTag)
-	fmt.Printf("  agent capability     : up to %.0f %s under its CT\n", *ceiling, *currency)
+	fmt.Printf("  x402 requirement     : pay %s %s to %s\n", *price, *currency, *payto)
+	fmt.Printf("  agent capability     : up to %s %s under its CT\n", *ceiling, *currency)
 
 	// ── Gate: mint the SPT-Txn for this payment. Scope is enforced at mint;
 	//    an over-ceiling payment is refused here — that is the gate saying NO. ──
@@ -121,6 +185,12 @@ func main() {
 		fmt.Println()
 		fmt.Printf("  GATE: DENY — the agent must NOT sign this x402 payment.\n")
 		fmt.Printf("  reason: payment is outside the agent's capability scope (%v)\n", err)
+		emit(*out, payergate.Decision{
+			Version: payergate.FormatVersion, Outcome: payergate.Deny,
+			Reason:  fmt.Sprintf("mint refused: outside capability scope: %v", err),
+			Ceiling: *ceiling,
+			Context: decisionContext(tc), IssuedAt: issuedAt,
+		})
 		return
 	}
 
@@ -136,6 +206,12 @@ func main() {
 	if !d.Allow {
 		fmt.Println()
 		fmt.Printf("  GATE: DENY — verification failed at step %d (%s): %s\n", d.Step, d.StepName, d.Reason)
+		emit(*out, payergate.Decision{
+			Version: payergate.FormatVersion, Outcome: payergate.Deny,
+			Reason: d.Reason, Step: d.Step, StepName: d.StepName,
+			Ceiling: *ceiling,
+			Context: decisionContext(tc), IssuedAt: issuedAt,
+		})
 		return
 	}
 
@@ -145,15 +221,62 @@ func main() {
 	}
 
 	fmt.Println()
-	fmt.Printf("  GATE: ALLOW — agent is authorized; sign the x402 payment and stamp:\n")
-	fmt.Printf("    XRPL Payment.Destination     : %s\n", *payto)
-	fmt.Printf("    XRPL Payment.Amount          : %s %s\n", *price, *currency)
-	fmt.Printf("    XRPL Payment.SourceTag       : %s\n", *sourceTag)
-	fmt.Printf("    XRPL Payment.Memos[0] (anchor): %s\n", anchor)
-	fmt.Printf("    spt_txn_context_hash         : %s\n", ctxHash)
-	fmt.Println()
-	fmt.Println("  → accountable to one human (zero-knowledge anchor), scope-bounded,")
-	fmt.Println("    and Travel-Rule-bindable — with no PII on the XRP Ledger.")
+	switch *chain {
+	case "xrpl":
+		fmt.Printf("  GATE: ALLOW — agent is authorized; sign the x402 payment and stamp:\n")
+		fmt.Printf("    XRPL Payment.Destination     : %s\n", *payto)
+		fmt.Printf("    XRPL Payment.Amount          : %s %s\n", *price, *currency)
+		fmt.Printf("    XRPL Payment.SourceTag       : %s\n", *sourceTag)
+		fmt.Printf("    XRPL Payment.Memos[0] (anchor): %s\n", anchor)
+		fmt.Printf("    spt_txn_context_hash         : %s\n", ctxHash)
+		fmt.Println()
+		fmt.Println("  → accountable to one human (zero-knowledge anchor), scope-bounded,")
+		fmt.Println("    and Travel-Rule-bindable — with no PII on the XRP Ledger.")
+	case "base":
+		fmt.Printf("  GATE: ALLOW — agent is authorized to settle on Base:\n")
+		fmt.Printf("    payer                : %s\n", originator)
+		fmt.Printf("    merchant             : %s\n", *payto)
+		fmt.Printf("    amount               : %s (token %s)\n", *price, *currency)
+		fmt.Printf("    humanAnchor (CAT)    : %s\n", anchor)
+		fmt.Printf("    spt_txn_context_hash : %s\n", ctxHash)
+		fmt.Println()
+		fmt.Println("  → EIP-3009 has no memo; the anchor reaches chain state as the nonce")
+		fmt.Println("    commitment. The settlement client re-derives this context hash from")
+		fmt.Println("    the fields above and refuses the decision if the two disagree.")
+	}
+
+	emit(*out, payergate.Decision{
+		Version: payergate.FormatVersion, Outcome: payergate.Allow,
+		Reason: "in-scope under the CT; eight-step verification passed",
+		Anchor: anchor, Ceiling: *ceiling,
+		Context: decisionContext(tc), ContextHash: ctxHash,
+		Chain:    payergate.Chain{CAT: cat.Token, CTs: []string{ct.Token}, TXN: txn.Token},
+		IssuedAt: issuedAt, Verified: true,
+	})
+}
+
+// decisionContext converts the ledger context into the decision document's
+// shape. One conversion, here, so the two cannot disagree field-by-field at
+// the call sites.
+func decisionContext(tc ledger.TxnContext) payergate.Context {
+	return payergate.Context{
+		Chain: tc.Chain, Originator: tc.Originator, Beneficiary: tc.Beneficiary,
+		Amount: tc.Amount, Currency: tc.Currency, Timestamp: tc.Timestamp,
+		Extra: tc.Extra,
+	}
+}
+
+// emit writes the decision document when -out is set. It is called on EVERY
+// verdict, DENY included: a consumer polling for a decision file must find a
+// refusal written down, not an absence it might misread as "not yet".
+func emit(path string, d payergate.Decision) {
+	if path == "" {
+		return
+	}
+	if err := payergate.Write(path, d); err != nil {
+		log.Fatalf("writing the decision to %s: %v", path, err)
+	}
+	fmt.Printf("\n  decision written to %s\n", path)
 }
 
 func genKey() (ed25519.PublicKey, ed25519.PrivateKey) {
