@@ -106,6 +106,13 @@ type Chain struct {
 	CAT string   `json:"cat,omitempty"`
 	CTs []string `json:"cts,omitempty"`
 	TXN string   `json:"txn,omitempty"`
+
+	// Audience is the domain the SPT-Txn token was minted for. A settler that
+	// re-verifies the chain must supply it (step 3 checks the token's signed
+	// aud against it). Carrying it here is safe: the token's aud is signed, so
+	// a wrong value only causes the verification to DENY, never to accept a
+	// different audience.
+	Audience string `json:"audience,omitempty"`
 }
 
 // Decision is the gate's answer for one payment.

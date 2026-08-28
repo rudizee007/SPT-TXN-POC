@@ -43,11 +43,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -84,6 +86,9 @@ func main() {
 		"Empty mints a fresh commitment; supplying one makes the run deterministic and "+
 		"lets a separately-run issuing authority pre-pin the same anchor")
 	out := flag.String("out", "", "write the decision document (JSON) here — the settlement client's input")
+	exportReg := flag.String("export-registry", "", "write this run's issuer public keys as a "+
+		"trust-registry body (JSON) here, so a settler can pin them and verify the chain. "+
+		"DEMO: these keys are ephemeral per run; a real deployment uses a standing signed snapshot")
 	flag.Parse()
 
 	// The chain decides the shape of everything below; refuse the combinations
@@ -118,6 +123,18 @@ func main() {
 	holderPub, holderPriv := genKey()
 	mustReg(reg, issOrg, trustregistry.RoleCTIssuer, orgPub)
 	mustReg(reg, issTTS, trustregistry.RoleTTSIssuer, ttsPub)
+
+	// Export the trust root a settler pins. These are exactly the keys the CAT,
+	// CT and SPT-Txn were signed with, so a settler that verifies the chain
+	// against this body checks issuer-signed facts — not a summary. Ephemeral
+	// per run (the mock registry), which is the demo's honest limitation; a
+	// deployment pins a standing signed snapshot instead.
+	if *exportReg != "" {
+		if err := writeRegistryBody(*exportReg, orgPub, ttsPub); err != nil {
+			log.Fatalf("export-registry: %v", err)
+		}
+		fmt.Printf("issuer trust body written to %s (pin it in the settler)\n", *exportReg)
+	}
 
 	// ── The agent's authority: CAT -> CT bounded by the ceiling ────────
 	var identityAnchor []byte
@@ -250,7 +267,7 @@ func main() {
 		Reason: "in-scope under the CT; eight-step verification passed",
 		Anchor: anchor, Ceiling: *ceiling,
 		Context: decisionContext(tc), ContextHash: ctxHash,
-		Chain:    payergate.Chain{CAT: cat.Token, CTs: []string{ct.Token}, TXN: txn.Token},
+		Chain:    payergate.Chain{CAT: cat.Token, CTs: []string{ct.Token}, TXN: txn.Token, Audience: aud},
 		IssuedAt: issuedAt, Verified: true,
 	})
 }
@@ -277,6 +294,38 @@ func emit(path string, d payergate.Decision) {
 		log.Fatalf("writing the decision to %s: %v", path, err)
 	}
 	fmt.Printf("\n  decision written to %s\n", path)
+}
+
+// writeRegistryBody emits the two issuer records as a trust-registry body that
+// `snapshot sign` can sign and pkg/verify can load. Field shape matches the
+// snapshot tooling (Iss, Role, base64 PublicKey, KeyType, validity, Status).
+func writeRegistryBody(path string, ctIssuer, ttsIssuer ed25519.PublicKey) error {
+	type rec struct {
+		Iss        string `json:"Iss"`
+		Role       string `json:"Role"`
+		PublicKey  string `json:"PublicKey"`
+		KeyType    string `json:"KeyType"`
+		ValidFrom  string `json:"ValidFrom"`
+		ValidUntil string `json:"ValidUntil"`
+		Status     string `json:"Status"`
+	}
+	from := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	until := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	body := struct {
+		Version int   `json:"version"`
+		Records []rec `json:"records"`
+	}{
+		Version: 1,
+		Records: []rec{
+			{issOrg, string(trustregistry.RoleCTIssuer), base64.StdEncoding.EncodeToString(ctIssuer), "Ed25519", from, until, "active"},
+			{issTTS, string(trustregistry.RoleTTSIssuer), base64.StdEncoding.EncodeToString(ttsIssuer), "Ed25519", from, until, "active"},
+		},
+	}
+	b, err := json.MarshalIndent(body, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
 }
 
 func genKey() (ed25519.PublicKey, ed25519.PrivateKey) {
