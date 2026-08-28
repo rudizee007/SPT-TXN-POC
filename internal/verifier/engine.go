@@ -612,6 +612,20 @@ func checkChainTokenTemporal(label string, claims map[string]any) error {
 	if iat > time.Now().Unix()+iatSkew {
 		return fmt.Errorf("%s iat is in the future: the capability is not yet valid", label)
 	}
+	// nbf (not-before): a token may open its validity window later than issuance.
+	// If present, it is NOT yet valid until now reaches nbf -- the mirror of the
+	// expiry check, denying a not-yet-open window as an expired one is denied.
+	// Optional: a token without nbf is valid from iat, as before. Checked at every
+	// hop, so a band-CT whose day has not arrived denies the whole chain
+	// (VELOCITY-AND-CUMULATIVE-SPEND-DESIGN sec 3a).
+	if nbf, ok := intClaim(claims, "nbf"); ok {
+		if nbf >= exp {
+			return fmt.Errorf("%s window is empty: nbf %d is not before exp %d", label, nbf, exp)
+		}
+		if time.Now().Unix()+iatSkew < nbf {
+			return fmt.Errorf("%s is not yet valid: its window opens at %d", label, nbf)
+		}
+	}
 	return nil
 }
 
@@ -667,6 +681,29 @@ func (e *Engine) step5DPoP(txClaims map[string]any, token, proof, htm, htu strin
 // bounds the delegation depth), and confirms the humanAnchor is propagated
 // unchanged. Finally it binds the SPT-Txn to the LEAF CT (jti + holder key). The
 // root CAT must be presented — attenuation cannot be verified without it.
+// nbfAttenuates enforces, at verification time, that a child does not open its
+// validity window before its parent -- the mirror of the exp attenuation checked
+// beside it (a child must not outlive its parent). It is re-checked here, as exp
+// is, as defense in depth against a delegator whose issuance-time check was
+// bypassed. If the parent declares an opening (nbf), the child must declare one
+// no earlier; a child that drops the opening, or names an earlier one, would be
+// valid during a time the parent's window had not opened. A parent with no
+// opening places none on the child (introducing a window is a narrowing).
+func nbfAttenuates(parentClaims, ctClaims map[string]any) error {
+	parentNbf, hasParent := intClaim(parentClaims, "nbf")
+	if !hasParent {
+		return nil
+	}
+	ctNbf, hasChild := intClaim(ctClaims, "nbf")
+	if !hasChild {
+		return fmt.Errorf("drops the nbf window its parent declared (parent opens at %d): a child must not widen the opening", parentNbf)
+	}
+	if ctNbf < parentNbf {
+		return fmt.Errorf("opens before its parent (nbf %d < %d): a window must not open before its parent's", ctNbf, parentNbf)
+	}
+	return nil
+}
+
 func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToken, catToken string, ctChain []string) (map[string]any, error) {
 	// Normalize the CT list: an explicit chain wins; otherwise fall back to the
 	// single-hop CT for backward compatibility.
@@ -803,6 +840,11 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 		}
 		if ctExp > parentExp {
 			return nil, fmt.Errorf("CT[%d] outlives its parent (exp %d > %d): TTL must attenuate", i, ctExp, parentExp)
+		}
+		// nbf monotonicity, re-verified here as exp is above (defense in depth):
+		// a hop must not open its window before its parent's.
+		if err := nbfAttenuates(parentClaims, ctClaims); err != nil {
+			return nil, fmt.Errorf("CT[%d] %w", i, err)
 		}
 		if err := checkChainTokenTemporal(fmt.Sprintf("CT[%d]", i), ctClaims); err != nil {
 			return nil, err
