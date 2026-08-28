@@ -77,6 +77,11 @@ type IssueRequest struct {
 	// TTL overrides DefaultTTL when non-zero.
 	TTL time.Duration
 
+	// NotBefore, when set, opens this CT's validity window at that instant (an
+	// absolute nbf claim). Zero leaves the token valid from issuance. Used to
+	// place a sub-band inside a period -- a $3 day inside a $100 month.
+	NotBefore time.Time
+
 	// Status optionally sets the signed `status` claim binding this CT to a
 	// Token Status List entry for scalable per-token revocation
 	// (docs/spec/STATUS-LIST.md §4). nil leaves the CT out of status scope.
@@ -140,6 +145,20 @@ func Issue(req IssueRequest, signingKey crypto.Signer) (*CT, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Containment permits a child to DROP a dimension the parent declared, and for
+	// `currency` that is a legitimate narrowing request: the delegator asks for a
+	// lower amount and says nothing about the unit. Sealing it as asked would
+	// leave a token whose ceiling reads as a bound in every currency at once, so
+	// carry the parent's unit down with the ceiling -- a strict narrowing, since
+	// the value comes from the parent -- and then refuse to mint anything that is
+	// still unqualified. See tbac.InheritMoneyUnit and tbac.ValidateIssuance.
+	attenuated, err = tbac.InheritMoneyUnit(parentScope, attenuated)
+	if err != nil {
+		return nil, fmt.Errorf("attenuated scope: %w", err)
+	}
+	if err := tbac.ValidateIssuance(attenuated); err != nil {
+		return nil, fmt.Errorf("attenuated scope: %w", err)
+	}
 
 	// ── 4. Build claims ───────────────────────────────────────────────
 	now := time.Now().UTC()
@@ -184,6 +203,17 @@ func Issue(req IssueRequest, signingKey crypto.Signer) (*CT, error) {
 		"spt_cat_ref":                parentJTI,
 		"spt_parent_hash":            base64url(parentHash[:]),
 	}
+
+	// nbf (not-before): open this CT's window, the mirror of exp -- child.nbf >=
+	// parent.nbf, as child.exp <= parent.exp. See attenuateNotBefore.
+	nbf, err := attenuateNotBefore(parent, req.NotBefore, exp.Unix())
+	if err != nil {
+		return nil, err
+	}
+	if nbf > 0 {
+		claims["nbf"] = nbf
+	}
+
 	if req.Status != nil {
 		claims["status"] = req.Status
 	}
@@ -233,6 +263,10 @@ type DelegateRequest struct {
 	// its parent; callers SHOULD pass a TTL no longer than the parent's
 	// remaining life.
 	TTL time.Duration
+
+	// NotBefore, when set, opens this child's window; it must not precede the
+	// parent CT's opening (attenuateNotBefore). Zero inherits the parent's.
+	NotBefore time.Time
 
 	// Status optionally sets the signed `status` claim binding this child CT
 	// to a Token Status List entry (docs/spec/STATUS-LIST.md §4).
@@ -296,6 +330,20 @@ func Delegate(req DelegateRequest, signingKey crypto.Signer) (*CT, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Containment permits a child to DROP a dimension the parent declared, and for
+	// `currency` that is a legitimate narrowing request: the delegator asks for a
+	// lower amount and says nothing about the unit. Sealing it as asked would
+	// leave a token whose ceiling reads as a bound in every currency at once, so
+	// carry the parent's unit down with the ceiling -- a strict narrowing, since
+	// the value comes from the parent -- and then refuse to mint anything that is
+	// still unqualified. See tbac.InheritMoneyUnit and tbac.ValidateIssuance.
+	attenuated, err = tbac.InheritMoneyUnit(parentScope, attenuated)
+	if err != nil {
+		return nil, fmt.Errorf("attenuated scope: %w", err)
+	}
+	if err := tbac.ValidateIssuance(attenuated); err != nil {
+		return nil, fmt.Errorf("attenuated scope: %w", err)
+	}
 
 	// ── 4. Build claims ───────────────────────────────────────────────
 	now := time.Now().UTC()
@@ -339,6 +387,16 @@ func Delegate(req DelegateRequest, signingKey crypto.Signer) (*CT, error) {
 		"spt_parent_ref":             parentJTI,                // immediate parent CT
 		"spt_parent_hash":            base64url(parentHash[:]), // hash of immediate parent
 	}
+
+	// nbf (not-before): open this child's window, the mirror of exp.
+	nbf, err := attenuateNotBefore(parent, req.NotBefore, exp.Unix())
+	if err != nil {
+		return nil, err
+	}
+	if nbf > 0 {
+		claims["nbf"] = nbf
+	}
+
 	if req.Status != nil {
 		claims["status"] = req.Status
 	}
@@ -355,6 +413,39 @@ func Delegate(req DelegateRequest, signingKey crypto.Signer) (*CT, error) {
 		IssuedAt:    now,
 		ExpiresAt:   exp,
 	}, nil
+}
+
+// attenuateNotBefore computes a child's not-before (nbf) from an optionally
+// requested window opening, enforcing that the child does not open before its
+// parent. It is the mirror of the exp rule: exp bounds when validity ENDS
+// (child.exp <= parent.exp); nbf bounds when it BEGINS (child.nbf >= parent.nbf).
+//
+// A parent with no nbf has no opening bound of its own -- it was valid from
+// issuance -- so parentNbf is 0 and a child may introduce an opening. That is how
+// a sub-band day-window is placed inside a month-long parent
+// (VELOCITY-AND-CUMULATIVE-SPEND-DESIGN sec 3a). A child requesting no opening
+// inherits the parent's, so it never becomes valid ahead of a not-yet-open
+// parent. Returns 0 when there is no opening bound (valid from issuance, the
+// prior behaviour); childExp is the already-attenuated expiry, used to reject an
+// empty window (an opening at or after the expiry).
+func attenuateNotBefore(parent map[string]any, requested time.Time, childExp int64) (int64, error) {
+	var parentNbf int64
+	if pn, ok := parent["nbf"].(float64); ok {
+		parentNbf = int64(pn)
+	}
+	var nbf int64
+	if requested.IsZero() {
+		nbf = parentNbf
+	} else {
+		nbf = requested.UTC().Unix()
+		if nbf < parentNbf {
+			return 0, fmt.Errorf("child CT would open before its parent (child nbf %d < parent nbf %d): an opening must not precede the parent's", nbf, parentNbf)
+		}
+	}
+	if nbf > 0 && nbf >= childExp {
+		return 0, fmt.Errorf("child CT window is empty (nbf %d >= exp %d): the opening must precede the expiry", nbf, childExp)
+	}
+	return nbf, nil
 }
 
 // Verify checks the signature and basic claims of a Capability Token. Like
