@@ -105,6 +105,12 @@ var numericDirection = map[string]direction{
 	"max": dirCeiling,
 	// Privilege tier, where a lower tier grants strictly less.
 	"tier": dirCeiling,
+	// A cumulative spending budget: the total a holder may spend across MANY
+	// transactions, as distinct from max_amount (one transaction). A child
+	// asking for less can spend less, so it is a ceiling. Sub-band division
+	// (subband.go) bounds a SET of children by the parent budget; this entry
+	// makes a SINGLE child's max_cumulative attenuate by interval subset.
+	"max_cumulative": dirCeiling,
 }
 
 // directionOf reports the declared direction for a numeric dimension.
@@ -293,12 +299,28 @@ func listIntersect(permitted, requested []any) []any {
 func TxnScope(parent Scope, tc ledger.TxnContext) (Scope, error) {
 	out := Scope{}
 	if _, ok := parent["max_amount"]; ok {
+		// A ceiling with no unit beside it is not a ceiling: this function would
+		// project the amount and NOT the currency, so the capability would bound
+		// a transfer of that size in every currency at once. Issuance refuses to
+		// seal such a scope (see ValidateIssuance), but a token minted before
+		// that check existed, or by a non-conforming issuer, still reaches here —
+		// and enforcement must not be the layer that trusts issuance got it
+		// right. Refuse to project it.
+		if _, qualified := parent["currency"]; !qualified {
+			return nil, fmt.Errorf("capability declares %q but no %q: %w",
+				"max_amount", "currency", ErrCeilingUnqualified)
+		}
+		// The amount is compared as a NUMBER here and hashed as a LITERAL STRING
+		// into spt_txn_context_hash, so it must be canonical and positive before
+		// either happens. ledger.ParseAmount is the single grammar; do not
+		// re-derive one here (see its doc comment for why big.Rat alone is too
+		// permissive — "0x2710" is 10000 to it, and "-5000 <= 5000" is true).
+		if _, err := ledger.ParseAmount(tc.Amount); err != nil {
+			return nil, fmt.Errorf("transaction amount: %w", err)
+		}
 		// Carry the amount as json.Number (the exact decimal string) so the
 		// containment check compares it with big.Rat precision, not lossy
 		// float64 — important for large values like XRP drops (> 2^53).
-		if _, valid := new(big.Rat).SetString(tc.Amount); !valid {
-			return nil, fmt.Errorf("transaction amount %q is not numeric", tc.Amount)
-		}
 		out["max_amount"] = json.Number(tc.Amount)
 	}
 	if _, ok := parent["currency"]; ok {
