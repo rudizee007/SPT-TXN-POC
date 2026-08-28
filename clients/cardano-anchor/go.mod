@@ -12,7 +12,7 @@ module github.com/rudizee007/spt-txn-poc/clients/cardano-anchor
 
 go 1.25.13
 
-require github.com/echovl/cardano-go v0.1.13
+require github.com/echovl/cardano-go v0.1.14
 
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
