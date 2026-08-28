@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 )
 
 // cumulativeDim is the scope dimension carrying a CUMULATIVE spending budget: the
@@ -132,4 +133,88 @@ func ValidateSubbandDivision(parent Scope, slices []Scope) (*big.Rat, error) {
 			ErrSubbandOverAllocates, sum.RatString(), budget.RatString())
 	}
 	return sum, nil
+}
+
+
+// Band is one slice of a pre-divided budget across both axes: the scope carrying
+// its max_cumulative portion (and currency), and the time window it is live in,
+// [NotBefore, Expiry) as Unix seconds -- the nbf and exp the slice's CT will
+// carry.
+type Band struct {
+	Scope     Scope
+	NotBefore int64
+	Expiry    int64
+}
+
+var (
+	// ErrBandWindowEmpty: a band (or the parent) opens at or after it closes.
+	ErrBandWindowEmpty = errors.New("band window is empty (NotBefore is not before Expiry)")
+	// ErrBandWindowOutsideParent: a band's window is not contained in the parent's.
+	ErrBandWindowOutsideParent = errors.New("band window falls outside the parent window")
+	// ErrBandWindowsOverlap: two bands are live at once, so their caps would stack.
+	ErrBandWindowsOverlap = errors.New("band windows overlap (two bands live at once)")
+)
+
+// ValidateBandDivision checks that bands is a sound pre-division of a parent
+// budget across BOTH axes at once -- amount and time -- the stateless issuance
+// guard for a windowed sub-band schedule (a $3 day inside a $100 month).
+//
+// Amount: it runs ValidateSubbandDivision on the bands' scopes, so the slices'
+// max_cumulative values sum to <= the parent budget (see there for the full set
+// of amount checks: currency-qualified, contained, non-empty, exact big.Rat).
+//
+// Time: the parent's own window [parentNbf, parentExp) must be non-empty; then
+// every band's window must be non-empty, sit INSIDE the parent's, and the bands'
+// windows must be pairwise NON-OVERLAPPING. Non-overlap is the property that
+// makes "$3 today, not $6" hold: at most one band is ever live, so the per-window
+// cap cannot be doubled by two bands active at the same instant. Adjacent windows
+// that meet at a point (one's Expiry == the next's NotBefore) do not overlap -- a
+// back-to-back schedule is sound.
+//
+// The exact total amount allocated is returned, as ValidateSubbandDivision does;
+// it is meaningful only when err is nil.
+func ValidateBandDivision(parent Scope, parentNbf, parentExp int64, bands []Band) (*big.Rat, error) {
+	// Amount axis first, reusing the single source of truth for the sum bound.
+	scopes := make([]Scope, len(bands))
+	for i, b := range bands {
+		scopes[i] = b.Scope
+	}
+	total, err := ValidateSubbandDivision(parent, scopes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Time axis. The parent must hold a real window to divide.
+	if parentNbf >= parentExp {
+		return nil, fmt.Errorf("parent [%d,%d): %w", parentNbf, parentExp, ErrBandWindowEmpty)
+	}
+	for i, b := range bands {
+		if b.NotBefore >= b.Expiry {
+			return nil, fmt.Errorf("band %d [%d,%d): %w", i, b.NotBefore, b.Expiry, ErrBandWindowEmpty)
+		}
+		if b.NotBefore < parentNbf || b.Expiry > parentExp {
+			return nil, fmt.Errorf("band %d [%d,%d) not inside parent [%d,%d): %w",
+				i, b.NotBefore, b.Expiry, parentNbf, parentExp, ErrBandWindowOutsideParent)
+		}
+	}
+
+	// Pairwise non-overlap, checked in sorted order (O(n log n), not O(n^2)) so the
+	// error can name the adjacent offenders. Sort a COPY of the indices; the
+	// caller's slice order is theirs to keep.
+	order := make([]int, len(bands))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(a, b int) bool {
+		return bands[order[a]].NotBefore < bands[order[b]].NotBefore
+	})
+	for k := 1; k < len(order); k++ {
+		prev := bands[order[k-1]]
+		cur := bands[order[k]]
+		if cur.NotBefore < prev.Expiry {
+			return nil, fmt.Errorf("bands %d [%d,%d) and %d [%d,%d): %w",
+				order[k-1], prev.NotBefore, prev.Expiry, order[k], cur.NotBefore, cur.Expiry, ErrBandWindowsOverlap)
+		}
+	}
+	return total, nil
 }
