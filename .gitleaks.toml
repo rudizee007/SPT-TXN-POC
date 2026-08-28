@@ -43,6 +43,10 @@ description = "Public conformance vectors, on-chain addresses/tx hashes, ORCID/D
 paths = [
   '''docs/conformance-vectors\.json''',
   '''(^|/)go\.sum$''',
+  # Known-answer-test vectors for trust-snapshot body-digest canonicalization.
+  # Entire file is public input/output pairs (count-up test pubkey 0001..1f,
+  # expected digests) by construction — reviewed, contains no key material.
+  '''(^|/)pkg/trustsnapshot/testdata/.*\.kat\.json$''',
 ]
 # Public identifiers that are safe by construction.
 #
@@ -68,4 +72,10 @@ regexes = [
   # Verified public before allowlisting (ERC-3643 = the T-REX security-token
   # standard; also appears in README/docs/solidity).
   '''ERC-3643-aligned''',
+
+  # Trust-snapshot known-answer-test vectors inlined as Go string literals in
+  # pkg/trustsnapshot/bodydigest_kat_test.go (the .json form is path-allowlisted
+  # above). Public by construction, reviewed, no key material:
+  '''X25519-MLKEM768''',                                                   # public hybrid-KEM algorithm label
+  '''AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=''',                       # base64 of the count-up test pubkey 00..1f
 ]

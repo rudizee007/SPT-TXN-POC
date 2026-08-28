@@ -22,7 +22,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"math/big"
 	"sort"
 	"strings"
 )
@@ -88,26 +87,13 @@ func Get(name string) (Ledger, error) {
 	return l, nil
 }
 
-// validAmount rejects empty, non-numeric, non-finite, or non-positive amounts.
-// A value transfer authorization must be for a positive, well-formed amount; a
-// negative or NaN amount sliding through scope checks would be a real flaw.
-// (Magnitude-precise comparison happens in tbac via big.Rat; this is the gate.)
+// validAmount is the adapters' gate on TxnContext.Amount. It delegates to
+// ParseAmount so that the adapters, the tbac scope projection and anything else
+// that judges an amount share ONE grammar — a second implementation here is
+// exactly the drift the threat model warns about.
 func validAmount(s string) error {
-	if s == "" {
-		return fmt.Errorf("amount required")
-	}
-	// Parse as an exact decimal rational. big.Rat.SetString accepts decimal
-	// (and fractional/exponent) forms but rejects NaN/Inf and non-numeric junk
-	// outright, so finiteness is guaranteed by a successful parse — no float
-	// rounding is introduced.
-	r, ok := new(big.Rat).SetString(s)
-	if !ok {
-		return fmt.Errorf("amount %q is not a valid decimal", s)
-	}
-	if r.Sign() <= 0 {
-		return fmt.Errorf("amount %q must be positive", s)
-	}
-	return nil
+	_, err := ParseAmount(s)
+	return err
 }
 
 // ── canonical encoding shared by adapters ────────────────────────────────────

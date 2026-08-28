@@ -1,0 +1,102 @@
+[
+  {
+    "name": "empty record set",
+    "why": "a zero-record snapshot is a valid fail-closed fixture and must still digest deterministically",
+    "body": {
+      "version": 1,
+      "records": []
+    },
+    "expected_canonical": "{\"records\":[],\"version\":1}",
+    "expected_digest_hex": "77d4115bf19d3fa61f519451d938ad576b78ceac615355303082072d0e44e677"
+  },
+  {
+    "name": "single ed25519 ct_issuer",
+    "why": "the ordinary case: key material hex-encoded, timestamps integer ms",
+    "body": {
+      "version": 1,
+      "records": [
+        {
+          "Iss": "domain-a",
+          "Role": "ct_issuer",
+          "PublicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+          "KeyType": "Ed25519",
+          "ValidFrom": "2026-01-01T00:00:00Z",
+          "ValidUntil": "2027-01-01T00:00:00Z",
+          "Status": "active"
+        }
+      ]
+    },
+    "expected_canonical": "{\"records\":[{\"iss\":\"domain-a\",\"key_type\":\"Ed25519\",\"public_key\":\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"role\":\"ct_issuer\",\"status\":\"active\",\"valid_from_ms\":1767225600000,\"valid_until_ms\":1798761600000}],\"version\":1}",
+    "expected_digest_hex": "47a154439612b0c884ecc04245277fa00d340c1fa617926704f93cd24872175e"
+  },
+  {
+    "name": "hybrid escrow record with an ML-KEM key",
+    "why": "the 1184-byte second key must be inside the digest too, or it can be swapped freely",
+    "body": {
+      "version": 1,
+      "records": [
+        {
+          "Iss": "did:web:escrow.example",
+          "Role": "escrow",
+          "PublicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+          "MlkemEncapKey": "AQID",
+          "KeyType": "X25519-MLKEM768",
+          "ValidFrom": "2026-01-01T00:00:00Z",
+          "ValidUntil": "2027-01-01T00:00:00Z",
+          "Status": "active"
+        }
+      ]
+    },
+    "expected_canonical": "{\"records\":[{\"iss\":\"did:web:escrow.example\",\"key_type\":\"X25519-MLKEM768\",\"mlkem_encap_key\":\"010203\",\"public_key\":\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"role\":\"escrow\",\"status\":\"active\",\"valid_from_ms\":1767225600000,\"valid_until_ms\":1798761600000}],\"version\":1}",
+    "expected_digest_hex": "b0220f50928b3baee5efea14dd89e5a132df46fe115c2cea90470ff568ae9ff1"
+  },
+  {
+    "name": "timestamps beyond 2^31 seconds",
+    "why": "millisecond timestamps past 2038 must stay integers and must not go through a float",
+    "body": {
+      "version": 1,
+      "records": [
+        {
+          "Iss": "domain-a",
+          "Role": "tts_issuer",
+          "PublicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+          "KeyType": "Ed25519",
+          "ValidFrom": "2040-01-01T00:00:00Z",
+          "ValidUntil": "2099-12-31T23:59:59Z",
+          "Status": "active"
+        }
+      ]
+    },
+    "expected_canonical": "{\"records\":[{\"iss\":\"domain-a\",\"key_type\":\"Ed25519\",\"public_key\":\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"role\":\"tts_issuer\",\"status\":\"active\",\"valid_from_ms\":2208988800000,\"valid_until_ms\":4102444799000}],\"version\":1}",
+    "expected_digest_hex": "e64a18e52d66b3a44a28c32e1a7543f850f4b3d9002385fa54d2d36825c3bdc0"
+  },
+  {
+    "name": "two records, order preserved",
+    "why": "JCS sorts object keys, not arrays: the record sequence is part of what is digested",
+    "body": {
+      "version": 1,
+      "records": [
+        {
+          "Iss": "b",
+          "Role": "ct_issuer",
+          "PublicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+          "KeyType": "Ed25519",
+          "ValidFrom": "2026-01-01T00:00:00Z",
+          "ValidUntil": "2027-01-01T00:00:00Z",
+          "Status": "active"
+        },
+        {
+          "Iss": "a",
+          "Role": "ct_issuer",
+          "PublicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+          "KeyType": "Ed25519",
+          "ValidFrom": "2026-01-01T00:00:00Z",
+          "ValidUntil": "2027-01-01T00:00:00Z",
+          "Status": "active"
+        }
+      ]
+    },
+    "expected_canonical": "{\"records\":[{\"iss\":\"b\",\"key_type\":\"Ed25519\",\"public_key\":\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"role\":\"ct_issuer\",\"status\":\"active\",\"valid_from_ms\":1767225600000,\"valid_until_ms\":1798761600000},{\"iss\":\"a\",\"key_type\":\"Ed25519\",\"public_key\":\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"role\":\"ct_issuer\",\"status\":\"active\",\"valid_from_ms\":1767225600000,\"valid_until_ms\":1798761600000}],\"version\":1}",
+    "expected_digest_hex": "413daf677759ccbc0ff9ce9c0a70ef5a4e8a4b225443549bfe5846ec49993d47"
+  }
+]

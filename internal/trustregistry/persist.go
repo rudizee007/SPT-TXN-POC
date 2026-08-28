@@ -30,6 +30,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+
+	"github.com/rudizee007/spt-txn-poc/pkg/trustsnapshot"
 	"sync"
 	"time"
 )
@@ -93,14 +96,109 @@ func (r *PersistentRegistry) load() error {
 	if err := json.Unmarshal(data, &ff); err != nil {
 		return fmt.Errorf("trustregistry: parse %s: %w", r.path, err)
 	}
-	for _, rec := range ff.Records {
+	for i, rec := range ff.Records {
 		if rec == nil {
 			continue
+		}
+		// Register and Replace validate; load did not, so a snapshot could carry
+		// a record with any role, any key length and any status, and pkg/verify
+		// documented that as a known condition rather than refusing it. A record
+		// this package would not accept through its own API is not one it should
+		// accept from a file either.
+		if err := validateRecord(rec); err != nil {
+			return fmt.Errorf("trustregistry: %s record %d (iss %q, role %q): %w",
+				r.path, i, rec.Iss, rec.Role, err)
 		}
 		key := registryKey{rec.Iss, rec.Role}
 		r.records[key] = append(r.records[key], copyRecord(rec))
 	}
 	return nil
+}
+
+// OpenVerified is the ONLY way to open a snapshot as a root of trust.
+//
+// It takes two files because a body on its own authenticates nothing: the
+// manifest carries the signature, the body carries the records, and a verifier
+// handed only a body has no root of trust and must fail closed
+// (docs/spec/TRUST-REGISTRY-SNAPSHOT.md §2).
+//
+// It lives here rather than in pkg/verify so that every consumer goes through
+// the same door. The gateway reaches it through pkg/verify.FromSignedSnapshot;
+// cmd/agentsvc and cmd/deanonsvc use internal types and would otherwise have to
+// reimplement the flow, which is how one service ends up verifying and another
+// not — the state this repository was in before 2026-08-26.
+//
+// NewPersistentRegistry remains, and is correct, for the registry WRITER
+// (cmd/trsvc): a service that owns the file does not authenticate its own
+// state, and for it an absent file really is a fresh deploy. Readers must not
+// use it.
+func OpenVerified(manifestPath, bodyPath string, opts trustsnapshot.Options) (*PersistentRegistry, error) {
+	manifestJSON, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("read snapshot manifest: %w", err)
+	}
+	body, err := os.ReadFile(bodyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read snapshot body: %w", err)
+	}
+	if _, err := trustsnapshot.Verify(manifestJSON, body, opts); err != nil {
+		return nil, fmt.Errorf("snapshot rejected: %w", err)
+	}
+	return NewPersistentRegistry(bodyPath)
+}
+
+// ManifestPathFor returns the conventional manifest path for a body:
+// "<body>.manifest.json". The pair travels together so an operator cannot mount
+// one and not notice the other is missing.
+func ManifestPathFor(bodyPath string) string { return bodyPath + ".manifest.json" }
+
+// ExportBody renders the registry as a snapshot body in a DETERMINISTIC record
+// order, so signing the same registry twice produces the same digest.
+//
+// Order matters because the body digest is JCS over the body and JCS sorts
+// object keys, not arrays: the record sequence is part of what is digested.
+// Sorting here means the sequence is a property of the registry's content rather
+// than of Go's map iteration, which is randomised.
+func (r *PersistentRegistry) ExportBody() ([]byte, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	flat := make([]*Record, 0, len(r.records))
+	for _, recs := range r.records {
+		flat = append(flat, recs...)
+	}
+	sort.Slice(flat, func(i, j int) bool {
+		a, b := flat[i], flat[j]
+		if a.Iss != b.Iss {
+			return a.Iss < b.Iss
+		}
+		if a.Role != b.Role {
+			return a.Role < b.Role
+		}
+		if !a.ValidFrom.Equal(b.ValidFrom) {
+			return a.ValidFrom.Before(b.ValidFrom)
+		}
+		return string(a.PublicKey) < string(b.PublicKey)
+	})
+	return json.MarshalIndent(fileFormat{Version: persistVersion, Records: flat}, "", "  ")
+}
+
+// IssuerIDs returns the distinct issuer identifiers in the registry, sorted, for
+// the manifest's issuer_ids field.
+func (r *PersistentRegistry) IssuerIDs() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	seen := map[string]bool{}
+	out := []string{}
+	for k := range r.records {
+		if !seen[k.Iss] {
+			seen[k.Iss] = true
+			out = append(out, k.Iss)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // save atomically rewrites the backing file. Callers MUST hold r.mu (write
@@ -292,3 +390,9 @@ func (r *PersistentRegistry) setStatus(iss string, role Role, status RecordStatu
 // Close implements Registry. The store is durable after every mutation, so
 // Close has nothing to flush; defined for interface completeness.
 func (r *PersistentRegistry) Close() error { return nil }
+
+// jsonUnmarshal and jsonMarshalIndent exist so tests can build a body in the
+// on-disk format without re-declaring it. Keeping the shape in one place is the
+// point: a test that mirrors the format by hand stops testing the format.
+func jsonUnmarshal(b []byte, v any) error     { return json.Unmarshal(b, v) }
+func jsonMarshalIndent(v any) ([]byte, error) { return json.MarshalIndent(v, "", "  ") }

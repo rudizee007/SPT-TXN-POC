@@ -74,9 +74,10 @@ func TestIssuerKeys(t *testing.T) {
 	}
 	_ = reg.Close()
 
-	v, err := verify.FromSnapshot(path)
+	manifest, pub := signSnapshot(t, path, time.Now())
+	v, err := verify.FromSignedSnapshot(manifest, path, freshOpts(pub))
 	if err != nil {
-		t.Fatalf("FromSnapshot: %v", err)
+		t.Fatalf("FromSignedSnapshot: %v", err)
 	}
 	keys, err := v.IssuerKeys(ctx)
 	if err != nil {
