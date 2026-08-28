@@ -108,10 +108,15 @@ type Chain struct {
 	TXN string   `json:"txn,omitempty"`
 
 	// Audience is the domain the SPT-Txn token was minted for. A settler that
-	// re-verifies the chain must supply it (step 3 checks the token's signed
-	// aud against it). Carrying it here is safe: the token's aud is signed, so
-	// a wrong value only causes the verification to DENY, never to accept a
-	// different audience.
+	// re-verifies the chain supplies it (step 3 checks the token's signed aud
+	// against it).
+	//
+	// Carrying it in the decision is SAFE but provides no independent
+	// protection at the settler: an attacker who edits the decision simply
+	// names the token's real, signed aud and step 3 passes. It fails closed on
+	// a WRONG value (DENY) and never widens what a forged decision can do — the
+	// payment is still bound by scope (step 7) and context (step 8) — but do
+	// not read step 3 as a settler-side authenticity check. It is not one.
 	Audience string `json:"audience,omitempty"`
 }
 

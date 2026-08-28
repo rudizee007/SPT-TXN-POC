@@ -95,3 +95,33 @@ func TestVerifyForSettlement_RefusesAForgedSignature(t *testing.T) {
 		t.Fatalf("expected refusal at signature(1), got step %d (%s)", d.Step, d.StepName)
 	}
 }
+
+// TestVerifyForSettlement_RefusesAForgedBeneficiary is fix-review finding 4:
+// the merchant is defended only by step 8 covering Beneficiary in the context
+// hash, and no settle-path test forged it. A forged merchant is "pay the
+// attacker", so this pins that changing the beneficiary the settler claims —
+// while the signed token binds the real one — is refused.
+func TestVerifyForSettlement_RefusesAForgedBeneficiary(t *testing.T) {
+	h := build(t)
+	h.in.Txn.Beneficiary = "rObFnAmj4Tw6aQNiWQMxSHkxCXxwQdXECp" // a different, valid XRPL address
+	_, d := h.eng.VerifyForSettlement(context.Background(), h.in)
+	if d.Allow {
+		t.Fatal("a payment to a beneficiary the signed token does not name was accepted — forged merchant")
+	}
+	if d.Step != 8 {
+		t.Fatalf("expected refusal at context(8), got step %d (%s)", d.Step, d.StepName)
+	}
+}
+
+// TestVerifyForSettlement_RefusesAForgedOriginator: same, for the payer.
+func TestVerifyForSettlement_RefusesAForgedOriginator(t *testing.T) {
+	h := build(t)
+	h.in.Txn.Originator = "rObFnAmj4Tw6aQNiWQMxSHkxCXxwQdXECp"
+	_, d := h.eng.VerifyForSettlement(context.Background(), h.in)
+	if d.Allow {
+		t.Fatal("a payment from an originator the signed token does not name was accepted")
+	}
+	if d.Step != 8 {
+		t.Fatalf("expected refusal at context(8), got step %d (%s)", d.Step, d.StepName)
+	}
+}

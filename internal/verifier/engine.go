@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -440,13 +441,31 @@ func (e *Engine) VerifyForSettlement(ctx context.Context, in Input) (SettlementF
 	}
 	if scope != nil {
 		if m, ok := scope["max_amount"]; ok {
-			facts.MaxAmount = fmt.Sprintf("%v", m)
+			facts.MaxAmount = decimalString(m)
 		}
 		if c, ok := scope["currency"].(string); ok {
 			facts.Currency = c
 		}
 	}
 	return facts, Decision{Allow: true}
+}
+
+// decimalString renders a JSON-decoded numeric ceiling as a plain base-10
+// string, never scientific notation. A ceiling that arrives as float64 (JSON
+// numbers do, without UseNumber) would otherwise render as "5e+06" under %v and
+// be rejected by the settler's decimal parser — a fail-closed availability bug
+// for large ceilings. json.Number and string forms pass through unchanged.
+func decimalString(v any) string {
+	switch n := v.(type) {
+	case json.Number:
+		return n.String()
+	case string:
+		return n
+	case float64:
+		return strconv.FormatFloat(n, 'f', -1, 64)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 // ── steps ────────────────────────────────────────────────────────────────────
