@@ -618,11 +618,21 @@ func checkChainTokenTemporal(label string, claims map[string]any) error {
 	// Optional: a token without nbf is valid from iat, as before. Checked at every
 	// hop, so a band-CT whose day has not arrived denies the whole chain
 	// (VELOCITY-AND-CUMULATIVE-SPEND-DESIGN sec 3a).
-	if nbf, ok := intClaim(claims, "nbf"); ok {
+	if raw, present := claims["nbf"]; present {
+		nbf, ok := intClaim(claims, "nbf")
+		if !ok {
+			return fmt.Errorf("%s has a present but non-numeric or out-of-range nbf (%v): a window that cannot be evaluated is denied, never skipped", label, raw)
+		}
 		if nbf >= exp {
 			return fmt.Errorf("%s window is empty: nbf %d is not before exp %d", label, nbf, exp)
 		}
-		if time.Now().Unix()+iatSkew < nbf {
+		// No skew allowance on the opening. Adding iatSkew here would open the
+		// window up to a minute early and let a back-to-back sub-band ($3 today,
+		// $3 tomorrow) overlap its predecessor for the skew interval, doubling the
+		// per-window cap the non-overlap division exists to hold. The window opens
+		// exactly at nbf; a slow verifier clock then fails CLOSED (rejects for up
+		// to the drift), which is the safe direction.
+		if time.Now().Unix() < nbf {
 			return fmt.Errorf("%s is not yet valid: its window opens at %d", label, nbf)
 		}
 	}
@@ -690,9 +700,13 @@ func (e *Engine) step5DPoP(txClaims map[string]any, token, proof, htm, htu strin
 // valid during a time the parent's window had not opened. A parent with no
 // opening places none on the child (introducing a window is a narrowing).
 func nbfAttenuates(parentClaims, ctClaims map[string]any) error {
-	parentNbf, hasParent := intClaim(parentClaims, "nbf")
-	if !hasParent {
+	raw, present := parentClaims["nbf"]
+	if !present {
 		return nil
+	}
+	parentNbf, ok := intClaim(parentClaims, "nbf")
+	if !ok {
+		return fmt.Errorf("parent has a present but non-numeric or out-of-range nbf (%v): its window cannot be evaluated and is denied, never skipped", raw)
 	}
 	ctNbf, hasChild := intClaim(ctClaims, "nbf")
 	if !hasChild {

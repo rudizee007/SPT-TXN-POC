@@ -42,6 +42,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -554,7 +555,11 @@ func Delegate(req DelegateRequest, signingKey crypto.Signer) (*CT, error) {
 // empty window (an opening at or after the expiry).
 func attenuateNotBefore(parent map[string]any, requested time.Time, childExp int64) (int64, error) {
 	var parentNbf int64
-	if pn, ok := parent["nbf"].(float64); ok {
+	if raw, present := parent["nbf"]; present {
+		pn, ok := raw.(float64)
+		if !ok || math.IsNaN(pn) || math.IsInf(pn, 0) || pn < math.MinInt64 || pn >= math.MaxInt64 {
+			return 0, fmt.Errorf("parent has a present but non-numeric or out-of-range nbf (%v): its window cannot be evaluated and is denied, never skipped", raw)
+		}
 		parentNbf = int64(pn)
 	}
 	var nbf int64
