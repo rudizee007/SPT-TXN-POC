@@ -60,6 +60,25 @@ var (
 	ErrCumulativeNotNumeric = errors.New("sub-band commitment: max_cumulative is not numeric")
 )
 
+// DeclaresCumulativeBudget reports whether a scope carries a max_cumulative
+// budget — the dimension a group-root commitment divides. Issuance uses it to
+// refuse a subband commitment on a scope that has no cumulative budget to
+// divide, and the verifier uses it to decide when the per-hop membership check
+// applies. It is the exported view of the internal dimension name so callers in
+// cattoken / cttoken / verifier need not hardcode the string.
+func DeclaresCumulativeBudget(s Scope) bool {
+	_, ok := s[cumulativeDim]
+	return ok
+}
+
+// IsKnownHashSuite reports whether a suite label is one this build understands.
+// Issuance uses it to fail closed — a CAT is never signed committing to a suite
+// no verifier can reproduce.
+func IsKnownHashSuite(s HashSuite) bool {
+	_, err := s.sum(nil)
+	return err == nil
+}
+
 // sum dispatches the suite to its hash. New suites slot in here.
 func (s HashSuite) sum(data []byte) ([32]byte, error) {
 	switch s {
@@ -102,10 +121,20 @@ func be32(buf []byte, v uint32) []byte {
 	return append(buf, b[:]...)
 }
 
-// SubbandParentCommit binds a division to ONE parent's budget, currency and
-// window. It is folded into every leaf so a leaf minted under parent A cannot be
-// replayed as a member under a different parent B (design §2, decision D3).
-func SubbandParentCommit(suite HashSuite, parent Scope, parentNbf, parentExp int64) ([32]byte, error) {
+// SubbandParentCommit binds a division to ONE parent's budget and currency. It
+// is folded into every leaf so a leaf minted for a $100/USD budget cannot be
+// replayed as a member of a division of a different budget or currency (design
+// §2, decision D3).
+//
+// It deliberately does NOT bind the parent's validity window. The commitment
+// must be reconstructible by a stateless verifier from the parent token alone,
+// and a division's window is a caller concept not carried on the token; binding
+// it would force the window onto the token or make the leaf unverifiable. Cross-
+// parent replay is already prevented independently: a slice is cryptographically
+// pinned to its issuing CAT by the chain's spt_cat_ref / spt_parent_hash links,
+// so it cannot be presented under a different parent even when two parents share
+// a budget and currency.
+func SubbandParentCommit(suite HashSuite, parent Scope) ([32]byte, error) {
 	budget, err := canonicalMoney(parent[cumulativeDim])
 	if err != nil {
 		return [32]byte{}, err
@@ -115,8 +144,6 @@ func SubbandParentCommit(suite HashSuite, parent Scope, parentNbf, parentExp int
 	pre = append(pre, tagParentCommit)
 	pre = lp(pre, []byte(currency))
 	pre = lp(pre, []byte(budget))
-	pre = be64(pre, parentNbf)
-	pre = be64(pre, parentExp)
 	return suite.sum(pre)
 }
 
@@ -273,7 +300,7 @@ func CommitBandDivision(suite HashSuite, parent Scope, parentNbf, parentExp int6
 	if _, err = ValidateBandDivision(parent, parentNbf, parentExp, bands); err != nil {
 		return [32]byte{}, nil, nil, err
 	}
-	parentCommit, err := SubbandParentCommit(suite, parent, parentNbf, parentExp)
+	parentCommit, err := SubbandParentCommit(suite, parent)
 	if err != nil {
 		return [32]byte{}, nil, nil, err
 	}

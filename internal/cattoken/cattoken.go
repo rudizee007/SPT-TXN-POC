@@ -28,6 +28,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -35,6 +36,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudizee007/spt-txn-poc/internal/tbac"
 	"github.com/rudizee007/spt-txn-poc/internal/zkdid"
 )
 
@@ -89,6 +91,18 @@ type IssueRequest struct {
 	// initiative. Empty means "derive from the test principal" (POC default);
 	// a non-empty value that is not exactly 32 bytes is rejected.
 	IdentityAnchor []byte
+
+	// SubbandGroupRoot, when non-empty, commits this CAT to ONE pre-division of
+	// its max_cumulative budget (§7.2 / SUBBAND-GROUP-ROOT-DESIGN). It is the
+	// 32-byte Merkle root over the slice tuples from tbac.CommitBandDivision. The
+	// CAT's Scope MUST declare a max_cumulative budget. Downstream, only slices
+	// proving membership in this root may carry a share of the budget, so the
+	// cumulative total is bounded by construction and the budget cannot be
+	// re-divided — a second division would need a different root, i.e. a
+	// different CAT the human's authority never signed.
+	SubbandGroupRoot []byte
+	SubbandGroupSize uint32
+	SubbandHashSuite tbac.HashSuite
 }
 
 // CAT is an issued Compliance Attestation Token.
@@ -174,6 +188,28 @@ func Issue(req IssueRequest, signingKey crypto.Signer) (*CAT, error) {
 	}
 	if req.Status != nil {
 		claims["status"] = req.Status
+	}
+
+	// §7.2: a signed commitment to ONE pre-division of this CAT's cumulative
+	// budget. Signed as part of the CAT so a verifier trusts that the human's
+	// authority — not a downstream party — fixed the division. Only slices that
+	// prove membership in this root may carry a share of the budget.
+	if len(req.SubbandGroupRoot) > 0 {
+		if len(req.SubbandGroupRoot) != 32 {
+			return nil, fmt.Errorf("subband group root must be 32 bytes, got %d", len(req.SubbandGroupRoot))
+		}
+		if req.SubbandGroupSize == 0 {
+			return nil, fmt.Errorf("subband group size must be > 0")
+		}
+		if !tbac.IsKnownHashSuite(req.SubbandHashSuite) {
+			return nil, fmt.Errorf("subband hash suite %q is not known", req.SubbandHashSuite)
+		}
+		if !tbac.DeclaresCumulativeBudget(tbac.Scope(req.Scope)) {
+			return nil, fmt.Errorf("subband commitment requires the CAT scope to declare a max_cumulative budget")
+		}
+		claims["subband_group_root"] = hex.EncodeToString(req.SubbandGroupRoot)
+		claims["subband_group_size"] = req.SubbandGroupSize
+		claims["subband_hash_suite"] = string(req.SubbandHashSuite)
 	}
 
 	// ── 3. Build JWT (EdDSA / Ed25519) ───────────────────────────────
@@ -293,6 +329,52 @@ func numClaim(v any) (int64, bool) {
 	return 0, false
 }
 
+// degenerateHolderKeys are Ed25519 public-key encodings under which one fixed
+// 64-byte constant verifies as a signature without anyone holding a private
+// key. A credential sealed to one of them is a bearer token wearing a sender
+// constraint: it constrains nobody.
+//
+// The rate differs by the point's order and it is worth stating exactly, because
+// "any message" would be wrong for the second entry. Measured on this toolchain
+// over 2000 messages with R = the neutral element and S = 0:
+//
+//	the neutral element (order 1)   2000/2000  (100%)
+//	the all-zero encoding (order 4)  513/2000  (~25%, i.e. 1 in 4)
+//
+// One in four is not a weaker problem than one in one; it is a forgery that
+// needs at most a handful of attempts. Both are refused.
+//
+// Both entries were verified empirically rather than copied from a table — see
+// TestHolderKey_DegenerateEncodingsAreRefused, which demonstrates the forgery
+// before asserting the refusal. Go's crypto/ed25519 performs no low-order check
+// of its own (RFC 8032 does not require one), so nothing else rejects these.
+//
+// RESIDUAL, stated rather than hidden: this refuses the two encodings that were
+// demonstrated, NOT the full set of low-order points. Rejecting all of them
+// means clearing the cofactor, which needs a library that exposes point
+// arithmetic; the project's own rule is audited libraries only, so adding one is
+// a dependency decision for the maintainer and not something to hand-roll here.
+// Until then this is a mitigation, not a proof.
+var degenerateHolderKeys = [][]byte{
+	// The neutral element.
+	{0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	// The all-zero encoding, a point of order 4.
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+}
+
+// checkHolderKey refuses a holder key that cannot function as a sender
+// constraint. It lives here, beside the length check, so every caller of Issue
+// gets it — a guard in one HTTP handler is a guard the next caller does not have.
+func checkHolderKey(pub ed25519.PublicKey) error {
+	for _, bad := range degenerateHolderKeys {
+		if subtle.ConstantTimeCompare(pub, bad) == 1 {
+			return fmt.Errorf("holder public key is a degenerate Ed25519 encoding: a fixed " +
+				"constant verifies as a signature over any message under it, so it constrains nobody")
+		}
+	}
+	return nil
+}
+
 func newJTI() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -318,8 +400,18 @@ func validateRequest(req IssueRequest) error {
 	if len(req.HolderPublicKey) != ed25519.PublicKeySize {
 		return fmt.Errorf("holder public key must be %d bytes", ed25519.PublicKeySize)
 	}
+	if err := checkHolderKey(req.HolderPublicKey); err != nil {
+		return err
+	}
 	if req.DelegationDepthMax < 1 {
 		return fmt.Errorf("delegation_depth_max must be >= 1")
+	}
+	// A monetary ceiling with no currency beside it is not a ceiling: TxnScope
+	// asserts `currency` only where the scope declares it, so max_amount alone
+	// bounds the amount in every currency at once. Refuse to seal it.
+	// See tbac.ValidateIssuance.
+	if err := tbac.ValidateIssuance(tbac.Scope(req.Scope)); err != nil {
+		return fmt.Errorf("capability scope: %w", err)
 	}
 	return nil
 }

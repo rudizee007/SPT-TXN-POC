@@ -86,6 +86,23 @@ type IssueRequest struct {
 	// Token Status List entry for scalable per-token revocation
 	// (docs/spec/STATUS-LIST.md §4). nil leaves the CT out of status scope.
 	Status map[string]any
+
+	// Subband, when set, marks this CT as slice LegIndex of its parent CAT's
+	// committed group root (§7.2). IssueSubbands sets it; the verifier requires
+	// these claims on any CT that carries a max_cumulative budget and checks the
+	// membership against the parent's subband_group_root.
+	Subband *SubbandMembership
+}
+
+// SubbandMembership is a slice CT's proof that it is one member of its parent's
+// committed group root: the leg index and Merkle path, plus the root, size and
+// hash suite it is a member of. Built from tbac.CommitBandDivision output.
+type SubbandMembership struct {
+	GroupRoot  [32]byte
+	GroupSize  uint32
+	HashSuite  tbac.HashSuite
+	LegIndex   uint32
+	MerklePath [][32]byte
 }
 
 // CT is an issued Capability Token.
@@ -214,6 +231,27 @@ func Issue(req IssueRequest, signingKey crypto.Signer) (*CT, error) {
 		claims["nbf"] = nbf
 	}
 
+	// §7.2: slice membership, when this CT is a sub-band of its parent's committed
+	// group root. The verifier rebuilds the leaf from this CT's scope + window +
+	// these claims and checks membership against the parent's subband_group_root.
+	if req.Subband != nil {
+		if req.Subband.GroupSize == 0 || req.Subband.LegIndex >= req.Subband.GroupSize {
+			return nil, fmt.Errorf("subband leg index %d out of range for group size %d", req.Subband.LegIndex, req.Subband.GroupSize)
+		}
+		if !tbac.IsKnownHashSuite(req.Subband.HashSuite) {
+			return nil, fmt.Errorf("subband hash suite %q is not known", req.Subband.HashSuite)
+		}
+		claims["subband_group_root"] = hex.EncodeToString(req.Subband.GroupRoot[:])
+		claims["subband_group_size"] = req.Subband.GroupSize
+		claims["subband_hash_suite"] = string(req.Subband.HashSuite)
+		claims["subband_leg_index"] = req.Subband.LegIndex
+		mp := make([]string, len(req.Subband.MerklePath))
+		for i, h := range req.Subband.MerklePath {
+			mp[i] = hex.EncodeToString(h[:])
+		}
+		claims["subband_merkle_path"] = mp
+	}
+
 	if req.Status != nil {
 		claims["status"] = req.Status
 	}
@@ -230,6 +268,92 @@ func Issue(req IssueRequest, signingKey crypto.Signer) (*CT, error) {
 		IssuedAt:    now,
 		ExpiresAt:   exp,
 	}, nil
+}
+
+// SubbandIssueRequest divides a parent CAT's committed max_cumulative budget into
+// its N slices and mints each as a member CT. The bands MUST reproduce the CAT's
+// signed subband_group_root, or issuance is refused — a caller cannot mint slices
+// for a division the human's authority did not commit.
+type SubbandIssueRequest struct {
+	Issuer          string
+	ParentCAT       string
+	ParentIssuerKey ed25519.PublicKey
+	HashSuite       tbac.HashSuite
+	// DivisionNbf, DivisionExp are the window the division was committed under —
+	// the SAME [nbf, exp) the caller passed to tbac.CommitBandDivision to produce
+	// the CAT's subband_group_root. Passed explicitly (not derived from the CAT's
+	// token exp) so the recomputed root reproduces the committed one deterministically.
+	DivisionNbf int64
+	DivisionExp int64
+	// Bands are the N slices: each carries its max_cumulative portion + currency
+	// and its [NotBefore, Expiry) window in Unix seconds, inside DivisionNbf..DivisionExp.
+	Bands []tbac.Band
+	// HolderPublicKeys binds each slice to a holder key: one per band, or a single
+	// key reused for every slice.
+	HolderPublicKeys []ed25519.PublicKey
+}
+
+// IssueSubbands verifies the parent CAT, recomputes the division commitment from
+// the bands and checks it equals the CAT's committed root, then mints each slice
+// as a CT carrying its membership proof. All-or-nothing: any failure returns no
+// tokens.
+func IssueSubbands(req SubbandIssueRequest, signingKey crypto.Signer) ([]*CT, error) {
+	parent, err := cattoken.Verify(req.ParentCAT, req.ParentIssuerKey)
+	if err != nil {
+		return nil, fmt.Errorf("parent CAT invalid: %w", err)
+	}
+	parentScopeRaw, ok := parent["capability_scope"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("parent CAT missing capability_scope")
+	}
+	parentScope := tbac.Scope(parentScopeRaw)
+
+	committedRoot, ok := parent["subband_group_root"].(string)
+	if !ok || committedRoot == "" {
+		return nil, fmt.Errorf("parent CAT carries no subband_group_root: its budget is not committed for division")
+	}
+	root, _, paths, err := tbac.CommitBandDivision(req.HashSuite, parentScope, req.DivisionNbf, req.DivisionExp, req.Bands)
+	if err != nil {
+		return nil, fmt.Errorf("recompute division: %w", err)
+	}
+	if hex.EncodeToString(root[:]) != committedRoot {
+		return nil, fmt.Errorf("bands do not reproduce the CAT's committed group root")
+	}
+	if len(req.HolderPublicKeys) != len(req.Bands) && len(req.HolderPublicKeys) != 1 {
+		return nil, fmt.Errorf("holder keys (%d) must match bands (%d), or supply one shared key", len(req.HolderPublicKeys), len(req.Bands))
+	}
+
+	n := uint32(len(req.Bands))
+	slices := make([]*CT, len(req.Bands))
+	for i, band := range req.Bands {
+		holder := req.HolderPublicKeys[0]
+		if len(req.HolderPublicKeys) == len(req.Bands) {
+			holder = req.HolderPublicKeys[i]
+		}
+		var groot [32]byte
+		copy(groot[:], root[:])
+		ct, err := Issue(IssueRequest{
+			Issuer:          req.Issuer,
+			ParentCAT:       req.ParentCAT,
+			ParentIssuerKey: req.ParentIssuerKey,
+			RequestedScope:  band.Scope,
+			HolderPublicKey: holder,
+			NotBefore:       time.Unix(band.NotBefore, 0).UTC(),
+			TTL:             time.Until(time.Unix(band.Expiry, 0)),
+			Subband: &SubbandMembership{
+				GroupRoot:  groot,
+				GroupSize:  n,
+				HashSuite:  req.HashSuite,
+				LegIndex:   uint32(i),
+				MerklePath: paths[i],
+			},
+		}, signingKey)
+		if err != nil {
+			return nil, fmt.Errorf("mint slice %d: %w", i, err)
+		}
+		slices[i] = ct
+	}
+	return slices, nil
 }
 
 // DelegateRequest is the input to CT→CT delegation (Milestone 7, agentic

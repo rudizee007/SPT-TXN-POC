@@ -819,6 +819,15 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 			return nil, fmt.Errorf("CT[%d] scope exceeds its parent: %w", i, err)
 		}
 
+		// §7.2: a hop that carries a max_cumulative budget may do so ONLY by
+		// proving membership in its parent's one committed division. This is the
+		// enforcement that makes the cumulative bound real: an (N+1)th slice, a
+		// second division of the same parent, or a self-granted cumulative budget
+		// has no valid membership and is refused here.
+		if err := checkSubbandMembership(parentClaims, parentScope, ctClaims, ctScope); err != nil {
+			return nil, fmt.Errorf("CT[%d] subband: %w", i, err)
+		}
+
 		// Delegation depth: remaining must be exactly the parent's budget minus
 		// one, and never negative. Enforced per hop, this caps the chain length.
 		ctRem, ok := intClaim(ctClaims, "delegation_depth_remaining")
@@ -1138,6 +1147,77 @@ func scopeOf(claims map[string]any) (tbac.Scope, error) {
 // attenuation. No 32-bit target is built today (CI has no GOARCH matrix), which
 // is why this was latent rather than live; int64 removes the hazard rather than
 // relying on the build matrix never changing.
+// checkSubbandMembership enforces §7.2 at one chain hop. If the child carries a
+// max_cumulative budget, its parent must have committed a division and the child
+// must be a member of it: the child's declared tuple — its cumulative budget and
+// currency, its window, and its position — rebuilt into a leaf under the parent's
+// budget/currency commitment, must verify against the parent's committed root. A
+// child that carries a cumulative budget with no committed division above it, or
+// whose membership does not verify, is refused. A child with no cumulative budget
+// is unaffected (the common case), so existing chains are untouched.
+func checkSubbandMembership(parentClaims map[string]any, parentScope tbac.Scope, childClaims map[string]any, childScope tbac.Scope) error {
+	if !tbac.DeclaresCumulativeBudget(childScope) {
+		return nil
+	}
+	parentRoot, _ := parentClaims["subband_group_root"].(string)
+	if parentRoot == "" {
+		return fmt.Errorf("carries a max_cumulative budget but its parent committed no division")
+	}
+	childRoot, _ := childClaims["subband_group_root"].(string)
+	if childRoot != parentRoot {
+		return fmt.Errorf("subband_group_root does not match the parent's committed division")
+	}
+	suite := tbac.HashSuite(claimStr(childClaims, "subband_hash_suite"))
+	groupSize, ok := intClaim(childClaims, "subband_group_size")
+	if !ok || groupSize <= 0 || groupSize > 0xFFFFFFFF {
+		return fmt.Errorf("missing or invalid subband_group_size")
+	}
+	legIndex, ok := intClaim(childClaims, "subband_leg_index")
+	if !ok || legIndex < 0 || legIndex >= groupSize {
+		return fmt.Errorf("missing or invalid subband_leg_index")
+	}
+	rawPath, ok := childClaims["subband_merkle_path"].([]any)
+	if !ok {
+		return fmt.Errorf("missing subband_merkle_path")
+	}
+	path := make([][32]byte, len(rawPath))
+	for k, ph := range rawPath {
+		hs, _ := ph.(string)
+		b, err := hex.DecodeString(hs)
+		if err != nil || len(b) != 32 {
+			return fmt.Errorf("malformed subband_merkle_path element %d", k)
+		}
+		copy(path[k][:], b)
+	}
+	rootBytes, err := hex.DecodeString(parentRoot)
+	if err != nil || len(rootBytes) != 32 {
+		return fmt.Errorf("malformed committed group root")
+	}
+	var root [32]byte
+	copy(root[:], rootBytes)
+
+	parentCommit, err := tbac.SubbandParentCommit(suite, parentScope)
+	if err != nil {
+		return err
+	}
+	childExp, ok := intClaim(childClaims, "exp")
+	if !ok {
+		return fmt.Errorf("child missing exp")
+	}
+	childNbf, _ := intClaim(childClaims, "nbf") // 0 when absent
+	band := tbac.Band{Scope: childScope, NotBefore: childNbf, Expiry: childExp}
+	leaf, err := tbac.SubbandLeaf(suite, parentCommit, band, uint32(legIndex), uint32(groupSize))
+	if err != nil {
+		return err
+	}
+	return tbac.SubbandVerifyMembership(suite, leaf, uint32(legIndex), uint32(groupSize), path, root)
+}
+
+func claimStr(claims map[string]any, key string) string {
+	s, _ := claims[key].(string)
+	return s
+}
+
 func intClaim(claims map[string]any, name string) (int64, bool) {
 	f, ok := claims[name].(float64)
 	if !ok {

@@ -41,7 +41,7 @@ func TestSubbandCommit_RoundTripAllSizes(t *testing.T) {
 		if len(leaves) != n || len(paths) != n {
 			t.Fatalf("n=%d: got %d leaves, %d paths", n, len(leaves), len(paths))
 		}
-		pc, err := SubbandParentCommit(suite, parent, pnbf, pexp)
+		pc, err := SubbandParentCommit(suite, parent)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,7 +129,7 @@ func TestSubbandCommit_CrossParentReplayRefused(t *testing.T) {
 		t.Fatalf("a slice from parent A verified under parent B's root: %v", err)
 	}
 	// And a leaf rebuilt under B's parent commit differs from A's leaf.
-	pcB, _ := SubbandParentCommit(suite, parentB, 0, 30)
+	pcB, _ := SubbandParentCommit(suite, parentB)
 	leafUnderB, _ := SubbandLeaf(suite, pcB, bands[0], 0, 3)
 	if leafUnderB == leavesA[0] {
 		t.Fatal("the same band under two parents produced the same leaf")
@@ -148,7 +148,7 @@ func TestSubbandCommit_TamperedTupleRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pc, err := SubbandParentCommit(suite, parent, pnbf, pexp)
+	pc, err := SubbandParentCommit(suite, parent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestSubbandCommit_UnknownSuiteRefused(t *testing.T) {
 	if _, _, _, err := CommitBandDivision(HashSuite("md5-lol"), parent, pnbf, pexp, bands); !errors.Is(err, ErrUnknownHashSuite) {
 		t.Fatalf("want ErrUnknownHashSuite, got %v", err)
 	}
-	if _, err := SubbandParentCommit(HashSuite("nope"), parent, pnbf, pexp); !errors.Is(err, ErrUnknownHashSuite) {
+	if _, err := SubbandParentCommit(HashSuite("nope"), parent); !errors.Is(err, ErrUnknownHashSuite) {
 		t.Fatalf("SubbandParentCommit want ErrUnknownHashSuite, got %v", err)
 	}
 }
@@ -256,5 +256,26 @@ func TestSubbandCommit_DeterministicAndOrderSensitive(t *testing.T) {
 	}
 	if r1 != r2 {
 		t.Fatal("the same division committed to two different roots")
+	}
+}
+
+func TestDeclaresCumulativeBudget(t *testing.T) {
+	if !DeclaresCumulativeBudget(Scope{cumulativeDim: 100, "currency": "USD"}) {
+		t.Error("a scope with max_cumulative must report true")
+	}
+	if DeclaresCumulativeBudget(Scope{"max_amount": 100, "currency": "USD"}) {
+		t.Error("a scope with only max_amount must report false")
+	}
+	if DeclaresCumulativeBudget(Scope{}) {
+		t.Error("an empty scope must report false")
+	}
+}
+
+func TestIsKnownHashSuite(t *testing.T) {
+	if !IsKnownHashSuite(SuiteSHA3_256) {
+		t.Error("SuiteSHA3_256 must be known")
+	}
+	if IsKnownHashSuite(HashSuite("sha256")) || IsKnownHashSuite(HashSuite("")) {
+		t.Error("an unregistered suite must be unknown")
 	}
 }
