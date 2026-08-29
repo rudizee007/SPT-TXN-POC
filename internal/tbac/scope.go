@@ -323,6 +323,25 @@ func TxnScope(parent Scope, tc ledger.TxnContext) (Scope, error) {
 		// float64 — important for large values like XRP drops (> 2^53).
 		out["max_amount"] = json.Number(tc.Amount)
 	}
+	// max_cumulative is a money ceiling too, and it must project or a token that
+	// carries a cumulative budget but no max_amount would assert NOTHING here and
+	// leave its transactions unbounded at spend time — a $3-cumulative slice
+	// minting a $1000 transfer. Project it on the same terms as max_amount
+	// (currency-qualified, positive, canonical, exact json.Number) so a single-use
+	// slice is bounded by its own budget. The cumulative SUM across slices is
+	// bounded by construction at ISSUANCE (ValidateSubbandDivision) plus
+	// single-use, never by a running total here — this layer stays stateless. See
+	// VELOCITY-AND-CUMULATIVE-SPEND-DESIGN §3a and subband.go.
+	if _, ok := parent[cumulativeDim]; ok {
+		if _, qualified := parent["currency"]; !qualified {
+			return nil, fmt.Errorf("capability declares %q but no %q: %w",
+				cumulativeDim, "currency", ErrCeilingUnqualified)
+		}
+		if _, err := ledger.ParseAmount(tc.Amount); err != nil {
+			return nil, fmt.Errorf("transaction amount: %w", err)
+		}
+		out[cumulativeDim] = json.Number(tc.Amount)
+	}
 	if _, ok := parent["currency"]; ok {
 		out["currency"] = tc.Currency
 	}
