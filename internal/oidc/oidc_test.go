@@ -62,6 +62,16 @@ func (i *idp) mint(t *testing.T, claims map[string]any) string {
 	return si + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
+// mintWithKid mints a token whose header names an arbitrary kid, so the
+// cache-miss path can be driven from the caller's side of the trust boundary.
+func (i *idp) mintWithKid(t *testing.T, kid string, claims map[string]any) string {
+	t.Helper()
+	real := i.kid
+	i.kid = kid
+	defer func() { i.kid = real }()
+	return i.mint(t, claims)
+}
+
 func (i *idp) stdClaims(extra map[string]any) map[string]any {
 	c := map[string]any{
 		"iss": i.issuer,

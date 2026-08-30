@@ -30,6 +30,13 @@ trap 'cp "$BAK" "$ENGINE"; rm -f "$BAK"' EXIT INT TERM
 run_mutation() {
   local name="$1" from="$2" to="$3"
   cp "$BAK" "$ENGINE"
+  # These tests must pass CLEAN, or their failure under mutation evidences
+  # nothing. This file already asserts the test COUNT is non-zero; a green
+  # over tests that were already red is the other half of the same hole.
+  if ! go test ./internal/verifier/ -count=1 -run 'TestSec_Unconfigured|TestSec_MissingAud|TestSec_ArrayAud|TestSec_ChainToken' >/dev/null 2>&1; then
+    echo "FAIL      $name: the mapped tests do not pass on the CLEAN tree"
+    return 1
+  fi
   if ! grep -qF "$from" "$ENGINE"; then
     echo "FAIL      $name: anchor not found — the mutation was never applied"
     return 1
@@ -41,7 +48,7 @@ s = open(p).read()
 assert s.count(a) == 1, f"anchor appears {s.count(a)} times"
 open(p, "w").write(s.replace(a, b))
 PY
-  if ! go build ./internal/verifier/ >/dev/null 2>&1; then
+  if ! go build -o /dev/null ./internal/verifier/ >/dev/null 2>&1; then
     echo "FAIL      $name: mutation does not compile — rewrite it, do not skip it"
     return 1
   fi

@@ -136,7 +136,7 @@ can change that** — these primitives are not in the FIPS canon:
 run in the FIPS 140-3-validated Go Cryptographic Module (CMVP #5247). The
 zero-knowledge selective-disclosure layer uses modern primitives (Groth16/BN254,
 Poseidon2) that are outside the FIPS-approved algorithm set by nature; that layer is
-documented and independently audited, and can be disabled for deployments whose scope
+documented, and an independent audit of it is sought rather than complete; it can be disabled for deployments whose scope
 forbids non-approved algorithms." Never imply the ZK layer is FIPS-validated.
 
 ## 6. Phased plan (low effort now, buyer-triggered later)

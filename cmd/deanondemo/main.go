@@ -46,7 +46,7 @@ func main() {
 
 	// (2) The x402 gate provisions the agent; the humanAnchor is a zero-knowledge
 	// commitment to the accountable person — this is what goes on-ledger.
-	g, err := gate.New("xrpl", "rPdvC6ccq8hCdPKSPJkPmyZ4Mi1oG2FFkT", 5000, "XRP")
+	g, err := gate.New("xrpl", "rPdvC6ccq8hCdPKSPJkPmyZ4Mi1oG2FFkT", "5000", "XRP")
 	if err != nil {
 		log.Fatalf("gate: %v", err)
 	}

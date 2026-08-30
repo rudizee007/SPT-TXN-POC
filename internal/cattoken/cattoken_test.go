@@ -41,7 +41,7 @@ func TestIssue_ValidCAT(t *testing.T) {
 		Issuer:             "domain-a.authorg",
 		Subject:            "alice",
 		PrincipalName:      "alice",
-		Scope:              cattoken.CapabilityScope{"action": "transfer", "max_amount": 10000},
+		Scope:              cattoken.CapabilityScope{"action": "transfer", "max_amount": 10000, "currency": "USD"},
 		DelegationDepthMax: 3,
 		TTL:                24 * time.Hour,
 		HolderPublicKey:    holderPub,

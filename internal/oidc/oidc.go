@@ -22,6 +22,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -40,17 +41,40 @@ type Verifier struct {
 	leeway    time.Duration
 	hc        *http.Client
 
+	insecureScheme bool
+	issuerURL      *url.URL
+
 	jwksURI string
 	mu      sync.RWMutex
 	keys    map[string]*rsa.PublicKey // kid -> RSA public key
+	// fetchedAt is when keys was last successfully loaded, and attemptedAt when
+	// a load was last tried (success or not). maxAge bounds how long a cached
+	// key set is honoured; minInterval bounds how often a fetch may be
+	// attempted. Both exist for reasons the other cannot cover: without maxAge
+	// a key set is cached until the process dies, so a key revoked at the
+	// provider is honoured indefinitely whenever the presented kid still hits
+	// the cache. Without minInterval, the cache MISS path is an unauthenticated
+	// outbound fetch driven by a field of the caller's token.
+	fetchedAt   time.Time
+	attemptedAt time.Time
+	maxAge      time.Duration
+	minInterval time.Duration
 }
 
 // Option configures a Verifier.
 type Option func(*Verifier)
 
-// WithAudience requires the token's aud (or azp) to match one of these values.
-// If never set, the audience check is skipped (acceptable for a local demo;
-// SET IT IN PRODUCTION).
+// WithAudience requires the token's `aud` to match one of these values.
+//
+// `azp` is deliberately NOT accepted as a substitute. azp is the authorized
+// party — the client that requested the token — so it is present on every token
+// that client obtains, for every resource. Matching on it turns a restriction on
+// WHICH RESOURCE may consume the token into a restriction on WHICH CLIENT asked
+// for it, which are different properties, and the second one does not bound
+// replay across relying parties.
+//
+// If never set, the audience check is skipped. Callers that require the bound
+// must set it; cmd/idp-bridge refuses to start without it.
 func WithAudience(aud ...string) Option {
 	return func(v *Verifier) {
 		for _, a := range aud {
@@ -67,18 +91,57 @@ func WithHTTPClient(hc *http.Client) Option { return func(v *Verifier) { v.hc = 
 // WithLeeway sets the clock-skew tolerance for exp/nbf (default 60s).
 func WithLeeway(d time.Duration) Option { return func(v *Verifier) { v.leeway = d } }
 
+// WithJWKSMaxAge bounds how long a cached key set is honoured before it must be
+// re-fetched (default 15 minutes). This IS the propagation delay for a key
+// revoked at the provider, so set it to what the deployment can tolerate.
+func WithJWKSMaxAge(d time.Duration) Option {
+	return func(v *Verifier) {
+		if d > 0 {
+			v.maxAge = d
+		}
+	}
+}
+
+// WithJWKSMinRefreshInterval bounds how often a key-set fetch may be attempted
+// (default 30 seconds). The cache-miss path is reachable by an unauthenticated
+// caller — the kid is a field of the token being presented, read before the
+// signature is checked — so without a floor here each junk token becomes one
+// outbound request to the identity provider.
+func WithJWKSMinRefreshInterval(d time.Duration) Option {
+	return func(v *Verifier) {
+		if d > 0 {
+			v.minInterval = d
+		}
+	}
+}
+
+// WithInsecureIssuerScheme permits a plaintext http:// issuer. Discovery decides
+// which keys this verifier will trust for the life of the process, so over
+// plaintext anything on the path chooses them. Loopback does not need this
+// option; everything else does, and it should exist only in a demo.
+func WithInsecureIssuerScheme() Option {
+	return func(v *Verifier) { v.insecureScheme = true }
+}
+
 // NewVerifier runs OIDC discovery against issuer and loads its JWKS.
 func NewVerifier(ctx context.Context, issuer string, opts ...Option) (*Verifier, error) {
 	v := &Verifier{
-		issuer:    strings.TrimRight(issuer, "/"),
-		audiences: map[string]bool{},
-		leeway:    60 * time.Second,
-		hc:        &http.Client{Timeout: 10 * time.Second},
-		keys:      map[string]*rsa.PublicKey{},
+		issuer:      strings.TrimRight(issuer, "/"),
+		audiences:   map[string]bool{},
+		leeway:      60 * time.Second,
+		hc:          &http.Client{Timeout: 10 * time.Second, CheckRedirect: noRedirect},
+		keys:        map[string]*rsa.PublicKey{},
+		maxAge:      15 * time.Minute,
+		minInterval: 30 * time.Second,
 	}
 	for _, o := range opts {
 		o(v)
 	}
+	iss, err := parseIssuer(v.issuer, v.insecureScheme)
+	if err != nil {
+		return nil, err
+	}
+	v.issuerURL = iss
 	if err := v.discover(ctx); err != nil {
 		return nil, err
 	}
@@ -97,14 +160,75 @@ func (v *Verifier) discover(ctx context.Context) error {
 	if err := v.getJSON(ctx, url, &d); err != nil {
 		return fmt.Errorf("oidc: discovery %s: %w", url, err)
 	}
-	if d.Issuer != "" && strings.TrimRight(d.Issuer, "/") != v.issuer {
+	// The issuer member is REQUIRED, not "checked if present". Treating an
+	// absent member as nothing to check makes the one anti-substitution test in
+	// this function optional at the discretion of whoever answered the request.
+	if d.Issuer == "" {
+		return errors.New("oidc: discovery document declares no issuer")
+	}
+	if strings.TrimRight(d.Issuer, "/") != v.issuer {
 		return fmt.Errorf("oidc: discovery issuer %q != configured %q", d.Issuer, v.issuer)
 	}
 	if d.JWKSURI == "" {
 		return errors.New("oidc: discovery document has no jwks_uri")
 	}
+	// jwks_uri decides which keys this verifier trusts for the life of the
+	// process, and it arrives inside the document being validated. Requiring it
+	// to share an origin with the configured issuer keeps that choice inside the
+	// authority the operator already named, rather than wherever the document
+	// points.
+	if err := sameOrigin(v.issuerURL, d.JWKSURI); err != nil {
+		return fmt.Errorf("oidc: discovery jwks_uri: %w", err)
+	}
 	v.jwksURI = d.JWKSURI
 	return nil
+}
+
+// parseIssuer validates the configured issuer URL and returns it parsed.
+func parseIssuer(issuer string, allowPlaintext bool) (*url.URL, error) {
+	u, err := url.Parse(issuer)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: issuer %q is not a URL: %w", issuer, err)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("oidc: issuer %q has no host", issuer)
+	}
+	switch u.Scheme {
+	case "https":
+		return u, nil
+	case "http":
+		if allowPlaintext || isLoopback(u.Hostname()) {
+			return u, nil
+		}
+		return nil, fmt.Errorf("oidc: issuer %q is plaintext http; discovery over http lets "+
+			"anything on the path choose the signing keys this verifier will trust. Use https, "+
+			"or pass WithInsecureIssuerScheme for a demo", issuer)
+	default:
+		return nil, fmt.Errorf("oidc: issuer %q has unsupported scheme %q", issuer, u.Scheme)
+	}
+}
+
+func isLoopback(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+// sameOrigin reports whether raw shares scheme, host and port with base.
+func sameOrigin(base *url.URL, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%q is not a URL: %w", raw, err)
+	}
+	if u.Scheme != base.Scheme || u.Host != base.Host {
+		return fmt.Errorf("%q is not on the issuer's origin %s://%s", raw, base.Scheme, base.Host)
+	}
+	return nil
+}
+
+// noRedirect refuses every redirect on discovery and JWKS fetches. A redirect is
+// the server choosing where the next request goes, and both of these requests
+// decide which keys are trusted — including a downgrade from https to http.
+func noRedirect(req *http.Request, via []*http.Request) error {
+	return fmt.Errorf("oidc: refusing redirect to %s (discovery and jwks are fetched without following redirects)", req.URL)
 }
 
 type jwk struct {
@@ -136,10 +260,35 @@ func (v *Verifier) refreshJWKS(ctx context.Context) error {
 	if len(keys) == 0 {
 		return errors.New("oidc: no usable RSA signing keys in JWKS")
 	}
+	now := time.Now()
 	v.mu.Lock()
 	v.keys = keys
+	v.fetchedAt = now
 	v.mu.Unlock()
 	return nil
+}
+
+// tryRefresh attempts a key-set fetch subject to the minimum interval, and
+// reports whether a fetch was actually made. A refusal is not an error: the
+// caller still has whatever key set it had, and the decision to accept or
+// reject the token is made on that, not on whether a fetch happened.
+func (v *Verifier) tryRefresh(ctx context.Context) (bool, error) {
+	now := time.Now()
+	v.mu.Lock()
+	if !v.attemptedAt.IsZero() && now.Sub(v.attemptedAt) < v.minInterval {
+		v.mu.Unlock()
+		return false, nil
+	}
+	v.attemptedAt = now
+	v.mu.Unlock()
+	return true, v.refreshJWKS(ctx)
+}
+
+// keySetStale reports whether the cached key set is older than maxAge.
+func (v *Verifier) keySetStale() bool {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.fetchedAt.IsZero() || time.Since(v.fetchedAt) > v.maxAge
 }
 
 func rsaFromJWK(k jwk) (*rsa.PublicKey, error) {
@@ -151,12 +300,18 @@ func rsaFromJWK(k jwk) (*rsa.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The exponent is refused rather than repaired. Substituting a guessed 65537
+	// for one that did not parse means verifying against a key the provider did
+	// not publish, and silently: the caller sees a working verifier either way.
+	if len(eb) == 0 || len(eb) > 8 {
+		return nil, fmt.Errorf("oidc: jwk exponent is %d bytes, want 1..8", len(eb))
+	}
 	e := 0
 	for _, b := range eb {
 		e = e<<8 | int(b)
 	}
-	if e == 0 {
-		e = 65537
+	if e < 3 || e%2 == 0 {
+		return nil, fmt.Errorf("oidc: jwk exponent %d is not a usable RSA public exponent", e)
 	}
 	return &rsa.PublicKey{N: new(big.Int).SetBytes(nb), E: e}, nil
 }
@@ -189,12 +344,38 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 	if hdr.Alg != "RS256" {
 		return nil, fmt.Errorf("oidc: unsupported alg %q (RS256 only in this build)", hdr.Alg)
 	}
+	// A stale key set is refreshed BEFORE it is consulted. Refreshing only on a
+	// cache miss would leave the decision of whether a revoked key is still
+	// honoured to whoever chooses the kid — which is the presenter of the token.
+	if v.keySetStale() {
+		// tryRefresh returns (false, nil) when the minimum-interval limiter
+		// refuses -- a refusal, not an error. Discarding that bool meant a
+		// throttled refusal fell through and the EXPIRED key set was consulted
+		// anyway: once the JWKS endpoint is unreachable, one request per interval
+		// fails and every other request in the window verifies against keys the
+		// operator's maxAge says are no longer trustworthy, indefinitely. That is
+		// a fail-open on revocation, and it contradicted the comment above it.
+		fetched, err := v.tryRefresh(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !fetched {
+			return nil, errors.New("oidc: key set is older than maxAge and a refresh was refused by the minimum-interval limiter; refusing to verify against it")
+		}
+	}
 	pub := v.keyFor(hdr.Kid)
-	if pub == nil { // key rotation — refresh once
-		if err := v.refreshJWKS(ctx); err != nil {
+	if pub == nil { // key rotation — one rate-limited refresh, then decide
+		fetched, err := v.tryRefresh(ctx)
+		if err != nil {
 			return nil, err
 		}
 		if pub = v.keyFor(hdr.Kid); pub == nil {
+			if !fetched {
+				// Refused by the minimum interval. Say so, so an operator
+				// looking at a real rotation can tell it from an unknown key.
+				return nil, fmt.Errorf("oidc: no signing key for kid %q (key set not refetched; "+
+					"minimum refresh interval %s not yet elapsed)", hdr.Kid, v.minInterval)
+			}
 			return nil, fmt.Errorf("oidc: no signing key for kid %q", hdr.Kid)
 		}
 	}
@@ -236,10 +417,10 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 	return claims, nil
 }
 
+// audienceOK matches only `aud`. See WithAudience for why `azp` is not accepted
+// here: it names the client that asked for the token, not the resource entitled
+// to consume it, so a match on it would admit every token that client holds.
 func (v *Verifier) audienceOK(c Claims) bool {
-	if v.audiences[c.Str("azp")] {
-		return true
-	}
 	switch a := c["aud"].(type) {
 	case string:
 		return v.audiences[a]

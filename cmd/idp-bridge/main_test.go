@@ -200,9 +200,14 @@ func TestIDPExchange_Success(t *testing.T) {
 func TestIDPExchange_ScopePrecedence(t *testing.T) {
 	e := newIDPEnv(t)
 
-	t.Run("request_scope_wins", func(t *testing.T) {
+	t.Run("request_narrows_below_the_claim", func(t *testing.T) {
 		// Request narrows max_amount to 100; the spt_scope claim asks for 5000.
-		// The request takes precedence and both are within the 10000 ceiling.
+		// The narrowest of policy (10000), entitlement (5000) and request (100)
+		// wins, which is 100. Note this case does NOT test precedence: it gives
+		// the same answer whether the entitlement bounds the grant or is merely a
+		// fallback the request replaces. See
+		// TestIDPExchange_EntitlementBoundsEvenWhenAScopeIsRequested for the
+		// case that separates them.
 		p := e.validParams(e.token(map[string]any{"spt_scope": map[string]any{"max_amount": float64(5000)}}))
 		p["scope"] = `{"max_amount":100}`
 		rr := e.post(p)
@@ -211,7 +216,7 @@ func TestIDPExchange_ScopePrecedence(t *testing.T) {
 		}
 		claims, _ := cattoken.Verify(body(t, rr)["access_token"].(string), e.catPub)
 		if cs := claims["capability_scope"].(map[string]any); cs["max_amount"] != float64(100) {
-			t.Fatalf("request scope did not win: %v", cs)
+			t.Fatalf("the narrowest bound did not win: %v", cs)
 		}
 	})
 

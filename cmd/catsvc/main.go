@@ -16,7 +16,7 @@
 //	  "issuer":               "domain-a.authorg",
 //	  "subject":              "alice",
 //	  "principal_name":       "alice",
-//	  "scope":                {"action": "transfer", "max_amount": 10000},
+//	  "scope":                {"action": "transfer", "max_amount": 10000, "currency": "USD"},
 //	  "delegation_depth_max": 3,
 //	  "ttl_hours":            24,
 //	  "holder_key_hex":       "<64-char hex Ed25519 public key>"

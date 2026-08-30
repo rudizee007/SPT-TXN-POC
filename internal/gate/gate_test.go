@@ -17,7 +17,7 @@ const (
 )
 
 func TestGate_AllowUnderCeiling(t *testing.T) {
-	g, err := New("xrpl", testAgent, 5000, "XRP")
+	g, err := New("xrpl", testAgent, "5000", "XRP")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestGate_AllowUnderCeiling(t *testing.T) {
 }
 
 func TestGate_DenyOverCeiling(t *testing.T) {
-	g, err := New("xrpl", testAgent, 5000, "XRP")
+	g, err := New("xrpl", testAgent, "5000", "XRP")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestGate_DenyOverCeiling(t *testing.T) {
 // TestGate_AnchorStable: the humanAnchor is fixed for the agent's standing
 // capability and carried on every authorized payment.
 func TestGate_AnchorStable(t *testing.T) {
-	g, err := New("xrpl", testAgent, 5000, "XRP")
+	g, err := New("xrpl", testAgent, "5000", "XRP")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestGate_AnchorStable(t *testing.T) {
 // the eight-step verifier on the bundle. A valid bundle passes; a tampered
 // attestation fails.
 func TestGate_BundleVerifiesAgainstIssuerRegistry(t *testing.T) {
-	g, err := New("xrpl", testAgent, 5000, "XRP")
+	g, err := New("xrpl", testAgent, "5000", "XRP")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestGate_BundleVerifiesAgainstIssuerRegistry(t *testing.T) {
 // the humanAnchor) is recoverable by the escrow authority's key — the P3
 // accountability path.
 func TestGate_SealIdentityRecoverable(t *testing.T) {
-	g, err := New("xrpl", testAgent, 5000, "XRP")
+	g, err := New("xrpl", testAgent, "5000", "XRP")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

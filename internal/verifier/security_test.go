@@ -99,12 +99,43 @@ func TestSec_OverScopedCT_Forged(t *testing.T) {
 	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
 }
 
-// A non-positive transaction amount must be rejected (ledger amount validation),
-// caught at the context-binding step when the hash is recomputed.
+// A non-positive transaction amount must be rejected by the layer that claims to
+// bound the amount — step 7, the scope check — and not merely fall out at step 8
+// when the context hash is recomputed.
+//
+// It used to deny at step 8, which this test documented. That was a real gap:
+// tbac.TxnScope validated only that the amount PARSED, so "-5000" reached the
+// ceiling comparison, and "-5000 <= 5000" is true. The scope layer therefore
+// allowed a negative amount and something else denied it. tbac.TxnScope now
+// parses through ledger.ParseAmount, which is positive-only, so the ceiling
+// enforcer enforces.
 func TestSec_NegativeAmount(t *testing.T) {
 	h := build(t)
 	h.in.Txn.Amount = "-5000"
-	mustDeny(t, h.eng.Verify(context.Background(), h.in), 8)
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 7)
+}
+
+// The same for zero: an authorization to move nothing is not a narrower
+// authorization, and it must not pass the ceiling check.
+func TestSec_ZeroAmount(t *testing.T) {
+	h := build(t)
+	h.in.Txn.Amount = "0"
+	mustDeny(t, h.eng.Verify(context.Background(), h.in), 7)
+}
+
+// An amount in a grammar wider than a decimal string is refused at step 7 too.
+// "0x2710" is 10000 to big.Rat and an error (or 0, or 2710) to a decimal parser
+// downstream: the authorizer and the executor would disagree about the number
+// authorized while agreeing on the context hash, since the hash binds the
+// literal string.
+func TestSec_NonDecimalAmountGrammar(t *testing.T) {
+	for _, amount := range []string{"0x2710", "1/3", "1e6", "+5000", "0b1010", "007", " 5000", "5000 ", "5,000", "５０００"} {
+		t.Run(amount, func(t *testing.T) {
+			h := build(t)
+			h.in.Txn.Amount = amount
+			mustDeny(t, h.eng.Verify(context.Background(), h.in), 7)
+		})
+	}
 }
 
 // A token minted for a different audience must not verify here even if otherwise

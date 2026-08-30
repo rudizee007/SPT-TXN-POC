@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -95,7 +96,16 @@ type Gate struct {
 
 // New provisions an agent: registers issuer keys and mints the standing
 // CAT -> CT capability bounded by ceiling (max spend) in the given currency.
-func New(chain, agentAddr string, ceiling float64, currency string) (*Gate, error) {
+// The ceiling is a canonical decimal STRING, not a float64. A float64 ceiling
+// above 2^53 seals as the nearest double — 999999999999999999 wei becomes
+// 1000000000000000000, i.e. WIDENED by rounding — and the signature then commits
+// to a number nobody chose. It is carried as json.Number so tbac compares it
+// with big.Rat precision, and validated through ledger.ParseAmount so it obeys
+// the same grammar as the amounts it will be compared against.
+func New(chain, agentAddr string, ceiling string, currency string) (*Gate, error) {
+	if _, err := ledger.ParseAmount(ceiling); err != nil {
+		return nil, fmt.Errorf("ceiling: %w", err)
+	}
 	l, err := ledger.Get(chain)
 	if err != nil {
 		return nil, fmt.Errorf("%s adapter: %w", chain, err)
@@ -116,7 +126,7 @@ func New(chain, agentAddr string, ceiling float64, currency string) (*Gate, erro
 
 	cat, err := cattoken.Issue(cattoken.IssueRequest{
 		Issuer: issOrg, Subject: "alice", PrincipalName: "alice",
-		Scope:              cattoken.CapabilityScope{"action": "payment", "max_amount": ceiling, "currency": currency},
+		Scope:              cattoken.CapabilityScope{"action": "payment", "max_amount": json.Number(ceiling), "currency": currency},
 		DelegationDepthMax: 3, TTL: time.Hour, HolderPublicKey: holderPub,
 	}, orgPriv)
 	if err != nil {
@@ -124,7 +134,7 @@ func New(chain, agentAddr string, ceiling float64, currency string) (*Gate, erro
 	}
 	ct, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer: issOrg, ParentCAT: cat.Token, ParentIssuerKey: orgPub,
-		RequestedScope:  tbac.Scope{"max_amount": ceiling, "currency": currency},
+		RequestedScope:  tbac.Scope{"max_amount": json.Number(ceiling), "currency": currency},
 		HolderPublicKey: holderPub,
 	}, orgPriv)
 	if err != nil {

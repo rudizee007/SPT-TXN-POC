@@ -17,6 +17,11 @@ set -eu
 # where this script was invoked from.
 cd "$(dirname "$0")/.."
 
+# The bridge requires these; it refuses to start without them, and the earlier
+# version of this script did not set them, so the documented demo could not run.
+export SPT_IDP_AUDIENCE="${SPT_IDP_AUDIENCE:-account}"
+export SPT_IDP_PERMITTED_SCOPE="${SPT_IDP_PERMITTED_SCOPE:-{\"action\":\"transfer\",\"max_amount\":10000,\"currency\":\"USD\"}}"
+
 KC="${KC:-http://localhost:8080}"
 REALM="${REALM:-spt}"
 BRIDGE="${BRIDGE:-http://127.0.0.1:8090}"
@@ -47,9 +52,17 @@ TOK=$(curl -sf -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
 if [ -z "$TOK" ] || [ "$TOK" = null ]; then echo "  auth failed"; exit 1; fi
 echo "  got a Keycloak access token (${#TOK} chars) — the unmodified IdP doing its normal job"
 
-say "4. Generate an agent holder key (32-byte Ed25519 public key)"
-HOLDER=$(openssl rand -hex 32)
-echo "  holder key: ${HOLDER%${HOLDER#????????}}…"
+say "4. Generate a real Ed25519 keypair for the agent and take its public key"
+# A real keypair, not 32 random bytes. The previous version used `openssl rand`,
+# which produces a value with no private half — so the step that the demo calls
+# holder binding bound the credential to entropy nobody could ever possess.
+KEYDIR=$(mktemp -d)
+trap 'rm -rf "$KEYDIR"' EXIT
+openssl genpkey -algorithm ed25519 -out "$KEYDIR/agent.pem" 2>/dev/null
+HOLDER=$(openssl pkey -in "$KEYDIR/agent.pem" -pubout -outform DER | tail -c 32 | xxd -p -c 64)
+echo "  holder public key: ${HOLDER%${HOLDER#????????}}…  (private half in $KEYDIR)"
+echo "  NOTE: the bridge does not ask the agent to PROVE it holds the private half."
+echo "        Possession is not demonstrated here; the key is simply sealed into the CAT."
 
 say "5. RFC 8693 Token Exchange: Keycloak token  ->  SPT-Txn CAT"
 RESP=$(curl -sf -X POST "$BRIDGE/token" \
@@ -61,16 +74,28 @@ CAT=$(echo "$RESP" | jq -r .access_token)
 echo "  issued_token_type: $(echo "$RESP" | jq -r .issued_token_type)"
 echo "  human_anchor:      $(echo "$RESP" | jq -r .human_anchor)"
 echo "  CAT issued (${#CAT} chars)"
-ISSKEY=$(curl -sf "$BRIDGE/issuer" | jq -r .public_key_hex)
+# The issuer public key. In the demo it is fetched from the bridge, and that is
+# the one step here that does NOT resemble a real deployment: the party that
+# minted the token is also supplying the key that validates it, over plaintext
+# HTTP. Anyone able to answer this request supplies both halves. In a real
+# deployment the issuer key arrives out of band — a trust-registry snapshot,
+# pinned configuration — and never from the issuer over the wire.
+ISSKEY="${SPT_DEMO_ISSUER_KEY:-$(curl -sf "$BRIDGE/issuer" | jq -r .public_key_hex)}"
 
-say "6. Verify the CAT OFFLINE (no Keycloak, no bridge) + tamper test"
+say "6. Check the CAT with local crypto only (no Keycloak, no network) + tamper test"
+echo "  (issuer key came from the bridge — see the note above; set SPT_DEMO_ISSUER_KEY to supply it out of band)"
 go run ./cmd/idp-verify -cat "$CAT" -issuer-key "$ISSKEY"
 
-say "7. The delegation mechanics an IdP-issued CAT feeds into"
-echo "  (agentdemo shows CAT -> CT -> transaction-bound token, attenuation, and"
-echo "   offline revocation cascade — the agent authority an IdP identity flows into)"
+say "7. The delegation mechanics, shown SEPARATELY on their own fixture"
+echo "  agentdemo takes no input: it mints its own CAT and shows CAT -> CT ->"
+echo "  transaction-bound token, attenuation, and the offline revocation cascade."
+echo "  It does NOT consume the Keycloak-issued CAT above. Read it as an"
+echo "  illustration of the mechanics, not as a continuation of steps 1-6."
 go run ./cmd/agentdemo
 
-printf '\n\033[1mPROOF COMPLETE:\033[0m an existing identity provider (Keycloak) minted an\n'
-printf 'SPT-Txn credential over standard OAuth Token Exchange; it verified offline,\n'
-printf 'rejected tampering, and feeds attenuating, revocable agent authority.\n'
+printf '\n\033[1mWHAT THIS RUN SHOWED:\033[0m an existing identity provider (Keycloak) minted an\n'
+printf 'SPT-Txn credential over standard OAuth Token Exchange; its signature and expiry\n'
+printf 'checked out with local crypto; a tampered copy was rejected.\n'
+printf '\n\033[1mWHAT IT DID NOT SHOW:\033[0m that the IdP-issued CAT drives the delegation chain\n'
+printf '(step 7 runs on its own fixture), that the holder proved possession (nobody asked),\n'
+printf 'or that the issuer is one anybody should trust (the key came from the bridge).\n'

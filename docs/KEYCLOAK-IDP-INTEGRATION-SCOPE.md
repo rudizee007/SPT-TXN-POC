@@ -1,5 +1,15 @@
 # Scope — Keycloak → SPT-Txn: the definitive identity-provider proof
 
+> **Status note, 2026-08-27.** This is a SCOPE document — what was planned. Several
+> of its acceptance criteria describe behaviour the implementation does not have.
+> Adversarial review #6 lists them; the ones to know before quoting this file:
+> the holder key is not DPoP-bound and possession is never proved; `subject_token_type`
+> was accepted and discarded until 2026-08-27; `cmd/idp-verify` checks the signature,
+> expiry and token type and nothing else — not Trust Registry membership, not the
+> human anchor, not scope; the issuer key is not registered in any Trust Registry;
+> and the demo's negative tests are one of the three this document specifies.
+> Read the review before treating any line here as a description of the code.
+
 *A reference integration proving an existing OAuth/OIDC identity provider can mint SPT-Txn credentials via standard RFC 8693 Token Exchange — no rip-and-replace.*
 
 ## What it proves (the one sentence)
@@ -83,4 +93,4 @@ If all six print as expected, the IdP claim is beyond argument: **Keycloak in, o
 
 ## The claim it unlocks (for the deck / architects / sales)
 
-*"Your existing identity provider issues SPT-Txn compliance credentials through standard OAuth 2.0 Token Exchange (RFC 8693) — no migration. The credential then verifies offline anywhere, carries a privacy-preserving human anchor, and an AI agent can act under it with authority that can only narrow and can be revoked instantly. Demonstrated end-to-end against Keycloak; the same flow targets Okta, Auth0, and Ping unchanged."*
+*"Your existing identity provider issues SPT-Txn compliance credentials through standard OAuth 2.0 Token Exchange (RFC 8693) — no migration. The credential then verifies offline anywhere, carries a privacy-preserving human anchor, and an AI agent can act under it with authority that can only narrow and is bounded by its TTL (per-token revocation is NOT wired on this path: the bridge sets no status claim and registers no issuer key). Demonstrated end-to-end against Keycloak; the same flow targets Okta, Auth0, and Ping unchanged."*

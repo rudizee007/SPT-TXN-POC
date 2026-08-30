@@ -30,7 +30,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -39,6 +38,8 @@ import (
 	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/travelrule"
+
+	"github.com/rudizee007/spt-txn-poc/internal/ledger"
 )
 
 const (
@@ -342,18 +343,19 @@ func forbiddenIP(ip net.IP) bool {
 	return ip.IsPrivate() // 10/8, 172.16/12, 192.168/16, fc00::/7
 }
 
-// ValidAmount reports whether a TRP transfer amount is a well-formed, positive,
-// finite decimal string (TR-4). Parsing as big.Rat rejects NaN/Inf and junk.
+// ValidAmount reports whether a TRP transfer amount is a well-formed, positive
+// decimal string (TR-4).
+//
+// It delegates to ledger.ParseAmount rather than parsing here. This used to call
+// big.Rat.SetString directly, which accepts a great deal more than a decimal
+// string — "0x2710" as 10000, "1/3", "1e6", "+5", "017" — so this VASP would
+// accept an amount that a counterparty applying the ledger grammar reads
+// differently or rejects, while the TxnContextHash travelling in the same
+// envelope binds an unrelated number. One grammar, one reading, or the wire is
+// not interoperable.
 func ValidAmount(s string) error {
-	if s == "" {
-		return fmt.Errorf("trp: amount required")
-	}
-	r, ok := new(big.Rat).SetString(s)
-	if !ok {
-		return fmt.Errorf("trp: amount %q is not a valid decimal", s)
-	}
-	if r.Sign() <= 0 {
-		return fmt.Errorf("trp: amount %q must be positive", s)
+	if _, err := ledger.ParseAmount(s); err != nil {
+		return fmt.Errorf("trp: %w", err)
 	}
 	return nil
 }

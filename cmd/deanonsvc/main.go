@@ -54,6 +54,7 @@ import (
 
 	"github.com/rudizee007/spt-txn-poc/internal/escrow"
 	"github.com/rudizee007/spt-txn-poc/internal/trustregistry"
+	"github.com/rudizee007/spt-txn-poc/pkg/trustsnapshot"
 )
 
 const (
@@ -82,9 +83,35 @@ func main() {
 	vault := escrow.NewVault()
 	handler := escrow.NewHandler(vault, key)
 
-	reg, err := trustregistry.NewPersistentRegistry(dbPath)
+	// This registry decides who may authorize a DEANONYMIZATION — the escrow_req
+	// signer set. A forged record here is worse than a forged issuer key: it does
+	// not widen an authorization, it unmasks a human. So it goes through the same
+	// verified door as every other reader.
+	pinned, err := pinnedPublicationKeys(os.Getenv("SPT_DEANON_SNAPSHOT_KEYS"))
 	if err != nil {
-		log.Fatalf("open trust registry %s: %v", dbPath, err)
+		log.Fatalf("SPT_DEANON_SNAPSHOT_KEYS: %v\n"+
+			"  set it to the publisher's ed25519 public key(s), hex, comma-separated;\n"+
+			"  generate a keypair and sign a snapshot with: go run ./cmd/snapshot", err)
+	}
+	maxAge := 24 * time.Hour
+	if v := os.Getenv("SPT_DEANON_SNAPSHOT_MAX_AGE"); v != "" {
+		d, perr := time.ParseDuration(v)
+		if perr != nil {
+			log.Fatalf("SPT_DEANON_SNAPSHOT_MAX_AGE: %v", perr)
+		}
+		maxAge = d
+	}
+	manifestPath := os.Getenv("SPT_DEANON_SNAPSHOT_MANIFEST")
+	if manifestPath == "" {
+		manifestPath = trustregistry.ManifestPathFor(dbPath)
+	}
+	reg, err := trustregistry.OpenVerified(manifestPath, dbPath, trustsnapshot.Options{
+		PinnedKeys: pinned,
+		MaxAge:     maxAge,
+		AllowStale: os.Getenv("SPT_DEANON_SNAPSHOT_ALLOW_STALE") == "1",
+	})
+	if err != nil {
+		log.Fatalf("trust registry %s: %v", dbPath, err)
 	}
 	n, err := loadSigners(handler, reg)
 	_ = reg.Close()
@@ -337,4 +364,32 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// pinnedPublicationKeys parses the publication-key set: hex ed25519 public keys,
+// comma-separated. Empty is refused — a service that accepts whatever key turns
+// up has no root of trust, and this one gates lawful recovery.
+func pinnedPublicationKeys(raw string) ([]ed25519.PublicKey, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("no pinned publication key configured")
+	}
+	var out []ed25519.PublicKey
+	for i, field := range strings.Split(raw, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		b, err := hex.DecodeString(field)
+		if err != nil {
+			return nil, fmt.Errorf("key %d is not hex: %w", i, err)
+		}
+		if len(b) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("key %d is %d bytes, want %d", i, len(b), ed25519.PublicKeySize)
+		}
+		out = append(out, ed25519.PublicKey(b))
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no pinned publication key configured")
+	}
+	return out, nil
 }

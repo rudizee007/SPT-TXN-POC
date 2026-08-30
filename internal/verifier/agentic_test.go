@@ -29,6 +29,7 @@ type agenticChain struct {
 	eng        *verifier.Engine
 	l          ledger.Ledger
 	ttsPriv    ed25519.PrivateKey // SPT-Txn (TTS) issuer key (issTTS)
+	orgPriv    ed25519.PrivateKey // org issuer key (issCT) — signs the CAT and CT_A
 	ctaPriv    ed25519.PrivateKey // agent A's delegation-issuer private key (issCTA)
 	ctaPub     ed25519.PublicKey
 	cat        *cattoken.CAT
@@ -93,6 +94,7 @@ func buildAgentic(t *testing.T) *agenticChain {
 	}
 	a.eng = verifier.New(reg)
 	a.ttsPriv = ttsPriv
+	a.orgPriv = ctPriv
 	return a
 }
 

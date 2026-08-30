@@ -127,7 +127,7 @@ This paper makes the following contributions:
 6.  **A working, hardened reference implementation** with a live,
     two-party privacy-preserving FATF Travel Rule [FATF R.16] deployment (IVMS101 [IVMS101] +
     SD-JWT [SD-JWT] + ZK over the OpenVASP Travel Rule Protocol [OpenVASP TRP]),
-    security-audited on OpenBSD.
+    internally security-reviewed on OpenBSD.
 
 ### 1.3 What this paper is not
 
@@ -775,7 +775,7 @@ a target, not a dependency), policy representation, and identity method
 external component or a single chain, and it carries no native token.
 
 This is demonstrated, not asserted. The reference implementation is
-**deployed and security-audited (FAIL=0)** on a hardened OpenBSD host,
+**deployed, and passing our host security-audit script at FAIL=0**, on a hardened OpenBSD host,
 with **real Groth16 zero-knowledge** (MiMC → Poseidon2, benchmarked), a
 **live two-party FATF Travel Rule [FATF R.16]** exchange over OpenVASP TRP [OpenVASP TRP] carrying
 a payload-level ZK attestation, a published **CycloneDX CBOM**, and a

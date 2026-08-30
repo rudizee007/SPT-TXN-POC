@@ -95,3 +95,28 @@ func TestThumbprint_Stable(t *testing.T) {
 		t.Error("different keys must yield different thumbprints")
 	}
 }
+
+// An empty expected binding must be refused rather than compared.
+//
+// The comparisons in Verify are equality, so "" == "" passes: a caller that does
+// not know the method and URI would get a proof-of-possession answer about
+// nothing, and one token would authorize any request. The gateway refuses before
+// reaching here, but that is a property of today's callers, not of this function.
+func TestVerify_RefusesAnEmptyBinding(t *testing.T) {
+	_, priv, _ := ed25519.GenerateKey(rand.Reader)
+	for name, c := range map[string]struct{ htm, htu string }{
+		"no htm":  {"", "https://api.example/pay"},
+		"no htu":  {"POST", ""},
+		"neither": {"", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, err := dpop.Proof(priv, c.htm, c.htu, "ath")
+			if err != nil {
+				t.Fatalf("Proof: %v", err)
+			}
+			if _, _, err := dpop.Verify(p, c.htm, c.htu, "ath", time.Minute); err == nil {
+				t.Fatal("an empty binding was accepted; one proof would authorize any request")
+			}
+		})
+	}
+}

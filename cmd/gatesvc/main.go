@@ -32,7 +32,7 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8401", "loopback listen address (gate is the authority; do not expose)")
 	chain := flag.String("chain", "xrpl", "ledger the gate binds to (xrpl, hedera, …)")
 	agent := flag.String("agent", "rPdvC6ccq8hCdPKSPJkPmyZ4Mi1oG2FFkT", "payer agent address (chain-specific: XRPL r-address, Hedera 0.0.x, …)")
-	ceiling := flag.Float64("ceiling", 5000, "agent capability ceiling (max spend under its CT)")
+	ceiling := flag.String("ceiling", "5000", "agent capability ceiling as a decimal string (max spend under its CT)")
 	currency := flag.String("currency", "XRP", "capability currency")
 	flag.Parse()
 
@@ -41,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("provision gate: %v", err)
 	}
-	log.Printf("gate ready: agent=%s ceiling=%.0f %s anchor=%s", *agent, *ceiling, *currency, g.Anchor())
+	log.Printf("gate ready: agent=%s ceiling=%s %s anchor=%s", *agent, *ceiling, *currency, g.Anchor())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/gate/health", func(w http.ResponseWriter, r *http.Request) {

@@ -166,6 +166,18 @@ func Verify(proof, htm, htu, ath string, maxAge time.Duration) (jkt, jti string,
 	if claims.JTI == "" {
 		return "", "", fmt.Errorf("DPoP proof missing jti")
 	}
+	// An EMPTY expected binding is not a weak binding, it is no binding: the
+	// comparisons below are equality, so "" == "" passes and the proof authorizes
+	// any request. A caller that does not know the method and URI being
+	// authorized cannot be given a proof-of-possession answer about them, and
+	// this function will not pretend otherwise.
+	//
+	// Callers are supposed to refuse before reaching here — the gateway does —
+	// but "the caller checks" is a property of today's callers, not of this
+	// function, and this is the one that compares the values.
+	if htm == "" || htu == "" {
+		return "", "", fmt.Errorf("DPoP verification requires a non-empty htm and htu to bind to")
+	}
 	if claims.HTM != htm {
 		return "", "", fmt.Errorf("htm mismatch: proof %q, expected %q", claims.HTM, htm)
 	}
@@ -175,6 +187,16 @@ func Verify(proof, htm, htu, ath string, maxAge time.Duration) (jkt, jti string,
 	if normalizeHTU(claims.HTU) != normalizeHTU(htu) {
 		return "", "", fmt.Errorf("htu mismatch: proof %q, expected %q", claims.HTU, htu)
 	}
+	// ath binds the proof to ONE token, and is checked only when the caller
+	// supplies one. That is RFC 9449's own rule — ath is required when the proof
+	// accompanies an access token, and this package is also used for flows where
+	// there is none — so it is NOT tightened here.
+	//
+	// It does mean a caller that passes "" gets no token binding, and a proof
+	// minted for token A would satisfy a check for token B. Callers that present
+	// a token MUST pass dpop.ATH(token); the eight-step engine does, and asserts
+	// it rather than assuming it (see step5DPoP). Do not move that assertion into
+	// this function: it would break the flows the RFC allows.
 	if ath != "" && claims.ATH != ath {
 		return "", "", fmt.Errorf("ath mismatch: proof is not bound to this token")
 	}

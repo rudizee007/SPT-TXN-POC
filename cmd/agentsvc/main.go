@@ -42,19 +42,24 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/ledger"
 	"github.com/rudizee007/spt-txn-poc/internal/trustregistry"
 	"github.com/rudizee007/spt-txn-poc/internal/verifier"
+	"github.com/rudizee007/spt-txn-poc/pkg/trustsnapshot"
 )
 
 const (
@@ -77,9 +82,53 @@ func main() {
 	// ── Load the local Trust Registry snapshot ─────────────────────────
 	// This is the cached trust anchor: issuer keys, roles, and active status.
 	// The verifier reads it in-memory; no live issuer/chain call is ever made.
-	reg, err := trustregistry.NewPersistentRegistry(regPath)
+	// An ABSENT snapshot is a legitimately fresh deploy to the registry writer,
+	// and a silent outage to a verifier: NewPersistentRegistry returns an empty
+	// registry with no error, the service reports healthy, and every verify
+	// denies forever. Refuse to start instead — a service that answers /health
+	// with "ok" while denying 100% of traffic is indistinguishable from a working
+	// one, and that is worse than not starting.
+	if err := snapshotPresent(regPath); err != nil {
+		log.Fatalf("trust registry snapshot %s: %v", regPath, err)
+	}
+	// Presence is not authenticity. This service verifies tokens for a living,
+	// so the file it resolves issuer keys from has to be the one the publisher
+	// signed — otherwise anyone who can write it chooses which keys this service
+	// trusts, and every verification below is theatre.
+	pinned, err := pinnedPublicationKeys(os.Getenv("SPT_AGENT_SNAPSHOT_KEYS"))
 	if err != nil {
-		log.Fatalf("open trust registry snapshot %s: %v", regPath, err)
+		log.Fatalf("SPT_AGENT_SNAPSHOT_KEYS: %v\n"+
+			"  set it to the publisher's ed25519 public key(s), hex, comma-separated;\n"+
+			"  generate a keypair and sign a snapshot with: go run ./cmd/snapshot", err)
+	}
+	maxAge := 24 * time.Hour
+	if v := os.Getenv("SPT_AGENT_SNAPSHOT_MAX_AGE"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			log.Fatalf("SPT_AGENT_SNAPSHOT_MAX_AGE: %v", err)
+		}
+		maxAge = d
+	}
+	allowStale := os.Getenv("SPT_AGENT_SNAPSHOT_ALLOW_STALE") == "1"
+	if allowStale {
+		log.Printf("WARNING: SPT_AGENT_SNAPSHOT_ALLOW_STALE=1 — a stale snapshot keeps authorizing, " +
+			"including one restored from before a compromise. Deliberate degrade mode, and it is on.")
+	}
+
+	manifestPath := os.Getenv("SPT_AGENT_SNAPSHOT_MANIFEST")
+	if manifestPath == "" {
+		manifestPath = trustregistry.ManifestPathFor(regPath)
+	}
+	reg, err := trustregistry.OpenVerified(manifestPath, regPath, trustsnapshot.Options{
+		PinnedKeys: pinned,
+		MaxAge:     maxAge,
+		AllowStale: allowStale,
+	})
+	if err != nil {
+		log.Fatalf("trust registry snapshot %s: %v", regPath, err)
+	}
+	if err := issuerKeysPresent(reg); err != nil {
+		log.Fatalf("trust registry snapshot %s: %v", regPath, err)
 	}
 	eng := verifier.New(reg)
 	log.Printf("loaded trust registry snapshot: %s", regPath)
@@ -240,4 +289,72 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// snapshotPresent asserts the snapshot file is actually there and is a
+// non-empty regular file. It deliberately does NOT parse or authenticate it:
+// this is the presence guard, and authenticity is verify.FromSignedSnapshot's
+// job. Keeping the two separate means neither can be mistaken for the other.
+func snapshotPresent(path string) error {
+	if path == "" {
+		return fmt.Errorf("no path configured")
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("not readable: %w", err)
+	}
+	if fi.IsDir() {
+		return fmt.Errorf("is a directory")
+	}
+	if fi.Size() == 0 {
+		return fmt.Errorf("is empty")
+	}
+	return nil
+}
+
+// issuerKeysPresent refuses a snapshot with no token-issuance authority in it.
+// A zero-record snapshot is a valid fail-closed FIXTURE; it is not a
+// configuration this service can do anything with, and starting on one produces
+// exactly the healthy-but-denying state above.
+func issuerKeysPresent(reg *trustregistry.PersistentRegistry) error {
+	ctx := context.Background()
+	for _, role := range []trustregistry.Role{trustregistry.RoleCTIssuer, trustregistry.RoleTTSIssuer} {
+		recs, err := reg.List(ctx, role)
+		if err != nil {
+			return fmt.Errorf("list %s: %w", role, err)
+		}
+		if len(recs) > 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("contains no ct_issuer or tts_issuer records — every verification would deny")
+}
+
+// pinnedPublicationKeys parses the publication-key set: hex ed25519 public keys,
+// comma-separated. A SET, so a rotation has an overlap window. Empty is refused
+// rather than defaulted — "accept whatever key appears" is trust-on-first-use,
+// which is the failure the verification path exists to close.
+func pinnedPublicationKeys(raw string) ([]ed25519.PublicKey, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("no pinned publication key configured")
+	}
+	var out []ed25519.PublicKey
+	for i, field := range strings.Split(raw, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		b, err := hex.DecodeString(field)
+		if err != nil {
+			return nil, fmt.Errorf("key %d is not hex: %w", i, err)
+		}
+		if len(b) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("key %d is %d bytes, want %d", i, len(b), ed25519.PublicKeySize)
+		}
+		out = append(out, ed25519.PublicKey(b))
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no pinned publication key configured")
+	}
+	return out, nil
 }

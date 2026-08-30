@@ -15,7 +15,7 @@ func TestIssue_ExplicitTTLBeyondParentRejected(t *testing.T) {
 	issuerPub, issuerPriv := keypair(t)
 	holder, _ := keypair(t)
 	cat := issueParentCAT(t, issuerPriv, holder,
-		cattoken.CapabilityScope{"action": "payment", "max_amount": 1000}, 2)
+		cattoken.CapabilityScope{"action": "payment", "max_amount": 1000, "currency": "USD"}, 2)
 
 	_, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer:          "domain-a.authorg",
@@ -38,7 +38,7 @@ func TestIssue_DefaultTTLClampsToParent(t *testing.T) {
 		Issuer:             "domain-a.authorg",
 		Subject:            "alice",
 		PrincipalName:      "alice",
-		Scope:              cattoken.CapabilityScope{"max_amount": 1000},
+		Scope:              cattoken.CapabilityScope{"max_amount": 1000, "currency": "USD"},
 		DelegationDepthMax: 2,
 		TTL:                2 * time.Minute,
 		HolderPublicKey:    holder,
@@ -68,7 +68,7 @@ func TestDelegate_ExplicitTTLBeyondParentRejected(t *testing.T) {
 	holderA, _ := keypair(t)
 	holderB, _ := keypair(t)
 	cat := issueParentCAT(t, issuerPriv, holderA,
-		cattoken.CapabilityScope{"max_amount": 1000}, 3)
+		cattoken.CapabilityScope{"max_amount": 1000, "currency": "USD"}, 3)
 	ctA, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer:          "domain-a.authorg",
 		ParentCAT:       cat.Token,

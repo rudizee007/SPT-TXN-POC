@@ -55,6 +55,8 @@ go test ./internal/oidc/                       # verify the OIDC verifier (no Ke
 (cd deploy/keycloak && docker compose up -d)
 
 # 2. start the bridge (separate terminal)
+SPT_IDP_AUDIENCE=account \
+SPT_IDP_PERMITTED_SCOPE='{"action":"transfer","max_amount":10000,"currency":"USD"}' \
 go run ./cmd/idp-bridge
 
 # 3. run the proof
@@ -72,6 +74,8 @@ Set the bridge to the provider's issuer and (in production) its audience:
 SPT_IDP_OIDC_ISSUER="https://<tenant>.okta.com/oauth2/default" \
 SPT_IDP_AUDIENCE="api://spt" \
 SPT_IDP_CAT_SEED_HEX="<pinned 32-byte issuer seed>" \
+SPT_IDP_AUDIENCE=account \
+SPT_IDP_PERMITTED_SCOPE='{"action":"transfer","max_amount":10000,"currency":"USD"}' \
 go run ./cmd/idp-bridge
 ```
 
@@ -86,9 +90,20 @@ works; only the issuer URL and audience change.
   trusted party; here the bridge plays that role to demonstrate the flow.
 - **RS256 only** in this build (Keycloak's default). ES256 is a small, marked
   extension point in `internal/oidc`.
-- **Audience check is optional and off by default** for the local demo (Keycloak's
-  default `aud` is `account`). **Set `SPT_IDP_AUDIENCE` in production** and add an
-  audience mapper in the IdP.
+- **The audience check is mandatory.** The bridge will not start without
+  `SPT_IDP_AUDIENCE`. An earlier version of this line said the check was optional
+  and off by default; that was never true of the bridge.
+- **`azp` does not satisfy the audience check.** It names the client that asked
+  for the token, not the resource entitled to consume it, so it is present on
+  every token that client holds. Add an audience mapper in the IdP — Keycloak's
+  default `aud` is `account`, so without a mapper the only value that matches is
+  `account` itself.
+- **The bridge does not ask the holder to prove possession.** `holder_key_hex` is
+  taken as given and sealed into the CAT. Anyone may name any key.
+- **A bridge-issued CAT cannot be revoked individually.** No `status` claim is
+  set and the issuer key is not registered in the Trust Registry, so the only
+  remedies are waiting out the TTL (24h max) or destroying the issuer key, which
+  invalidates every CAT it ever signed.
 - **DPoP is a documented POC subset.** The demo binds the CAT to a presented holder
   key; production binds the DPoP key the client actually proves.
 - **Claims→scope mapping is deployment-specific.** The demo uses request `scope` >

@@ -82,6 +82,13 @@ func (r *PersistentRegistry) load() error {
 		}
 		return fmt.Errorf("trustregistry: read %s: %w", r.path, err)
 	}
+	return r.loadFrom(data)
+}
+
+// loadFrom parses an in-memory snapshot body. It exists so that a caller which
+// has already AUTHENTICATED some bytes can load exactly those bytes, rather than
+// naming a path and hoping the filesystem returns the same content twice.
+func (r *PersistentRegistry) loadFrom(data []byte) error {
 	if len(data) == 0 {
 		// save() writes the full JSON envelope via a temp-then-rename, so it
 		// never produces a zero-byte backing file. A present-but-empty file is
@@ -144,7 +151,29 @@ func OpenVerified(manifestPath, bodyPath string, opts trustsnapshot.Options) (*P
 	if _, err := trustsnapshot.Verify(manifestJSON, body, opts); err != nil {
 		return nil, fmt.Errorf("snapshot rejected: %w", err)
 	}
-	return NewPersistentRegistry(bodyPath)
+	// Load the bytes that were VERIFIED, not the path they came from.
+	//
+	// This previously ended `return NewPersistentRegistry(bodyPath)`, which threw
+	// away the authenticated `body` and re-read the file. Anyone able to write
+	// that path between the two reads -- the entire adversary this function
+	// exists to stop -- substituted their own records after the signature check
+	// and installed attacker-chosen ct_issuer/tts_issuer keys in agentsvc, or
+	// escrow_req keys in deanonsvc. Nothing signed the substituted content.
+	//
+	// Verify what you load; load what you verified. Same defect class as the
+	// bound-ceiling re-read in settle/base3009 -- validate, then go back to the
+	// mutable source for the value actually used.
+	if bodyPath == "" {
+		return nil, fmt.Errorf("trustregistry: empty db path")
+	}
+	reg := &PersistentRegistry{
+		records: make(map[registryKey][]*Record),
+		path:    bodyPath,
+	}
+	if err := reg.loadFrom(body); err != nil {
+		return nil, err
+	}
+	return reg, nil
 }
 
 // ManifestPathFor returns the conventional manifest path for a body:

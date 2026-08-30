@@ -166,3 +166,14 @@ docs/SPT-Txn-ShapeC-Pitch.pdf
 docs/SPT-Txn-x-Hypernative-Partnership.pptx
 docs/COMPETITOR-PAINPOINTS.md
 docs/CONTROL-PLANE-PLAN.md
+
+# FUSE leftovers from in-place edits on a mounted folder
+.fuse_hidden*
+/idp-bridge
+/workload-bridge
+/mcp-pep
+/mcp-mint
+/agentsvc
+/deanonsvc
+/gatesvc
+/catsvc

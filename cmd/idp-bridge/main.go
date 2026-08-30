@@ -36,10 +36,12 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rudizee007/spt-txn-poc/internal/cattoken"
@@ -55,10 +57,24 @@ const catTokenType = "urn:violetsky:token-type:spt-cat"
 // minted on. Scope entitlement is decided by the issuer as
 // intersect(requested, permitted) and re-checked on the chain by the PEP.
 const (
+	// The subject-token types this endpoint accepts. An ID token is deliberately
+	// absent: it is an assertion ABOUT an authentication event, minted for a
+	// client to read, and in browser deployments it is the artifact most widely
+	// handed to code that is not the client. A refresh token is absent for the
+	// same reason in reverse — it is a long-lived credential for the token
+	// endpoint, not an authorization to act.
+	tokenTypeAccessToken = "urn:ietf:params:oauth:token-type:access_token"
+	tokenTypeJWT         = "urn:ietf:params:oauth:token-type:jwt"
+
 	maxDelegationDepth = 8
 	defaultCATTTL      = 24 * time.Hour
 	maxCATTTL          = 24 * time.Hour
 )
+
+var allowedSubjectTokenTypes = map[string]bool{
+	tokenTypeAccessToken: true,
+	tokenTypeJWT:         true,
+}
 
 func main() {
 	addr := envOr("SPT_IDP_ADDR", "127.0.0.1:8090")
@@ -92,8 +108,21 @@ func main() {
 			log.Fatal(err)
 		}
 		priv = p
-		log.Printf("generated ephemeral CAT issuer key (pin with SPT_IDP_CAT_SEED_HEX=%s)",
-			hex.EncodeToString(priv.Seed()))
+		// The seed is NOT printed. It signs every CAT this process issues, and a
+		// log line is the widest possible distribution channel for it: stdout,
+		// journald, the container runtime, and whatever aggregator ships them
+		// onward, all of which are read by people who are not trusted with a
+		// signing key. Write it where the operator asked for it, or say nothing.
+		if out := os.Getenv("SPT_IDP_CAT_SEED_OUT"); out != "" {
+			if err := os.WriteFile(out, []byte(hex.EncodeToString(priv.Seed())+"\n"), 0o600); err != nil {
+				log.Fatalf("SPT_IDP_CAT_SEED_OUT %s: %v", out, err)
+			}
+			log.Printf("generated an ephemeral CAT issuer key and wrote its seed to %s (0600)", out)
+		} else {
+			log.Printf("generated an ephemeral CAT issuer key; it is discarded on exit. " +
+				"To pin it across restarts set SPT_IDP_CAT_SEED_HEX, or set SPT_IDP_CAT_SEED_OUT " +
+				"to a path and this process will write the seed there with mode 0600.")
+		}
 	}
 	pub := priv.Public().(ed25519.PublicKey)
 	log.Printf("CAT issuer %q public key: %s", catIssuer, hex.EncodeToString(pub))
@@ -101,6 +130,13 @@ func main() {
 	// OIDC verifier — discovery + JWKS against the identity provider. Audience
 	// is guaranteed non-empty by the fail-closed check above.
 	opts := []oidc.Option{oidc.WithAudience(audience)}
+	// A plaintext issuer is refused unless it is loopback or the operator opts
+	// in explicitly. Discovery chooses the keys this process trusts for its
+	// whole life, so over http anything on the path chooses them.
+	if os.Getenv("SPT_IDP_INSECURE_ISSUER_SCHEME") == "true" {
+		log.Printf("WARNING: plaintext http:// issuer permitted (SPT_IDP_INSECURE_ISSUER_SCHEME) — demo/testing only, never production")
+		opts = append(opts, oidc.WithInsecureIssuerScheme())
+	}
 	// TEST-ONLY: some self-hosted IdPs (e.g. a local Janssen/Gluu with a
 	// self-signed cert) can't be reached over verified TLS during a demo.
 	// SPT_IDP_INSECURE_SKIP_VERIFY=true disables cert verification for the
@@ -235,6 +271,15 @@ func decideIDP(ctx context.Context, ver *oidc.Verifier, permitted tbac.Scope, p 
 	if subjectToken == "" {
 		return deny(http.StatusBadRequest, "invalid_request", "subject_token required", "invalid_request")
 	}
+	// subject_token_type is REQUIRED by RFC 8693 §2.1. It is the only place the
+	// caller declares what kind of artifact it is presenting, and the endpoint
+	// treats that declaration as load-bearing: without it, every RS256 JWT the
+	// issuer signs would be the same input here regardless of what it was minted
+	// to mean. cmd/workload-bridge validates the same parameter the same way.
+	if !allowedSubjectTokenTypes[p["subject_token_type"]] {
+		return deny(http.StatusBadRequest, "invalid_request",
+			"subject_token_type must be "+tokenTypeAccessToken+" or "+tokenTypeJWT, "invalid_request")
+	}
 	holderHex := p["holder_key_hex"]
 	holder, err := hex.DecodeString(holderHex)
 	if err != nil || len(holder) != ed25519.PublicKeySize {
@@ -272,17 +317,52 @@ func decideIDP(ctx context.Context, ver *oidc.Verifier, permitted tbac.Scope, p 
 	// Requested precedence: request `scope` (JSON) > IdP `spt_scope` claim.
 	// An omitted request yields the full permitted ceiling; neither source can
 	// widen beyond it. The PEP re-checks the chain at execution.
-	requested := parseScope(p["scope"])
-	if requested == nil {
-		if s, ok := claims["spt_scope"].(map[string]any); ok {
-			requested = s
+	requested, err := parseScope(p["scope"])
+	if err != nil {
+		log.Printf("scope rejected: %v", err)
+		return deny(http.StatusBadRequest, "invalid_scope", "requested scope is not a usable JSON object", "violation")
+	}
+	// An EMPTY object restricts nothing, so it is not a request — it is the
+	// absence of one, written out. Treating it as present made `scope={}` a way
+	// to suppress the IdP entitlement claim while narrowing nothing, so the two
+	// readings disagreed in the widening direction: present enough to skip the
+	// claim, absent enough to inherit the whole ceiling.
+	if len(requested) == 0 {
+		requested = nil
+	}
+	// The IdP's spt_scope claim is this principal's ENTITLEMENT, and an
+	// entitlement is a ceiling, not a default. It has to bound the grant whether
+	// or not the client also sent a request.
+	//
+	// Consulting it only on the absent-request path was a widening: any client
+	// entitled to less than the deployment ceiling could send a scope that
+	// narrowed nothing it cared about -- scope={"currency":"USD"} -- and, because
+	// the request was now non-nil, skip their entitlement entirely and inherit
+	// `permitted` instead. A principal entitled to max_amount 100 against a
+	// bridge permitting 10000 walked away with 10000.
+	//
+	// Both bounds are composed instead: policy first, then entitlement, then the
+	// request. Intersect refuses any dimension the left side does not hold, so
+	// neither an over-reaching claim nor an over-reaching request can widen.
+	ceiling := permitted
+	if raw, present := claims["spt_scope"]; present {
+		s, ok := raw.(map[string]any)
+		if !ok {
+			log.Printf("scope rejected: spt_scope claim is %T, not an object", raw)
+			return deny(http.StatusForbidden, "invalid_scope", "spt_scope claim is not a JSON object", "violation")
 		}
+		c, err := tbac.Intersect(permitted, tbac.Scope(s))
+		if err != nil {
+			log.Printf("scope rejected: spt_scope claim exceeds the policy-permitted ceiling: %v", err)
+			return deny(http.StatusForbidden, "invalid_scope", "spt_scope claim exceeds the policy-permitted ceiling", "violation")
+		}
+		ceiling = c
 	}
 	var scope tbac.Scope
 	if requested == nil {
-		scope = permitted
+		scope = ceiling
 	} else {
-		g, err := tbac.Intersect(permitted, tbac.Scope(requested))
+		g, err := tbac.Intersect(ceiling, tbac.Scope(requested))
 		if err != nil {
 			log.Printf("scope rejected: %v", err)
 			return deny(http.StatusForbidden, "invalid_scope", "requested scope exceeds the policy-permitted ceiling", "violation")
@@ -302,15 +382,34 @@ func decideIDP(ctx context.Context, ver *oidc.Verifier, permitted tbac.Scope, p 
 	// so the CAT can never outlive the token it was minted on.
 	ttl := defaultCATTTL
 	if h, err := strconv.Atoi(p["ttl_hours"]); err == nil && h > 0 {
+		// Bound h BEFORE the multiplication. time.Duration is int64 nanoseconds,
+		// so h above ~2562047 overflows to a negative duration, which then slips
+		// past a `> maxCATTTL` cap and produces an allow-shaped response
+		// carrying a token that was already expired when it was signed.
+		if maxHours := int(maxCATTTL / time.Hour); h > maxHours {
+			h = maxHours
+		}
 		ttl = time.Duration(h) * time.Hour
 	}
 	if ttl > maxCATTTL {
 		ttl = maxCATTTL
 	}
-	if exp, ok := claimExp(claims); ok {
-		if rem := time.Until(exp); rem > 0 && rem < ttl {
-			ttl = rem
-		}
+	// Clamp the CAT to the remaining life of the proof it was minted on. The
+	// verifier tolerates clock skew either side of exp, so a token can arrive
+	// here already past it; that is a token with no remaining life to inherit,
+	// and the previous guard skipped the clamp for exactly that case — handing
+	// the least-alive proof the longest-lived capability. Refuse instead.
+	exp, ok := claimExp(claims)
+	if !ok {
+		return deny(http.StatusUnauthorized, "invalid_grant", "subject token rejected", "violation")
+	}
+	rem := time.Until(exp)
+	if rem <= 0 {
+		log.Printf("subject token rejected: past exp by %s (inside verifier skew tolerance)", -rem)
+		return deny(http.StatusUnauthorized, "invalid_grant", "subject token rejected", "violation")
+	}
+	if rem < ttl {
+		ttl = rem
 	}
 
 	return idpDecision{
@@ -350,22 +449,47 @@ func parseParams(r *http.Request) map[string]string {
 		}
 		return out
 	}
+	// PostForm, not Form. Form merges the URL query, which would let a bearer
+	// identity assertion be supplied in the request line — where every proxy,
+	// load balancer and trace on the path records it (RFC 6750 §2.3 deprecates
+	// exactly that). RFC 8693 puts these parameters in the body.
 	_ = r.ParseForm()
-	for k := range r.Form {
-		out[k] = r.Form.Get(k)
+	for k := range r.PostForm {
+		out[k] = r.PostForm.Get(k)
 	}
 	return out
 }
 
-func parseScope(s string) map[string]any {
-	if s == "" {
-		return nil
+// parseScope parses the requested-scope parameter. It reports THREE outcomes and
+// callers must not collapse them:
+//
+//	(nil, nil)  no scope was requested — the caller may grant the full ceiling
+//	(nil, err)  a scope was present but unusable — the caller MUST deny
+//	(m,   nil)  a usable scope object to intersect with the ceiling
+//
+// The two nil-map cases used to be indistinguishable, which turned a truncated
+// body or a wrong content encoding into a grant at the deployment's MAXIMUM
+// permitted ceiling: the one place in this service where a parse FAILURE
+// produced a WIDER grant. A present-but-unusable scope is a client error, never
+// an omission.
+func parseScope(s string) (map[string]any, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
 	}
+	dec := json.NewDecoder(strings.NewReader(s))
 	var m map[string]any
-	if json.Unmarshal([]byte(s), &m) != nil {
-		return nil
+	if err := dec.Decode(&m); err != nil {
+		return nil, fmt.Errorf("scope is not a JSON object: %w", err)
 	}
-	return m
+	if dec.More() {
+		return nil, fmt.Errorf("scope has trailing content after the JSON object")
+	}
+	// `null` decodes into a nil map with no error, and would otherwise be
+	// indistinguishable from an absent parameter.
+	if m == nil {
+		return nil, fmt.Errorf("scope must be a JSON object, not null")
+	}
+	return m, nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -400,6 +524,13 @@ func loadPermittedScope(env string) tbac.Scope {
 	var m map[string]any
 	if err := json.Unmarshal([]byte(raw), &m); err != nil || len(m) == 0 {
 		log.Fatalf("%s must be a non-empty JSON object: %v", env, err)
+	}
+	// A ceiling this issuer cannot legally seal into a token is a configuration
+	// error, and it must fail the DEPLOY rather than the first request that
+	// happens to hit it. The commonest case: a monetary ceiling with no currency
+	// beside it, which bounds the amount in every currency at once.
+	if err := tbac.ValidateIssuance(tbac.Scope(m)); err != nil {
+		log.Fatalf("%s is not a usable ceiling: %v", env, err)
 	}
 	log.Printf("permitted scope ceiling loaded from %s", env)
 	return tbac.Scope(m)

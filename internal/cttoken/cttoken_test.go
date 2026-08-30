@@ -84,7 +84,7 @@ func TestIssue_ScopeOverflowRejected(t *testing.T) {
 	ctHolderPub, _ := keypair(t)
 
 	cat := issueParentCAT(t, issuerPriv, holderPub,
-		cattoken.CapabilityScope{"max_amount": 10000}, 3)
+		cattoken.CapabilityScope{"max_amount": 10000, "currency": "USD"}, 3)
 
 	_, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer:          "domain-a.authorg",
@@ -109,7 +109,7 @@ func TestIssue_DelegationDepthExhausted(t *testing.T) {
 	// parent with delegation_depth_max already at the floor via depth=1 then
 	// assert remaining==0 is accepted, and a second-level delegation fails.
 	cat := issueParentCAT(t, issuerPriv, holderPub,
-		cattoken.CapabilityScope{"max_amount": 100}, 1)
+		cattoken.CapabilityScope{"max_amount": 100, "currency": "USD"}, 1)
 
 	ct, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer:          "domain-a.authorg",
@@ -133,7 +133,7 @@ func TestIssue_WrongParentKeyRejected(t *testing.T) {
 	ctHolderPub, _ := keypair(t)
 
 	cat := issueParentCAT(t, issuerPriv, holderPub,
-		cattoken.CapabilityScope{"max_amount": 10000}, 3)
+		cattoken.CapabilityScope{"max_amount": 10000, "currency": "USD"}, 3)
 
 	_, err := cttoken.Issue(cttoken.IssueRequest{
 		Issuer:          "domain-a.authorg",

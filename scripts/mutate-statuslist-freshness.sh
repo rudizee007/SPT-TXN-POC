@@ -29,6 +29,13 @@ trap 'cp "$BAK" "$F"; rm -f "$BAK"' EXIT INT TERM
 run_mutation() {
   local name="$1" want_test="$2" from="$3" to="$4"
   cp "$BAK" "$F"
+  # A test that fails on the CLEAN tree also fails under mutation and scores as
+  # "killed" -- a false green. Assert it passes before trusting that it failed.
+  if ! go test ./internal/statuslist/ -run "$want_test" -count=1 >/dev/null 2>&1; then
+    echo "FAIL      $name: $want_test does not pass on the CLEAN tree -- it cannot"
+    echo "          evidence anything until it does. Fix the test, not the mapping."
+    return 1
+  fi
   if ! grep -qF "$from" "$F"; then
     echo "FAIL      $name: anchor not found — the mutation was never applied"
     return 1
@@ -40,7 +47,7 @@ s = open(p).read()
 assert s.count(a) == 1, f"anchor appears {s.count(a)} times"
 open(p, "w").write(s.replace(a, b))
 PY
-  if ! go build ./internal/statuslist/ >/dev/null 2>&1; then
+  if ! go build -o /dev/null ./internal/statuslist/ >/dev/null 2>&1; then
     echo "FAIL      $name: mutation does not compile — rewrite it, do not skip it"
     return 1
   fi

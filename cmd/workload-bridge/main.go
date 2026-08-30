@@ -45,6 +45,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"log"
 	"math/big"
 	"net/http"
@@ -95,7 +96,22 @@ func main() {
 			log.Fatal(err)
 		}
 		priv = p
-		log.Printf("generated ephemeral CAT issuer key (pin with SPT_WL_CAT_SEED_HEX=%s)", hex.EncodeToString(priv.Seed()))
+		// The seed is NOT printed. It signs every CAT this process issues, and a
+		// log line is the widest possible distribution channel for it: stdout,
+		// journald, the container runtime, and whatever aggregator ships them
+		// onward, all of which are read by people who are not trusted with a
+		// signing key. Write it where the operator asked for it, or say nothing.
+		// (cmd/idp-bridge was fixed first; this is its twin and had the same bug.)
+		if out := os.Getenv("SPT_WL_CAT_SEED_OUT"); out != "" {
+			if err := os.WriteFile(out, []byte(hex.EncodeToString(priv.Seed())+"\n"), 0o600); err != nil {
+				log.Fatalf("SPT_WL_CAT_SEED_OUT %s: %v", out, err)
+			}
+			log.Printf("generated an ephemeral CAT issuer key and wrote its seed to %s (0600)", out)
+		} else {
+			log.Printf("generated an ephemeral CAT issuer key; it is discarded on exit. " +
+				"To pin it across restarts set SPT_WL_CAT_SEED_HEX, or set SPT_WL_CAT_SEED_OUT " +
+				"to a path and this process will write the seed there with mode 0600.")
+		}
 	}
 	pub := priv.Public().(ed25519.PublicKey)
 	log.Printf("CAT issuer %q public key: %s", catIssuer, hex.EncodeToString(pub))
@@ -289,7 +305,12 @@ func (h *handler) decide(ctx context.Context, p map[string]string) exchangeDecis
 	// PEP re-checks the chain at execution — this is defense in depth, not a
 	// substitute for it.
 	var scope tbac.Scope
-	if requested := parseScope(p["scope"]); requested == nil {
+	requested, err := parseScope(p["scope"])
+	if err != nil {
+		log.Printf("scope rejected: %v", err)
+		return deny(http.StatusBadRequest, "invalid_scope", "requested scope is not a usable JSON object", "violation")
+	}
+	if requested == nil {
 		scope = h.permitted
 	} else {
 		g, err := tbac.Intersect(h.permitted, tbac.Scope(requested))
@@ -310,10 +331,24 @@ func (h *handler) decide(ctx context.Context, p map[string]string) exchangeDecis
 	// CAT lifetime bounded by the attestation lifetime (spec §4). Default 15
 	// min, clamped so the CAT never outlives the proof.
 	ttl := 15 * time.Minute
-	if !id.ExpiresAt.IsZero() {
-		if rem := time.Until(id.ExpiresAt); rem > 0 && rem < ttl {
-			ttl = rem
-		}
+	if id.ExpiresAt.IsZero() {
+		// No expiry on the attestation means no lifetime to inherit and nothing
+		// to clamp against. Refuse rather than mint the full default.
+		log.Printf("attestation rejected: no expiry, nothing to bound the CAT lifetime against")
+		return deny(http.StatusForbidden, "invalid_grant", "attestation rejected", "violation")
+	}
+	// Clamp the CAT to the remaining life of the attestation it was minted on.
+	// The previous guard was `rem > 0 && rem < ttl`, which SKIPPED the clamp when
+	// rem <= 0 -- handing an already-expired attestation the full 15-minute
+	// capability, the longest-lived grant to the least-alive proof. Same defect
+	// cmd/idp-bridge was fixed for; this is its twin.
+	rem := time.Until(id.ExpiresAt)
+	if rem <= 0 {
+		log.Printf("attestation rejected: past exp by %s", -rem)
+		return deny(http.StatusForbidden, "invalid_grant", "attestation rejected", "violation")
+	}
+	if rem < ttl {
+		ttl = rem
 	}
 
 	return exchangeDecision{wouldIssue: true, scope: scope, depth: depth, ttl: ttl, id: id, holder: holder}
@@ -437,21 +472,46 @@ func parseParams(r *http.Request) map[string]string {
 		return out
 	}
 	_ = r.ParseForm()
-	for k := range r.Form {
-		out[k] = r.Form.Get(k)
+	// PostForm, not Form: Form merges the URL query string into the body, so a
+	// credential could arrive in a URL -- where it lands in access logs, proxy
+	// logs, browser history and Referer headers. RFC 6749 s3.2 requires the token
+	// endpoint to take parameters in the body. (cmd/idp-bridge was fixed first.)
+	for k := range r.PostForm {
+		out[k] = r.PostForm.Get(k)
 	}
 	return out
 }
 
-func parseScope(s string) map[string]any {
-	if s == "" {
-		return nil
+// parseScope parses the requested-scope parameter. It reports THREE outcomes and
+// callers must not collapse them:
+//
+//	(nil, nil)  no scope was requested — the caller may grant the full ceiling
+//	(nil, err)  a scope was present but unusable — the caller MUST deny
+//	(m,   nil)  a usable scope object to intersect with the ceiling
+//
+// The two nil-map cases used to be indistinguishable, which turned a truncated
+// body or a wrong content encoding into a grant at the deployment's MAXIMUM
+// permitted ceiling: the one place in this service where a parse FAILURE
+// produced a WIDER grant. A present-but-unusable scope is a client error, never
+// an omission.
+func parseScope(s string) (map[string]any, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
 	}
+	dec := json.NewDecoder(strings.NewReader(s))
 	var m map[string]any
-	if json.Unmarshal([]byte(s), &m) != nil {
-		return nil
+	if err := dec.Decode(&m); err != nil {
+		return nil, fmt.Errorf("scope is not a JSON object: %w", err)
 	}
-	return m
+	if dec.More() {
+		return nil, fmt.Errorf("scope has trailing content after the JSON object")
+	}
+	// `null` decodes into a nil map with no error, and would otherwise be
+	// indistinguishable from an absent parameter.
+	if m == nil {
+		return nil, fmt.Errorf("scope must be a JSON object, not null")
+	}
+	return m, nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -486,6 +546,13 @@ func loadPermittedScope(env string) tbac.Scope {
 	var m map[string]any
 	if err := json.Unmarshal([]byte(raw), &m); err != nil || len(m) == 0 {
 		log.Fatalf("%s must be a non-empty JSON object: %v", env, err)
+	}
+	// A ceiling this issuer cannot legally seal into a token is a configuration
+	// error, and it must fail the DEPLOY rather than the first request that
+	// happens to hit it. The commonest case: a monetary ceiling with no currency
+	// beside it, which bounds the amount in every currency at once.
+	if err := tbac.ValidateIssuance(tbac.Scope(m)); err != nil {
+		log.Fatalf("%s is not a usable ceiling: %v", env, err)
 	}
 	log.Printf("permitted scope ceiling loaded from %s", env)
 	return tbac.Scope(m)

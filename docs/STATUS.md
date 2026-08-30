@@ -102,7 +102,7 @@ Aptos Payments, Starknet Seed — drafted (need a community/traction step).
 
 ## Honest boundaries
 
-POC, security-audited, not production. Agentic layer POC-tested, not battle-tested
+POC, internally security-reviewed, not externally audited, not production. Agentic layer POC-tested, not battle-tested
 at scale. The opt-in ZK chain mode now verifies, in-circuit, that **each hidden hop
 carries a real Baby Jubjub signature from a registered CT-issuer over its actual
 scope** (F1 closed — phases 1+2), reaching parity with the cleartext path's

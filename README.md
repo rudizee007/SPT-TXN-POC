@@ -13,8 +13,8 @@ transaction-bound **SPT-Txn token**. For inter-VASP transfers it carries a
 payload-level **FATF Travel Rule** ZK attestation. No PII on the wire; no native
 token; blockchain-agnostic (XRPL is the primary integration target).
 
-> **Status: working, security-audited reference implementation** — not a skeleton,
-> and not yet production. Deployed and running on a hardened OpenBSD host with a
+> **Status: working, internally security-reviewed reference implementation** — not externally
+> audited or certified, not a skeleton, and not yet production. Deployed and running on a hardened OpenBSD host with a
 > live two-party Travel Rule demo. Twenty chain adapters; attestation-anchor contracts
 > live on four public testnets, plus an **on-chain ZK verifier live on Ethereum mainnet** (and two L2 testnets); the
 > agentic delegation layer is **POC-built, tested, and now provable in zero
