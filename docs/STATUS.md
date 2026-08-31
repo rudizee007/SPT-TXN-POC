@@ -61,10 +61,48 @@ consensus timestamp `1782658058.681753330`) — a real `cmd/anchor -chain hedera
 context hash anchored via `clients/hcs-anchor` and confirmed keyless on the public
 mirror node. The Sui footprint (Move attestation anchor, pkg `0xb816f6…e4ec`) is
 also live — a real context hash anchored into a shared `AnchorBook` object. All
-footprints are **testnet**. A first **mainnet** footprint
-(Arbitrum One or Base, same bytecode) is runbook-ready in [RUNBOOK.md](RUNBOOK.md)
-§12, pending a funded deploy (an operator action — needs a dedicated, funded
-mainnet key).
+*anchor* footprints above are **testnet**.
+
+**Ethereum MAINNET (2026-07-08).** The Groth16 verifier is deployed and a real
+proof has been verified on-chain:
+
+| What | Value |
+|---|---|
+| Verifier contract | `0xb64e248338E90290B3188d2c44A8e327a646Ab01` |
+| Verified-anchor tx | `0x7273f74db58bd8e2311cb78fe603efc826bcdb8409c6221e8112cf155d8ca731` |
+| Block / time | 25,489,362 · 2026-07-08T17:32:23Z |
+| Deployer | `0x946EC09E8d270f99CD2dCc96EE02cA0B559e0eD3` |
+| Gas used (verify+anchor) | 316,507 |
+
+https://etherscan.io/address/0xb64e248338E90290B3188d2c44A8e327a646Ab01
+https://etherscan.io/tx/0x7273f74db58bd8e2311cb78fe603efc826bcdb8409c6221e8112cf155d8ca731
+
+> **Why this row exists.** This deployment went live on 2026-07-08 and was
+> recorded NOWHERE — not here, not in a broadcast log, not in any evidence file.
+> On 2026-08-31 that absence led to a confident, wrong conclusion that the
+> mainnet deploy had never happened, and to the claim being struck from a public
+> standards proposal that was in fact accurate. An on-chain footprint that is not
+> written down is one nobody can defend, including the person who made it.
+> **Record the address and tx hash at deploy time, always.**
+>
+**XRPL MAINNET (2026-07-04).** The x402 loop ran end to end on XRPL mainnet:
+
+| What | Value |
+|---|---|
+| Payment tx | `C92405A32D6ABB9A2A01FF95DAFE9E6A7BC68D2FF6092570C1B76FF7418D9A0D` |
+| Amount | 1,000 drops = **0.001 XRP** (deliberately minimal; the point is the loop, not the value) |
+| SourceTag | `402` |
+| From / To | `raejui8S7517XMRwd1YMUtF5JrdvagX3LW` -> `rQJFs9vZhoW6daSLLn3QPPEwymBdp43J5w` |
+| Date | 2026-07-04 17:56:51 UTC, validated |
+
+https://livenet.xrpl.org/transactions/C92405A32D6ABB9A2A01FF95DAFE9E6A7BC68D2FF6092570C1B76FF7418D9A0D
+
+Same lesson as the row above: until 2026-08-31 only the ACCOUNT was recorded (in
+DEMO-RUNSHEET.md), never the transaction hash. An account link makes a reviewer
+hunt; a tx hash is the evidence. Record the hash.
+
+> The contract source is NOT yet verified on Etherscan. Verifying it makes the
+> deployment inspectable rather than merely present — worth doing.
 
 ## ZK circuit metrics (BN254 / Poseidon2 / Groth16, `go run ./cmd/zk-bench -prod`)
 
