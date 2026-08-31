@@ -51,13 +51,19 @@ run_mutation() {
     echo "FAIL      $name: anchor not found in $file — the mutation was never applied"
     return 1
   fi
-  python3 - "$file" "$from" "$to" "$want_n" <<'PY'
+  if ! python3 - "$file" "$from" "$to" "$want_n" <<'PY'
 import sys
 p, a, b, n = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 s = open(p).read()
 assert s.count(a) == n, f"anchor appears {s.count(a)} times, expected {n}"
 open(p, "w").write(s.replace(a, b))
 PY
+  then
+    echo "FAIL      $name: anchor did not match exactly the expected"
+    echo "          number of times -- the mutation was NOT applied, so a"
+    echo "          pass below would mean nothing. Re-anchor the mutation."
+    return 1
+  fi
   if ! go build -o /dev/null ./... >/dev/null 2>&1; then
     echo "FAIL      $name: mutation does not compile — rewrite it, do not skip it"
     return 1
@@ -121,14 +127,14 @@ run_mutation "P2 undeclared numeric sealable" \
 run_mutation "P3 object-valued ceiling recursed past" \
   ./internal/tbac/ "TestValidateIssuance_ObjectValuedCeilingIsDiagnosedNotRecursedPast" \
   internal/tbac/issuance.go \
-  "		if moneyCeilings[dim] {
-			if err := validateMoneyCeiling(s, name, v, path); err != nil {
-				return err
-			}
+  "	for dim, v := range s {
+		if !moneyCeilings[dim] {
 			continue
-		}
-		if nested, ok := asObject(v); ok {" \
-  "		if nested, ok := asObject(v); ok {" || rc=1
+		}" \
+  "	for dim, v := range s {
+		if true {
+			continue
+		}" || rc=1
 
 run_mutation "P4 deep inherited unit discarded" \
   ./internal/tbac/ "TestInheritMoneyUnit_CarriesTheUnitDownThroughTwoLevels" \
@@ -140,13 +146,13 @@ run_mutation "E1 unqualified ceiling enforced anyway" \
   ./internal/verifier/ "TestNonConformingIssuer_UnqualifiedCeilingAtTheRootIsRefused" \
   internal/tbac/scope.go \
   "		if _, qualified := parent[\"currency\"]; !qualified {" \
-  "		if _, qualified := parent[\"currency\"]; false && !qualified {" || rc=1
+  "		if _, qualified := parent[\"currency\"]; false && !qualified {" 2 || rc=1
 
 run_mutation "E2 non-canonical amount clears the ceiling" \
   ./internal/verifier/ "TestNonConformingIssuer_NonCanonicalAmountIsRefusedAtTheScopeStep" \
   internal/tbac/scope.go \
   "		if _, err := ledger.ParseAmount(tc.Amount); err != nil {" \
-  "		if _, err := ledger.ParseAmount(tc.Amount); false && err != nil {" || rc=1
+  "		if _, err := ledger.ParseAmount(tc.Amount); false && err != nil {" 2 || rc=1
 
 run_mutation "T1 travel-rule wire re-grows its own grammar" \
   ./internal/trp/ "TestValidAmount" \

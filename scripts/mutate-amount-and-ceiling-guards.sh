@@ -44,13 +44,19 @@ run_mutation() {
     echo "FAIL      $name: anchor not found in $file — the mutation was never applied"
     return 1
   fi
-  python3 - "$file" "$from" "$to" "$want_n" <<'PY'
+  if ! python3 - "$file" "$from" "$to" "$want_n" <<'PY'
 import sys
 p, a, b, n = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 s = open(p).read()
 assert s.count(a) == n, f"anchor appears {s.count(a)} times, expected {n}"
 open(p, "w").write(s.replace(a, b))
 PY
+  then
+    echo "FAIL      $name: anchor did not match exactly the expected"
+    echo "          number of times -- the mutation was NOT applied, so a"
+    echo "          pass below would mean nothing. Re-anchor the mutation."
+    return 1
+  fi
   if ! go build -o /dev/null ./... >/dev/null 2>&1; then
     echo "FAIL      $name: mutation does not compile — rewrite it, do not skip it"
     return 1
@@ -119,13 +125,13 @@ run_mutation "C1 unqualified ceiling projected anyway" \
   ./internal/tbac/ "TestTxnScope_RefusesAnUnqualifiedCeiling" \
   internal/tbac/scope.go \
   "		if _, qualified := parent[\"currency\"]; !qualified {" \
-  "		if _, qualified := parent[\"currency\"]; false && !qualified {" || rc=1
+  "		if _, qualified := parent[\"currency\"]; false && !qualified {" 2 || rc=1
 
 run_mutation "C2 amount projected without being parsed" \
   ./internal/tbac/ "TestTxnScope_RefusesNonPositiveAmounts|TestTxnScope_RefusesNonCanonicalAmounts" \
   internal/tbac/scope.go \
   "		if _, err := ledger.ParseAmount(tc.Amount); err != nil {" \
-  "		if _, err := ledger.ParseAmount(tc.Amount); false && err != nil {" || rc=1
+  "		if _, err := ledger.ParseAmount(tc.Amount); false && err != nil {" 2 || rc=1
 
 restore
 if [ "$rc" -eq 0 ]; then

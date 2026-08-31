@@ -40,13 +40,19 @@ run_mutation() {
     echo "FAIL      $name: anchor not found — the mutation was never applied"
     return 1
   fi
-  python3 - "$F" "$from" "$to" <<'PY'
+  if ! python3 - "$F" "$from" "$to" <<'PY'
 import sys
 p, a, b = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(p).read()
 assert s.count(a) == 1, f"anchor appears {s.count(a)} times"
 open(p, "w").write(s.replace(a, b))
 PY
+  then
+    echo "FAIL      $name: anchor did not match exactly the expected"
+    echo "          number of times -- the mutation was NOT applied, so a"
+    echo "          pass below would mean nothing. Re-anchor the mutation."
+    return 1
+  fi
   if ! go build -o /dev/null ./internal/statuslist/ >/dev/null 2>&1; then
     echo "FAIL      $name: mutation does not compile — rewrite it, do not skip it"
     return 1
