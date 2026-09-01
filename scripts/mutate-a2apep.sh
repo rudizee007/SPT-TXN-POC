@@ -27,6 +27,9 @@
 #   A-12 the read-only method allowlist is bypassed
 #   A-13 the webhook installer is added to the allowlist
 #   A-14 a read-only method stops being observable
+#   A-15 the webhook refusal loses its specific rule path
+#   A-16 the tier-2 configuration member leaves the intent binding
+#   A-17 a tier-3 configuration member stops being accepted
 #
 # A-3, A-4 and A-5 mutate the json TAG on the `bound` struct rather than the
 # call site. That is deliberate. The test rig mints against the same struct, so
@@ -131,8 +134,8 @@ run_mutation "A-6 unmodelled message/* method proxied" \
 
 run_mutation "A-7 unbound params sibling forwarded" \
   "TestUnboundParamsSiblingDenied" \
-  "var allowedSendParams = map[string]bool{\"message\": true}" \
-  "var allowedSendParams = map[string]bool{\"message\": true, \"configuration\": true}" || rc=1
+  "var allowedSendParams = map[string]bool{\"message\": true, \"configuration\": true}" \
+  "var allowedSendParams = map[string]bool{\"message\": true, \"configuration\": true, \"metadata\": true}" || rc=1
 
 run_mutation "A-8 unrecognised Message member forwarded" \
   "TestUnknownMessageMemberDenied" \
@@ -172,6 +175,31 @@ run_mutation "A-14 a read-only method stops being observable" \
   "TestReadOnlyMethodsPassThrough" \
   "	\"tasks/pushNotificationConfig/list\": true," \
   "	\"tasks/pushNotificationConfig/list\": false," || rc=1
+
+# A-15/A-16/A-17 are the configuration tiers.
+#
+# A-15 deserves a note. It disables the EXPLICIT pushNotificationConfig check,
+# and the request is still refused afterwards, because the member is also absent
+# from allowedConfiguration and the allowlist scan rejects it. That is genuine
+# defence in depth, and it means A-15 can only be killed by an assertion on the
+# RULE PATH -- which is exactly why TestConfigurationTier1WebhookRefused asserts
+# one. Recorded rather than glossed: this mutation evidences the specific
+# signal, not the refusal, and the refusal is covered twice.
+
+run_mutation "A-15 webhook refusal loses its specific rule path" \
+  "TestConfigurationTier1WebhookRefused" \
+  "		if _, present := cfg[\"pushNotificationConfig\"]; present {" \
+  "		if _, present := cfg[\"pushNotificationConfig\"]; present && false {" || rc=1
+
+run_mutation "A-16 tier-2 historyLength leaves the intent binding" \
+  "TestConfigurationTier2HistoryLengthIsBound" \
+  "	return c.HistoryLength, nil" \
+  "	return nil, nil" || rc=1
+
+run_mutation "A-17 a tier-3 member stops being accepted" \
+  "TestConfigurationTier3IsAllowedUnbound" \
+  "	\"blocking\":            true," \
+  "	\"blocking\":            false," || rc=1
 
 if [ "$rc" -eq 0 ]; then
   echo

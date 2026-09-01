@@ -67,7 +67,14 @@ func newRig(t *testing.T) *testRig {
 // mint registers a token bound to exactly the parts/task/context given.
 func (r *testRig) mint(t *testing.T, token, jti, partsJSON, taskID, ctxID string) {
 	t.Helper()
-	b, err := json.Marshal(bound{Parts: json.RawMessage(partsJSON), TaskID: taskID, ContextID: ctxID})
+	r.mintCfg(t, token, jti, partsJSON, taskID, ctxID, nil)
+}
+
+// mintCfg additionally binds the tier-2 configuration member.
+func (r *testRig) mintCfg(t *testing.T, token, jti, partsJSON, taskID, ctxID string, hist *int) {
+	t.Helper()
+	b, err := json.Marshal(bound{Parts: json.RawMessage(partsJSON), TaskID: taskID,
+		ContextID: ctxID, HistoryLength: hist})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,12 +290,99 @@ func TestStateChangingAndUnknownMethodsDenied(t *testing.T) {
 }
 
 // A params sibling the intent digest does not cover must not be forwarded.
+//
+// This used to use `configuration`, which is now accepted member by member
+// (see the tier tests below). A params-level `metadata` is the remaining
+// example: nothing covers it, so nothing may forward it.
 func TestUnboundParamsSiblingDenied(t *testing.T) {
 	rig := newRig(t)
 	rig.mint(t, "tok-1", "jti-1", parts, "", "")
 	raw := []byte(fmt.Sprintf(
-		`{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"parts":%s,"metadata":{"spt-txn/token":"tok-1"}},"configuration":{"blocking":true}}}`,
-		parts))
+		`{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"parts":%s,`+
+			`"metadata":{"spt-txn/token":"tok-1"}},"metadata":{"anything":1}}}`, parts))
+	assertDenied(t, rig.mw.Handle(context.Background(), raw), rig)
+}
+
+// ── configuration: three tiers, three answers ─────────────────────────────
+// docs/spec/DELEGATION-INTENT-A2A.md 4.1
+
+// TIER 3. Presentation and transport knobs are forwarded UNBOUND. They change
+// how the answer is shaped, not what the agent does or who sees it. Refusing
+// them buys nothing and makes the PEP undeployable against ordinary clients,
+// since blocking is routine.
+func TestConfigurationTier3IsAllowedUnbound(t *testing.T) {
+	rig := newRig(t)
+	rig.mint(t, "tok-1", "jti-1", parts, "", "")
+	raw := []byte(fmt.Sprintf(
+		`{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"parts":%s,`+
+			`"metadata":{"spt-txn/token":"tok-1"}},"configuration":{"blocking":true,`+
+			`"acceptedOutputModes":["text/plain"]}}}`, parts))
+	if resp := rig.mw.Handle(context.Background(), raw); resp == nil {
+		t.Fatal("no response")
+	}
+	if len(rig.forwarded) != 1 {
+		t.Fatalf("an ordinary blocking send was refused (%d forwarded)", len(rig.forwarded))
+	}
+	// The token bound no configuration and tier 3 is not in the digest, so the
+	// same token authorizes the call with these members present.
+	if !strings.Contains(string(rig.forwarded[0]), `"blocking":true`) {
+		t.Fatalf("configuration did not reach the agent: %s", rig.forwarded[0])
+	}
+}
+
+// TIER 2. historyLength governs how much prior conversation comes back, so
+// letting the caller choose it unbound is letting the caller choose how much
+// history to extract. It is in the digest: a token minted for one value does
+// not authorize another.
+func TestConfigurationTier2HistoryLengthIsBound(t *testing.T) {
+	five := 5
+	send := func(n int) []byte {
+		return []byte(fmt.Sprintf(
+			`{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"parts":%s,`+
+				`"metadata":{"spt-txn/token":"tok-1"}},"configuration":{"historyLength":%d}}}`,
+			parts, n))
+	}
+
+	rig := newRig(t)
+	rig.mintCfg(t, "tok-1", "jti-1", parts, "", "", &five)
+	if resp := rig.mw.Handle(context.Background(), send(5)); resp == nil {
+		t.Fatal("no response")
+	}
+	if len(rig.forwarded) != 1 {
+		t.Fatal("a send matching its bound historyLength was refused")
+	}
+
+	widened := newRig(t)
+	widened.mintCfg(t, "tok-1", "jti-1", parts, "", "", &five)
+	assertDenied(t, widened.mw.Handle(context.Background(), send(500)), widened)
+}
+
+// TIER 1. A webhook is a capability grant wearing a configuration field's
+// clothes: the same destination as tasks/pushNotificationConfig/set, reachable
+// inside a single authorized send. It is refused explicitly, with its own rule
+// path, because it is not a client mistake -- it is the shape of an attack, and
+// an operator grepping receipts should find it without reading error strings.
+func TestConfigurationTier1WebhookRefused(t *testing.T) {
+	rig := newRig(t)
+	rig.mint(t, "tok-1", "jti-1", parts, "", "")
+	raw := []byte(fmt.Sprintf(
+		`{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"parts":%s,`+
+			`"metadata":{"spt-txn/token":"tok-1"}},"configuration":{"blocking":true,`+
+			`"pushNotificationConfig":{"url":"https://attacker.invalid/collect"}}}}`, parts))
+	assertDenied(t, rig.mw.Handle(context.Background(), raw), rig)
+	if got := lastRule(t, rig); got != "rpc.webhook-refused" {
+		t.Fatalf("rule = %s, want rpc.webhook-refused", got)
+	}
+}
+
+// A configuration member outside the three tiers is denied, so a field added to
+// a later A2A revision cannot ride through unexamined.
+func TestConfigurationUnknownMemberDenied(t *testing.T) {
+	rig := newRig(t)
+	rig.mint(t, "tok-1", "jti-1", parts, "", "")
+	raw := []byte(fmt.Sprintf(
+		`{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"parts":%s,`+
+			`"metadata":{"spt-txn/token":"tok-1"}},"configuration":{"surprise":1}}}`, parts))
 	assertDenied(t, rig.mw.Handle(context.Background(), raw), rig)
 }
 

@@ -121,6 +121,16 @@ type bound struct {
 	Parts     json.RawMessage `json:"parts"`
 	TaskID    string          `json:"taskId,omitempty"`
 	ContextID string          `json:"contextId,omitempty"`
+
+	// HistoryLength comes from params.configuration, NOT from the message. It
+	// is here because it is a disclosure control -- it governs how much prior
+	// conversation comes back -- and letting the caller choose it unbound is
+	// letting the caller choose how much history to extract. Tier 2 of
+	// docs/spec/DELEGATION-INTENT-A2A.md 4.1.
+	//
+	// A pointer so that "absent" and "zero" are different bindings, and so a
+	// request that omits configuration produces the same digest it always did.
+	HistoryLength *int `json:"historyLength,omitempty"`
 }
 
 // Handle processes one raw JSON-RPC message. Every branch that does not
@@ -156,15 +166,30 @@ func (m *Middleware) Handle(ctx context.Context, raw []byte) []byte {
 	}
 
 	if err := validateSendParams(req.Params); err != nil {
-		m.Engine.RecordDeny("rpc.params-ambiguous", false, "")
+		// A refused webhook gets its own rule path. Every other malformed-params
+		// denial is a client bug; this one is an attempt to install an
+		// exfiltration destination inside an otherwise ordinary send, and an
+		// operator grepping receipts should be able to find it without reading
+		// error strings.
+		rule := "rpc.params-ambiguous"
+		if errors.Is(err, ErrWebhookRefused) {
+			rule = "rpc.webhook-refused"
+		}
+		m.Engine.RecordDeny(rule, false, "")
 		return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
 	}
 
 	var p struct {
-		Message json.RawMessage `json:"message"`
+		Message       json.RawMessage `json:"message"`
+		Configuration json.RawMessage `json:"configuration"`
 	}
 	if err := json.Unmarshal(req.Params, &p); err != nil || len(p.Message) == 0 {
 		m.Engine.RecordDeny("rpc.params-malformed", false, "")
+		return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
+	}
+	histLen, err := configHistoryLength(p.Configuration)
+	if err != nil {
+		m.Engine.RecordDeny("rpc.configuration-malformed", false, "")
 		return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
 	}
 	var msg message
@@ -173,7 +198,8 @@ func (m *Middleware) Handle(ctx context.Context, raw []byte) []byte {
 		return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
 	}
 
-	boundJSON, err := json.Marshal(bound{Parts: msg.Parts, TaskID: msg.TaskID, ContextID: msg.ContextID})
+	boundJSON, err := json.Marshal(bound{Parts: msg.Parts, TaskID: msg.TaskID,
+		ContextID: msg.ContextID, HistoryLength: histLen})
 	if err != nil {
 		m.Engine.RecordDeny("rpc.bind-failed", false, "")
 		return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
@@ -304,12 +330,65 @@ var observableMethods = map[string]bool{
 // allowedSendParams is the exact set of top-level message/send params members
 // this PEP will forward.
 //
-// `configuration` and a params-level `metadata` are REFUSED, not ignored.
-// Neither is covered by the intent digest, so forwarding either would hand the
-// wrapped agent input that was never authorized -- the same reasoning that
-// makes mcppep reject unrecognised tools/call siblings. Binding them is future
-// work; until then, refusing is the honest behaviour.
-var allowedSendParams = map[string]bool{"message": true}
+// A params-level `metadata` is REFUSED, not ignored: it is not covered by the
+// intent digest, so forwarding it would hand the wrapped agent input that was
+// never authorized -- the same reasoning that makes mcppep reject unrecognised
+// tools/call siblings.
+//
+// `configuration` IS accepted, member by member, per allowedConfiguration.
+var allowedSendParams = map[string]bool{"message": true, "configuration": true}
+
+// ErrWebhookRefused reports a message/send carrying
+// configuration.pushNotificationConfig.
+var ErrWebhookRefused = errors.New("a2apep: configuration.pushNotificationConfig " +
+	"is a capability grant, not a formatting option")
+
+// allowedConfiguration is the MessageSendConfiguration surface this PEP will
+// forward, and it encodes the three tiers of
+// docs/spec/DELEGATION-INTENT-A2A.md 4.1. MessageSendConfiguration is not a
+// homogeneous field, and treating it as one is the mistake this map prevents.
+//
+//   - pushNotificationConfig (TIER 1, a capability grant) is ABSENT. It carries
+//     a URL and authentication material: the same webhook as
+//     tasks/pushNotificationConfig/set, reachable inside a single message/send.
+//     A caller who can set it can redirect the results of a message they were
+//     authorized to send. A token that authorizes "send this content to this
+//     agent" does not authorize "and copy the results to this host". It is
+//     refused explicitly, with its own error and its own receipt rule, rather
+//     than falling out of this map as a generic unrecognised member -- because
+//     it is not a client mistake, it is the shape of an attack.
+//
+//   - historyLength (TIER 2, a disclosure control) is accepted and BOUND into
+//     the intent digest via bound.HistoryLength. Accepted, but not the caller's
+//     to choose freely.
+//
+//   - acceptedOutputModes and blocking (TIER 3, presentation and transport) are
+//     accepted UNBOUND. They change how the answer is shaped and whether the
+//     call returns immediately; they do not change what the agent does or who
+//     sees the result. Refusing them would make this PEP undeployable against
+//     ordinary clients for no security gain, which is a real cost and not a
+//     conservative choice.
+var allowedConfiguration = map[string]bool{
+	"acceptedOutputModes": true,
+	"blocking":            true,
+	"historyLength":       true,
+}
+
+// configHistoryLength extracts the tier-2 member for the intent digest. A
+// configuration that is absent, null, or omits historyLength binds nothing, so
+// a request that sends no configuration produces the digest it always did.
+func configHistoryLength(cfg json.RawMessage) (*int, error) {
+	if len(cfg) == 0 || string(bytes.TrimSpace(cfg)) == "null" {
+		return nil, nil
+	}
+	var c struct {
+		HistoryLength *int `json:"historyLength"`
+	}
+	if err := json.Unmarshal(cfg, &c); err != nil {
+		return nil, err
+	}
+	return c.HistoryLength, nil
+}
 
 // allowedMessageMembers is the Message surface from A2A v0.3.0. It is an
 // ALLOWLIST: a member this PEP does not know about may carry payload the
@@ -325,10 +404,26 @@ func validateSendParams(params json.RawMessage) error {
 		return err
 	}
 	var p struct {
-		Message json.RawMessage `json:"message"`
+		Message       json.RawMessage `json:"message"`
+		Configuration json.RawMessage `json:"configuration"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return err
+	}
+	if len(p.Configuration) != 0 && string(bytes.TrimSpace(p.Configuration)) != "null" {
+		// Checked before the allowlist scan so the webhook gets its specific
+		// error rather than a generic "unrecognised member", which an operator
+		// would have to already know to look for.
+		var cfg map[string]json.RawMessage
+		if err := json.Unmarshal(p.Configuration, &cfg); err != nil {
+			return err
+		}
+		if _, present := cfg["pushNotificationConfig"]; present {
+			return ErrWebhookRefused
+		}
+		if err := scanObject(p.Configuration, allowedConfiguration, "configuration"); err != nil {
+			return err
+		}
 	}
 	return scanObject(p.Message, allowedMessageMembers, "message")
 }
