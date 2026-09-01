@@ -150,3 +150,36 @@ func TestSubband_CumulativeAttenuatesAsCeiling(t *testing.T) {
 		t.Error("a higher cumulative budget must be refused by containment")
 	}
 }
+
+// ValidateSubbandDivision validates its parent scope first, and its own doc
+// comment promises that "a parent budget that bounds 100 in every currency at
+// once is refused here". Nothing tested that promise: all twenty call sites in
+// the suite passed a well-formed, currency-qualified parent, so deleting the
+// check left every test green.
+//
+// Sentinels, not bare failure. With the parent check removed each of these
+// still errors, but from the per-slice containment check further down and with
+// a different diagnosis -- an unqualified parent becomes "dimension currency
+// not present in parent", a negative budget becomes "exceeds parent ceiling".
+// Asserting only err != nil would have been satisfied by exactly the guard this
+// test is not about.
+func TestSubband_ParentScopeIsValidated(t *testing.T) {
+	for name, c := range map[string]struct {
+		parent tbac.Scope
+		want   error
+	}{
+		"unqualified budget": {tbac.Scope{"max_cumulative": 100}, tbac.ErrCeilingUnqualified},
+		"negative budget":    {tbac.Scope{"max_cumulative": -1, "currency": "USD"}, tbac.ErrCeilingNegative},
+		"non-numeric budget": {tbac.Scope{"max_cumulative": "lots", "currency": "USD"}, tbac.ErrCeilingNotNumeric},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := tbac.ValidateSubbandDivision(c.parent, []tbac.Scope{band(3)})
+			if err == nil {
+				t.Fatalf("a division was accepted under a %s parent", name)
+			}
+			if !errors.Is(err, c.want) {
+				t.Fatalf("wrong diagnosis: want %v, got %v", c.want, err)
+			}
+		})
+	}
+}

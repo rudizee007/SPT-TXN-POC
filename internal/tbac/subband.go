@@ -135,7 +135,6 @@ func ValidateSubbandDivision(parent Scope, slices []Scope) (*big.Rat, error) {
 	return sum, nil
 }
 
-
 // Band is one slice of a pre-divided budget across both axes: the scope carrying
 // its max_cumulative portion (and currency), and the time window it is live in,
 // [NotBefore, Expiry) as Unix seconds -- the nbf and exp the slice's CT will

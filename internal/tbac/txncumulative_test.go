@@ -3,6 +3,8 @@ package tbac
 import (
 	"errors"
 	"testing"
+
+	"github.com/rudizee007/spt-txn-poc/internal/ledger"
 )
 
 // The enforcement this closes: a token carrying a cumulative budget but no
@@ -96,5 +98,50 @@ func TestTxnScope_NoCumulative_Unchanged(t *testing.T) {
 	}
 	if _, present := got[cumulativeDim]; present {
 		t.Fatalf("a cumulative ceiling was asserted against a scope that declares none: %v", got)
+	}
+}
+
+// The max_cumulative branch parses the transaction amount too, and until
+// 2026-09-01 nothing would have noticed if it stopped.
+//
+// Every bad-amount test in this package declared max_amount, so the max_amount
+// branch's parse fired and the cumulative one was never reached. Worse, the two
+// guards are byte-identical lines, and both
+// scripts/mutate-amount-and-ceiling-guards.sh C2 and
+// scripts/mutate-numeric-and-enforcement-guards.sh E2 anchored on that text with
+// want_n 2 -- mutating BOTH at once and scoring "killed" against tests that only
+// exercise the first. The harness reported coverage that did not exist.
+//
+// A cumulative-only slice is the sub-band case: a $3/day band with no
+// max_amount. Without the parse, TxnScope projects json.Number(tc.Amount)
+// verbatim and big.Rat reads "-5000" happily, so "-5000 <= 3" is true and the
+// slice clears a transaction it does not authorize.
+//
+// Sentinels, not bare failure: the grammar guard and the positivity guard are
+// layered, and a signed amount is refused by the GRAMMAR (it must start with a
+// digit), never by the positivity check. Asserting only err != nil would let
+// four of these six prove the wrong guard.
+func TestTxnScope_CumulativeOnly_RefusesMalformedAmounts(t *testing.T) {
+	parent := Scope{cumulativeDim: 3, "currency": "USD"} // no max_amount at all
+	for name, c := range map[string]struct {
+		amount string
+		want   error
+	}{
+		"negative":     {"-5000", ledger.ErrAmountGrammar},
+		"hex":          {"0x2710", ledger.ErrAmountGrammar},
+		"exponent":     {"1e3", ledger.ErrAmountGrammar},
+		"empty":        {"", ledger.ErrAmountEmpty},
+		"zero":         {"0", ledger.ErrAmountNotPositive},
+		"zero decimal": {"0.0", ledger.ErrAmountNotPositive},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := TxnScope(parent, txn(c.amount, "USD"))
+			if err == nil {
+				t.Fatalf("a cumulative-only slice projected %q without parsing it", c.amount)
+			}
+			if !errors.Is(err, c.want) {
+				t.Fatalf("wrong diagnosis for %q: want %v, got %v", c.amount, c.want, err)
+			}
+		})
 	}
 }

@@ -279,3 +279,66 @@ func TestIsKnownHashSuite(t *testing.T) {
 		t.Error("an unregistered suite must be unknown")
 	}
 }
+
+// TestSubbandCommit_DomainSeparation proves the three tag CONSTANTS differ. It
+// computes its own hashes and never calls SubbandLeaf or node, so it says
+// nothing about whether those functions USE their tags.
+//
+// That gap is invisible to every other test in this file, because none of them
+// pins a digest: swap tagLeaf for tagNode inside SubbandLeaf and every leaf
+// changes consistently, so round-trip, tamper and cross-parent membership all
+// still verify. The second-preimage property the file's own comment claims --
+// that a 64-byte leaf preimage cannot be presented as an internal node -- rests
+// on the tag being applied, not on the tag existing.
+//
+// This rebuilds the leaf preimage by hand, from the spec of the format, and
+// requires the function to agree. It pins the tag at its point of use.
+func TestSubbandCommit_LeafIsHashedUnderTheLeafTag(t *testing.T) {
+	var parentCommit [32]byte
+	for i := range parentCommit {
+		parentCommit[i] = byte(i)
+	}
+	b := cband(3, 100, 200)
+
+	got, err := SubbandLeaf(SuiteSHA3_256, parentCommit, b, 1, 4)
+	if err != nil {
+		t.Fatalf("SubbandLeaf: %v", err)
+	}
+
+	var pre []byte
+	pre = append(pre, tagLeaf)
+	pre = append(pre, parentCommit[:]...)
+	pre = lp(pre, []byte("USD"))
+	pre = lp(pre, []byte("3"))
+	pre = be64(pre, 100)
+	pre = be64(pre, 200)
+	pre = be32(pre, 1)
+	pre = be32(pre, 4)
+	want, err := SuiteSHA3_256.sum(pre)
+	if err != nil {
+		t.Fatalf("sum: %v", err)
+	}
+	if got != want {
+		t.Fatalf("SubbandLeaf does not hash the documented preimage under tagLeaf\n"+
+			" got %x\nwant %x", got, want)
+	}
+
+	// And the node tag, on the same footing.
+	l, r := [32]byte{1}, [32]byte{2}
+	gotNode, err := SuiteSHA3_256.node(l, r)
+	if err != nil {
+		t.Fatalf("node: %v", err)
+	}
+	var npre []byte
+	npre = append(npre, tagNode)
+	npre = append(npre, l[:]...)
+	npre = append(npre, r[:]...)
+	wantNode, err := SuiteSHA3_256.sum(npre)
+	if err != nil {
+		t.Fatalf("sum: %v", err)
+	}
+	if gotNode != wantNode {
+		t.Fatalf("node does not hash its children under tagNode\n got %x\nwant %x",
+			gotNode, wantNode)
+	}
+}

@@ -12,8 +12,10 @@
 #   A4  junk after the integer part is tolerated          (ledger.ParseAmount)
 #   A5  a bare "." fraction with no digits is tolerated   (ledger.ParseAmount)
 #   A6  the adapters stop sharing the one grammar         (ledger.validAmount)
-#   C1  an unqualified ceiling is projected anyway        (tbac.TxnScope)
-#   C2  the amount is projected without being parsed      (tbac.TxnScope)
+#   C1a an unqualified max_amount ceiling is projected     (tbac.TxnScope)
+#   C1b an unqualified max_cumulative ceiling is projected (tbac.TxnScope)
+#   C2a the max_amount branch projects an unparsed amount  (tbac.TxnScope)
+#   C2b the cumulative branch projects an unparsed amount  (tbac.TxnScope)
 #
 # Each mutation must turn at least one NAMED test red. A mutation that does not
 # compile, or whose anchor is not found, is a bug in THIS script — never a pass.
@@ -121,17 +123,52 @@ run_mutation "A6 adapters stop sharing the one grammar" \
 	return nil
 }" || rc=1
 
-run_mutation "C1 unqualified ceiling projected anyway" \
+
+# C1 and C2 were single mutations with want_n 2. TxnScope parses the amount and
+# checks currency qualification TWICE -- once for max_amount, once for
+# max_cumulative -- in byte-identical lines, so one anchor mutated both guards
+# at once and reported "killed" on tests that only exercise the max_amount
+# branch. want_n above 1 is a CLAIM that the occurrences are the same guard;
+# here they were not. Split, one mutation per guard.
+
+run_mutation "C1a unqualified max_amount ceiling projected" \
   ./internal/tbac/ "TestTxnScope_RefusesAnUnqualifiedCeiling" \
   internal/tbac/scope.go \
-  "		if _, qualified := parent[\"currency\"]; !qualified {" \
-  "		if _, qualified := parent[\"currency\"]; false && !qualified {" 2 || rc=1
+  "		if _, qualified := parent[\"currency\"]; !qualified {
+			return nil, fmt.Errorf(\"capability declares %q but no %q: %w\",
+				\"max_amount\", \"currency\", ErrCeilingUnqualified)" \
+  "		if _, qualified := parent[\"currency\"]; false && !qualified {
+			return nil, fmt.Errorf(\"capability declares %q but no %q: %w\",
+				\"max_amount\", \"currency\", ErrCeilingUnqualified)" || rc=1
 
-run_mutation "C2 amount projected without being parsed" \
+run_mutation "C1b unqualified max_cumulative ceiling projected" \
+  ./internal/tbac/ "TestTxnScope_UnqualifiedCumulativeCeiling_Refused" \
+  internal/tbac/scope.go \
+  "		if _, qualified := parent[\"currency\"]; !qualified {
+			return nil, fmt.Errorf(\"capability declares %q but no %q: %w\",
+				cumulativeDim, \"currency\", ErrCeilingUnqualified)" \
+  "		if _, qualified := parent[\"currency\"]; false && !qualified {
+			return nil, fmt.Errorf(\"capability declares %q but no %q: %w\",
+				cumulativeDim, \"currency\", ErrCeilingUnqualified)" || rc=1
+
+run_mutation "C2a max_amount branch projects an unparsed amount" \
   ./internal/tbac/ "TestTxnScope_RefusesNonPositiveAmounts|TestTxnScope_RefusesNonCanonicalAmounts" \
   internal/tbac/scope.go \
-  "		if _, err := ledger.ParseAmount(tc.Amount); err != nil {" \
-  "		if _, err := ledger.ParseAmount(tc.Amount); false && err != nil {" 2 || rc=1
+  "		// re-derive one here (see its doc comment for why big.Rat alone is too
+		// permissive — \"0x2710\" is 10000 to it, and \"-5000 <= 5000\" is true).
+		if _, err := ledger.ParseAmount(tc.Amount); err != nil {" \
+  "		// re-derive one here (see its doc comment for why big.Rat alone is too
+		// permissive — \"0x2710\" is 10000 to it, and \"-5000 <= 5000\" is true).
+		if _, err := ledger.ParseAmount(tc.Amount); false && err != nil {" || rc=1
+
+run_mutation "C2b cumulative branch projects an unparsed amount" \
+  ./internal/tbac/ "TestTxnScope_Cumulative" \
+  internal/tbac/scope.go \
+  "		if _, err := ledger.ParseAmount(tc.Amount); err != nil {
+			return nil, fmt.Errorf(\"transaction amount: %w\", err)
+		}
+		out[cumulativeDim] = json.Number(tc.Amount)" \
+  "		out[cumulativeDim] = json.Number(tc.Amount)" || rc=1
 
 restore
 if [ "$rc" -eq 0 ]; then

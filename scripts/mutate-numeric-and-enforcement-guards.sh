@@ -16,6 +16,13 @@
 #   P2  an undeclared numeric dimension is sealable        (tbac.ValidateIssuance)
 #   P3  an object-valued ceiling is recursed past          (tbac.validateIssuance)
 #   P4  a deep inherited unit is discarded                 (tbac.inheritMoneyUnit)
+# E1 and E2 anchor on the max_amount occurrences ONLY. TxnScope carries the same
+# two guards again for max_cumulative in byte-identical lines; these mutations
+# used want_n 2 and hit both at once while being killed by verifier tests that
+# only exercise max_amount. The cumulative occurrences are mutated by
+# scripts/mutate-tbac-layering.sh W-1 and by C1b/C2b in
+# scripts/mutate-amount-and-ceiling-guards.sh.
+#
 #   E1  an unqualified ceiling is enforced anyway          (end to end, forged chain)
 #   E2  a non-canonical amount clears the ceiling          (end to end, forged chain)
 #   T1  the travel-rule wire gets its own amount grammar   (trp.ValidAmount)
@@ -145,14 +152,22 @@ run_mutation "P4 deep inherited unit discarded" \
 run_mutation "E1 unqualified ceiling enforced anyway" \
   ./internal/verifier/ "TestNonConformingIssuer_UnqualifiedCeilingAtTheRootIsRefused" \
   internal/tbac/scope.go \
-  "		if _, qualified := parent[\"currency\"]; !qualified {" \
-  "		if _, qualified := parent[\"currency\"]; false && !qualified {" 2 || rc=1
+  "		if _, qualified := parent[\"currency\"]; !qualified {
+			return nil, fmt.Errorf(\"capability declares %q but no %q: %w\",
+				\"max_amount\", \"currency\", ErrCeilingUnqualified)" \
+  "		if _, qualified := parent[\"currency\"]; false && !qualified {
+			return nil, fmt.Errorf(\"capability declares %q but no %q: %w\",
+				\"max_amount\", \"currency\", ErrCeilingUnqualified)" || rc=1
 
 run_mutation "E2 non-canonical amount clears the ceiling" \
   ./internal/verifier/ "TestNonConformingIssuer_NonCanonicalAmountIsRefusedAtTheScopeStep" \
   internal/tbac/scope.go \
-  "		if _, err := ledger.ParseAmount(tc.Amount); err != nil {" \
-  "		if _, err := ledger.ParseAmount(tc.Amount); false && err != nil {" 2 || rc=1
+  "		// re-derive one here (see its doc comment for why big.Rat alone is too
+		// permissive — \"0x2710\" is 10000 to it, and \"-5000 <= 5000\" is true).
+		if _, err := ledger.ParseAmount(tc.Amount); err != nil {" \
+  "		// re-derive one here (see its doc comment for why big.Rat alone is too
+		// permissive — \"0x2710\" is 10000 to it, and \"-5000 <= 5000\" is true).
+		if _, err := ledger.ParseAmount(tc.Amount); false && err != nil {" || rc=1
 
 run_mutation "T1 travel-rule wire re-grows its own grammar" \
   ./internal/trp/ "TestValidAmount" \
