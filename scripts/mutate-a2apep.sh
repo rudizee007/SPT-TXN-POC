@@ -14,6 +14,11 @@
 #   A-4  `taskId` leaves the intent binding
 #   A-5  `contextId` leaves the intent binding
 #   A-6  an unmodelled message/* method is proxied instead of refused
+#        (killed by the RULE the receipt records, not by the denial: since the
+#        read-only allowlist landed, a message/* method that got past that
+#        branch is refused by the allowlist a few lines later, so an assertion
+#        that only checks "denied" passes with the branch deleted. A-6 survived
+#        that way once already.)
 #   A-7  an unbound params sibling (configuration) is forwarded
 #   A-8  an unrecognised Message member is forwarded
 #   A-9  a duplicated Message member is accepted

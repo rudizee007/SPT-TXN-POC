@@ -199,10 +199,30 @@ func TestReplayDenied(t *testing.T) {
 
 // An unmodelled message/* method is REFUSED, not passed through. Passing
 // message/stream would forward a payload this PEP never inspected.
+//
+// This asserts the RULE, not merely the denial, and the difference is the whole
+// value of the test. Since the read-only allowlist landed, a message/* method
+// that slipped past this branch would be refused by the allowlist immediately
+// afterwards -- so an assertion that only checks "denied" stays green with this
+// branch deleted and evidences nothing about it. Mutation A-6 survived exactly
+// that way, which is the fourth time in this project that layered defence has
+// let a test pass for a reason other than the one it was written for.
+//
+// The branch is kept rather than deleted as redundant because the two refusals
+// are different operator signals: "a client tried to stream" is a client using
+// a protocol feature this PEP does not model yet, while "a client tried an
+// unrecognised method" is closer to probing. Collapsing them would save four
+// lines and lose that.
 func TestUnmodelledMessageMethodDenied(t *testing.T) {
-	rig := newRig(t)
-	raw := []byte(`{"jsonrpc":"2.0","id":1,"method":"message/stream","params":{"message":{"parts":[]}}}`)
-	assertDenied(t, rig.mw.Handle(context.Background(), raw), rig)
+	for _, method := range []string{"message/stream", "message/somethingAddedLater"} {
+		rig := newRig(t)
+		raw := []byte(fmt.Sprintf(
+			`{"jsonrpc":"2.0","id":1,"method":%q,"params":{"message":{"parts":[]}}}`, method))
+		assertDenied(t, rig.mw.Handle(context.Background(), raw), rig)
+		if got := lastRule(t, rig); got != "rpc.unmodelled-message-method" {
+			t.Fatalf("%s: rule = %s, want rpc.unmodelled-message-method", method, got)
+		}
+	}
 }
 
 // The three A2A methods that only read pass through as observation.
