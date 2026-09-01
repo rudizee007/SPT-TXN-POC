@@ -12,9 +12,19 @@ import (
 // A parent that divides its max_cumulative budget commits, in its signed claims,
 // to ONE Merkle root over the N slice leaves; every spendable slice proves
 // membership. ValidateBandDivision proves the leaves' budgets sum to <= the
-// parent budget, so the committed set IS the whole cumulative authority and its
-// total is bounded BY CONSTRUCTION — statelessly, offline, with no (N+1)th slice
-// and no second division of the same parent.
+// parent budget, so the committed set is the whole cumulative authority the
+// parent can hand out: there is no valid (N+1)th slice and no DIFFERENT
+// division of the same parent.
+//
+// What the commitment does NOT do: it does not stop a child of the
+// budgeted parent from being an ordinary CT with no budget at all (the verifier
+// refuses that at step 6 — every child of a budgeted parent must be a member
+// slice); it does not make a slice single-use (the verifier consumes a slice on
+// its first ALLOW, per enforcement point, keyed on root+leg); and it does not
+// stop the issuer minting the SAME division again under fresh jtis (the same
+// consumption key catches the copy). Cumulative spend is therefore bounded per
+// verifier process; sharing that record across processes is the control
+// plane's job and is not claimed by this package.
 //
 // The hash is a VERSIONED suite carried in the parent's subband_hash_suite
 // claim, so migrating to another hash is a version bump rather than a redesign:

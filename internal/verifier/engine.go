@@ -274,6 +274,23 @@ func newReplayCache() *replayCache { return &replayCache{seen: make(map[string]t
 // window (a replay); otherwise it records jti for ttl and returns true. Expired
 // entries are pruned opportunistically.
 func (c *replayCache) checkAndAdd(jti string, ttl time.Duration) bool {
+	return c.consumeAll(consumption{key: jti, ttl: ttl})
+}
+
+// consumption is one single-use record: a namespaced key and how long the
+// record must live. The namespace prefix keeps a DPoP jti, an SPT-Txn jti and a
+// slice identity from ever colliding in the one map.
+type consumption struct {
+	key string
+	ttl time.Duration
+}
+
+// consumeAll records every key or none: if ANY key is already held and still
+// live, nothing is recorded and false is returned. One lock, one check-then-set,
+// so two concurrent presentations of the same slice or the same SPT-Txn cannot
+// both pass — the second is refused inside the same critical section the first
+// recorded in. Expired entries are pruned opportunistically.
+func (c *replayCache) consumeAll(items ...consumption) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
@@ -282,11 +299,69 @@ func (c *replayCache) checkAndAdd(jti string, ttl time.Duration) bool {
 			delete(c.seen, k)
 		}
 	}
-	if exp, ok := c.seen[jti]; ok && now.Before(exp) {
-		return false
+	for _, it := range items {
+		if exp, ok := c.seen[it.key]; ok && now.Before(exp) {
+			return false
+		}
 	}
-	c.seen[jti] = now.Add(ttl)
+	for _, it := range items {
+		c.seen[it.key] = now.Add(it.ttl)
+	}
 	return true
+}
+
+// consumeOnAllow is the single-use step, run LAST, after every other check has
+// passed, so a refused presentation never burns anything.
+//
+// Two records are consumed together, atomically:
+//
+//   - the SPT-Txn's own jti, for the token's remaining lifetime. One transaction
+//     token authorizes one transaction, however many DPoP proofs the holder can
+//     make for it, and at a settler where no proof is presented at all.
+//   - the leaf sub-band slice, if the leaf CT is one, keyed on the committed
+//     division root and leg index (sliceIdentity), for the slice's remaining
+//     lifetime. A slice is single-use by definition ("the committed set IS the
+//     whole cumulative authority"); this is where that sentence becomes code.
+//
+// Honest limit, stated where the record lives: this store is in-process. Two
+// verifier processes do not share it, so single-use holds per enforcement point,
+// not globally. Sharing the record across processes is the control plane's job
+// and is not claimed here.
+func (e *Engine) consumeOnAllow(txClaims, ctClaims map[string]any) error {
+	now := time.Now().Unix()
+	items := make([]consumption, 0, 2)
+
+	jti, _ := txClaims["jti"].(string)
+	if jti == "" {
+		return fmt.Errorf("SPT-Txn has no jti: a token that cannot be recorded as used cannot be single-use")
+	}
+	exp, ok := intClaim(txClaims, "exp")
+	if !ok {
+		return fmt.Errorf("SPT-Txn has no readable exp")
+	}
+	items = append(items, consumption{key: "txn:" + jti, ttl: ttlUntil(exp, now)})
+
+	if sl, ok := ctClaims[leafSliceClaim].(*sliceIdentity); ok && sl != nil {
+		key := fmt.Sprintf("slice:%s:%d", sl.root, sl.legIndex)
+		items = append(items, consumption{key: key, ttl: ttlUntil(sl.expiry, now)})
+	}
+	if !e.replay.consumeAll(items...) {
+		if len(items) == 2 {
+			return fmt.Errorf("already used: this SPT-Txn or its sub-band slice has been consumed at this enforcement point")
+		}
+		return fmt.Errorf("already used: this SPT-Txn has been consumed at this enforcement point")
+	}
+	return nil
+}
+
+// ttlUntil is the record lifetime for a token expiring at exp. A token already
+// at or past exp cannot reach here (step 2 / step 6 refuse it), but the floor
+// keeps the record non-degenerate if a clock moves between the check and now.
+func ttlUntil(exp, now int64) time.Duration {
+	if exp <= now {
+		return time.Second
+	}
+	return time.Duration(exp-now) * time.Second
 }
 
 // Verify runs the eight steps in order, short-circuiting on the first failure.
@@ -356,6 +431,12 @@ func (e *Engine) Verify(ctx context.Context, in Input) Decision {
 	if err := step8Context(txClaims, in.Txn); err != nil {
 		return deny(8, err)
 	}
+	// Single-use, recorded only once everything above has passed. Reported
+	// under step 8 because it is the same property: one token, this one
+	// transaction, once.
+	if err := e.consumeOnAllow(txClaims, ctClaims); err != nil {
+		return deny(8, err)
+	}
 	return Decision{Allow: true}
 }
 
@@ -365,8 +446,16 @@ func (e *Engine) Verify(ctx context.Context, in Input) Decision {
 // returning them.
 type SettlementFacts struct {
 	HumanAnchor string // the CAT's human_anchor, hex — who is accountable
-	MaxAmount   string // the leaf CT's max_amount ceiling, decimal — the granted limit
-	Currency    string // the leaf CT's currency, if the scope pins one
+	MaxAmount   string // the leaf CT's max_amount ceiling, decimal; see MaxCumulative
+	// MaxCumulative is the leaf's cumulative budget, decimal, when the leaf is a
+	// sub-band slice; empty otherwise. When present it is the tighter money
+	// ceiling (TxnScope projects it at spend time); a settler pins its cap to
+	// the smaller of the two.
+	MaxCumulative string
+	Currency      string // the leaf CT's currency, if the scope pins one
+	// NotAfter is the SPT-Txn's own exp (Unix seconds). A settler's authorization
+	// window must not outlive the token that authorized it.
+	NotAfter int64
 }
 
 // VerifyForSettlement runs the enforcement engine WITHOUT step 5 (DPoP
@@ -428,6 +517,11 @@ func (e *Engine) VerifyForSettlement(ctx context.Context, in Input) (SettlementF
 	if err := step8Context(txClaims, in.Txn); err != nil {
 		return facts, deny(8, err)
 	}
+	// Single-use at the settler too: a settlement IS the use, and this path has
+	// no step 5 to record anything otherwise.
+	if err := e.consumeOnAllow(txClaims, ctClaims); err != nil {
+		return facts, deny(8, err)
+	}
 
 	// Facts, extracted only after every check above passed. The anchor comes
 	// from the SPT-Txn token (bound in step 6 to equal the CAT's); the ceiling
@@ -443,9 +537,15 @@ func (e *Engine) VerifyForSettlement(ctx context.Context, in Input) (SettlementF
 		if m, ok := scope["max_amount"]; ok {
 			facts.MaxAmount = decimalString(m)
 		}
+		if m, ok := scope["max_cumulative"]; ok {
+			facts.MaxCumulative = decimalString(m)
+		}
 		if c, ok := scope["currency"].(string); ok {
 			facts.Currency = c
 		}
+	}
+	if exp, ok := intClaim(txClaims, "exp"); ok {
+		facts.NotAfter = exp
 	}
 	return facts, Decision{Allow: true}
 }
@@ -763,6 +863,7 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 	parentToken := catToken
 	parentBudget := catMax
 	var leaf map[string]any
+	var leafSlice *sliceIdentity
 
 	// Effective scope = the INTERSECTION of every scope from the root CAT to
 	// the leaf. Per-hop Contains(parent, child) only inspects the child's
@@ -838,9 +939,16 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 		// enforcement that makes the cumulative bound real: an (N+1)th slice, a
 		// second division of the same parent, or a self-granted cumulative budget
 		// has no valid membership and is refused here.
-		if err := checkSubbandMembership(parentClaims, parentScope, ctClaims, ctScope); err != nil {
+		slice, err := checkSubbandMembership(parentClaims, parentScope, ctClaims, ctScope)
+		if err != nil {
 			return nil, fmt.Errorf("CT[%d] subband: %w", i, err)
 		}
+		// Only the LEAF slice is consumed on use. An intermediate slice that
+		// committed its own sub-division is spent through its members, each
+		// consumed once; consuming the intermediate on first use would make
+		// its second member unusable. Overwritten each hop, so what remains
+		// after the loop is the leaf's identity or nil.
+		leafSlice = slice
 
 		// Delegation depth: remaining must be exactly the parent's budget minus
 		// one, and never negative. Enforced per hop, this caps the chain length.
@@ -903,6 +1011,9 @@ func (e *Engine) step6Chain(ctx context.Context, txClaims map[string]any, ctToke
 	// Hand the accumulated effective scope to step 7 without disturbing the
 	// leaf's own claims (binding checks below rely on the leaf as-presented).
 	leaf[effectiveScopeClaim] = map[string]any(effective)
+	if leafSlice != nil {
+		leaf[leafSliceClaim] = leafSlice
+	}
 
 	// Bind the SPT-Txn to the LEAF capability: jti reference, humanAnchor, and
 	// the holder key (DPoP cnf.jkt) all commit to the final delegated CT.
@@ -1031,6 +1142,21 @@ func (e *Engine) step6ChainZK(ctx context.Context, txClaims map[string]any, in I
 	scope, ok := leaf["capability_scope"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("leaf CT missing capability_scope")
+	}
+	// A cumulative budget is enforced by sub-band membership against the
+	// IMMEDIATE parent (§7.2), and on this path the intermediate hops are
+	// hidden: nothing here can check that the leaf is a committed slice, or
+	// that no hidden hop dropped the budget. Refused rather than skipped — the
+	// cleartext walk enforces it, and a mode that silently enforces less is the
+	// downgrade EnableChainZK's probes exist to prevent.
+	if catScope, err := scopeOf(catClaims); err == nil && tbac.DeclaresCumulativeBudget(catScope) {
+		return nil, fmt.Errorf("CAT declares a max_cumulative budget: sub-band membership cannot be verified on the ZK chain path; present the chain in clear")
+	}
+	if _, has := catClaims["subband_group_root"]; has {
+		return nil, fmt.Errorf("CAT committed a sub-band division: membership cannot be verified on the ZK chain path; present the chain in clear")
+	}
+	if tbac.DeclaresCumulativeBudget(tbac.Scope(scope)) {
+		return nil, fmt.Errorf("leaf CT declares a max_cumulative budget: sub-band membership cannot be verified on the ZK chain path; present the chain in clear")
 	}
 	// The ceiling becomes a uint64 PUBLIC INPUT to the proof, and that conversion
 	// is the only thing binding the proof to the presented leaf's ceiling. A bare
@@ -1161,70 +1287,105 @@ func scopeOf(claims map[string]any) (tbac.Scope, error) {
 // attenuation. No 32-bit target is built today (CI has no GOARCH matrix), which
 // is why this was latent rather than live; int64 removes the hazard rather than
 // relying on the build matrix never changing.
-// checkSubbandMembership enforces §7.2 at one chain hop. If the child carries a
-// max_cumulative budget, its parent must have committed a division and the child
-// must be a member of it: the child's declared tuple — its cumulative budget and
-// currency, its window, and its position — rebuilt into a leaf under the parent's
-// budget/currency commitment, must verify against the parent's committed root. A
-// child that carries a cumulative budget with no committed division above it, or
-// whose membership does not verify, is refused. A child with no cumulative budget
-// is unaffected (the common case), so existing chains are untouched.
-func checkSubbandMembership(parentClaims map[string]any, parentScope tbac.Scope, childClaims map[string]any, childScope tbac.Scope) error {
-	if !tbac.DeclaresCumulativeBudget(childScope) {
-		return nil
-	}
+// sliceIdentity names one consumed sub-band slice for the single-use record:
+// the committed root it is a member of and its leaf index. Deliberately NOT the
+// slice's jti — an issuer can mint the same slice tuple under a fresh jti, but
+// it cannot change the tuple without leaving the committed division. The
+// consumption key is therefore the thing the commitment fixes, not the thing
+// the issuer chooses.
+type sliceIdentity struct {
+	root     string
+	legIndex int64
+	expiry   int64 // the slice's exp: the record need not outlive the slice
+}
+
+// checkSubbandMembership enforces §7.2 at one chain hop.
+//
+// The trigger is the PARENT's declaration, not the child's. A parent is
+// "budgeted" if its scope declares max_cumulative or it carries a committed
+// subband_group_root. Every child of a budgeted parent MUST be a member slice:
+// it declares its own max_cumulative and proves, by Merkle path, that its tuple
+// (budget, currency, window, position) is one leaf of the parent's one committed
+// division. A child of a budgeted parent that declares no cumulative budget is
+// refused outright — under Contains a child may drop any dimension, and the
+// budget is the one dimension whose dropping must not be permitted: a child
+// without it would carry the parent's whole budget as a per-transaction
+// ceiling with no count. The trigger is what the parent declared, never what
+// the child chose to declare.
+//
+// A child of an unbudgeted parent that declares max_cumulative is a self-granted
+// budget and is refused as before. A child of an unbudgeted parent that declares
+// none is the common case and is untouched.
+//
+// Returns the slice identity for a member child so the engine can record its
+// consumption (single-use is enforced per verifier process; see Engine.consume).
+func checkSubbandMembership(parentClaims map[string]any, parentScope tbac.Scope, childClaims map[string]any, childScope tbac.Scope) (*sliceIdentity, error) {
 	parentRoot, _ := parentClaims["subband_group_root"].(string)
+	parentBudgeted := tbac.DeclaresCumulativeBudget(parentScope) || parentRoot != ""
+	childBudgeted := tbac.DeclaresCumulativeBudget(childScope)
+	if !parentBudgeted {
+		if childBudgeted {
+			return nil, fmt.Errorf("carries a max_cumulative budget but its parent committed no division")
+		}
+		return nil, nil
+	}
+	if !childBudgeted {
+		return nil, fmt.Errorf("parent holds a cumulative budget: every child of it must be a committed slice declaring its own max_cumulative")
+	}
 	if parentRoot == "" {
-		return fmt.Errorf("carries a max_cumulative budget but its parent committed no division")
+		return nil, fmt.Errorf("parent declares a max_cumulative budget but committed no division: it authorizes no children")
 	}
 	childRoot, _ := childClaims["subband_group_root"].(string)
 	if childRoot != parentRoot {
-		return fmt.Errorf("subband_group_root does not match the parent's committed division")
+		return nil, fmt.Errorf("subband_group_root does not match the parent's committed division")
 	}
 	suite := tbac.HashSuite(claimStr(childClaims, "subband_hash_suite"))
 	groupSize, ok := intClaim(childClaims, "subband_group_size")
 	if !ok || groupSize <= 0 || groupSize > 0xFFFFFFFF {
-		return fmt.Errorf("missing or invalid subband_group_size")
+		return nil, fmt.Errorf("missing or invalid subband_group_size")
 	}
 	legIndex, ok := intClaim(childClaims, "subband_leg_index")
 	if !ok || legIndex < 0 || legIndex >= groupSize {
-		return fmt.Errorf("missing or invalid subband_leg_index")
+		return nil, fmt.Errorf("missing or invalid subband_leg_index")
 	}
 	rawPath, ok := childClaims["subband_merkle_path"].([]any)
 	if !ok {
-		return fmt.Errorf("missing subband_merkle_path")
+		return nil, fmt.Errorf("missing subband_merkle_path")
 	}
 	path := make([][32]byte, len(rawPath))
 	for k, ph := range rawPath {
 		hs, _ := ph.(string)
 		b, err := hex.DecodeString(hs)
 		if err != nil || len(b) != 32 {
-			return fmt.Errorf("malformed subband_merkle_path element %d", k)
+			return nil, fmt.Errorf("malformed subband_merkle_path element %d", k)
 		}
 		copy(path[k][:], b)
 	}
 	rootBytes, err := hex.DecodeString(parentRoot)
 	if err != nil || len(rootBytes) != 32 {
-		return fmt.Errorf("malformed committed group root")
+		return nil, fmt.Errorf("malformed committed group root")
 	}
 	var root [32]byte
 	copy(root[:], rootBytes)
 
 	parentCommit, err := tbac.SubbandParentCommit(suite, parentScope)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	childExp, ok := intClaim(childClaims, "exp")
 	if !ok {
-		return fmt.Errorf("child missing exp")
+		return nil, fmt.Errorf("child missing exp")
 	}
 	childNbf, _ := intClaim(childClaims, "nbf") // 0 when absent
 	band := tbac.Band{Scope: childScope, NotBefore: childNbf, Expiry: childExp}
 	leaf, err := tbac.SubbandLeaf(suite, parentCommit, band, uint32(legIndex), uint32(groupSize))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return tbac.SubbandVerifyMembership(suite, leaf, uint32(legIndex), uint32(groupSize), path, root)
+	if err := tbac.SubbandVerifyMembership(suite, leaf, uint32(legIndex), uint32(groupSize), path, root); err != nil {
+		return nil, err
+	}
+	return &sliceIdentity{root: parentRoot, legIndex: legIndex, expiry: childExp}, nil
 }
 
 func claimStr(claims map[string]any, key string) string {
@@ -1290,6 +1451,11 @@ const reservedClaimPrefix = "__spt_"
 // stashes the chain-intersection scope here for step7Scope to enforce. It is
 // never signed, never emitted, and never present on a real token.
 const effectiveScopeClaim = reservedClaimPrefix + "effective_scope"
+
+// leafSliceClaim carries the leaf CT's sub-band slice identity (*sliceIdentity)
+// from step 6 to the single-use consumption at the end of Verify /
+// VerifyForSettlement. Same reserved namespace, same guarantees.
+const leafSliceClaim = reservedClaimPrefix + "leaf_slice"
 
 func step7Scope(ctClaims map[string]any, tc ledger.TxnContext) error {
 	// Prefer the chain-intersection scope computed in step 6; fall back to the

@@ -3,6 +3,8 @@ package verifier_test
 import (
 	"context"
 	"testing"
+
+	"github.com/rudizee007/spt-txn-poc/internal/verifier"
 )
 
 // These pin verifier.VerifyForSettlement (review #6 A1, the design-true fix):
@@ -41,7 +43,13 @@ func TestVerifyForSettlement_AgreesWithFullVerify(t *testing.T) {
 	if d := h.eng.Verify(context.Background(), h.in); !d.Allow {
 		t.Fatalf("full verify denied a good chain: %v", d)
 	}
-	if _, d := h.eng.VerifyForSettlement(context.Background(), h.in); !d.Allow {
+	// A SECOND engine over the same registry: the gate and the settler are
+	// different processes with separate single-use records. On the SAME engine
+	// the second presentation is correctly refused as already used (see
+	// TestSingleUse_SPTTxnConsumedOnAllow), which is the point of the record,
+	// not a disagreement between the two paths.
+	settler := verifier.New(h.reg)
+	if _, d := settler.VerifyForSettlement(context.Background(), h.in); !d.Allow {
 		t.Fatalf("settle path denied a chain the full verify allowed: %v", d)
 	}
 }

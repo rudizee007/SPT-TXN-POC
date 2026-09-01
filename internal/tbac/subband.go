@@ -65,15 +65,18 @@ var (
 //     ErrSubbandOverAllocates). The bound is <=, not <: a division may hold budget
 //     in reserve (sum < budget); it may never allocate more than it was granted.
 //
-// The sum bound is the property that makes the division sound. Once the total
-// authority handed out is provably <= what the parent held, N single-use slices
-// bound cumulative spend BY CONSTRUCTION — there is no (N+1)th slice to spend, so
-// structuring across the slices buys the attacker nothing, and no verifier ever
-// needs to hold a running total. This function proves the division; enforcing
-// that each slice is redeemed at most once is the separate single-use concern
-// (max_uses / replay), and binding a slice to a time window (a $3 day-band inside
-// a $100 month) is layered on top. See VELOCITY-AND-CUMULATIVE-SPEND-DESIGN
-// §3a and §7.
+// The sum bound is what makes the division sound: the total authority handed
+// out is provably <= what the parent held, so there is no (N+1)th slice and
+// structuring across the slices gains nothing. This function proves
+// the division and nothing else. Two further things are needed before the sum
+// bound is a spending bound, and both live in the verifier, not here: every
+// child of a budgeted parent must be a member slice (step 6 refuses an ordinary
+// child, which would otherwise inherit the whole budget uncounted), and each
+// slice is consumed on its first ALLOW per enforcement point (keyed on the
+// committed root and leg, so a re-minted copy is the same slice). No verifier
+// holds a running total; each holds a set of consumed slices. Binding a slice
+// to a time window (a $3 day-band inside a $100 month) is layered on top. See
+// VELOCITY-AND-CUMULATIVE-SPEND-DESIGN §3a and §7.
 //
 // It deliberately does NOT deduplicate slices: two identical slices are two
 // distinct claims on the budget and are counted twice, which is exactly right for

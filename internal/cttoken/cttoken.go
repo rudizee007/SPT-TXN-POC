@@ -159,6 +159,16 @@ func Issue(req IssueRequest, signingKey crypto.Signer) (*CT, error) {
 	}
 
 	// ── 3. Attenuate scope (containment check) ────────────────────────
+	// A budgeted parent (declares max_cumulative, or committed a division) may
+	// only delegate committed slices, and those are minted by IssueSubbands.
+	// An ordinary child would drop the cumulative dimension — containment
+	// permits dropping — and inherit the whole budget as a per-transaction
+	// ceiling with no count. The verifier refuses such a chain at step 6 (the
+	// enforcement); refusing here too means the token never exists (hygiene).
+	_, committed := parent["subband_group_root"]
+	if (tbac.DeclaresCumulativeBudget(parentScope) || committed) && req.Subband == nil {
+		return nil, fmt.Errorf("parent CAT holds a cumulative budget: only committed sub-band slices may be delegated from it (IssueSubbands); an ordinary CT would inherit the budget uncounted")
+	}
 	attenuated, err := tbac.Attenuate(parentScope, req.RequestedScope)
 	if err != nil {
 		return nil, err
@@ -451,6 +461,21 @@ func Delegate(req DelegateRequest, signingKey crypto.Signer) (*CT, error) {
 	}
 
 	// ── 3. Attenuate scope (containment check) ────────────────────────
+	// A budgeted parent (declares max_cumulative, or committed a division) may
+	// only delegate committed slices, and those are minted by IssueSubbands.
+	// An ordinary child would drop the cumulative dimension — containment
+	// permits dropping — and inherit the whole budget as a per-transaction
+	// ceiling with no count. The verifier refuses such a chain at step 6 (the
+	// enforcement); refusing here too means the token never exists (hygiene).
+	// A slice (a CT carrying a cumulative budget) cannot be sub-divided through
+	// this path: there is no SubbandMembership on a DelegateRequest, so any child
+	// minted here would be an ordinary CT inheriting the slice's budget uncounted.
+	// Refused. Sub-dividing a slice needs its own committed division and is not
+	// built; the verifier refuses the chain regardless (step 6).
+	_, committed := parent["subband_group_root"]
+	if tbac.DeclaresCumulativeBudget(parentScope) || committed {
+		return nil, fmt.Errorf("parent CT holds a cumulative budget: it cannot delegate an ordinary child, which would inherit the budget uncounted; sub-dividing a slice is not supported")
+	}
 	attenuated, err := tbac.Attenuate(parentScope, req.RequestedScope)
 	if err != nil {
 		return nil, err

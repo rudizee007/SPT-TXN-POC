@@ -327,11 +327,13 @@ func TxnScope(parent Scope, tc ledger.TxnContext) (Scope, error) {
 	// carries a cumulative budget but no max_amount would assert NOTHING here and
 	// leave its transactions unbounded at spend time — a $3-cumulative slice
 	// minting a $1000 transfer. Project it on the same terms as max_amount
-	// (currency-qualified, positive, canonical, exact json.Number) so a single-use
-	// slice is bounded by its own budget. The cumulative SUM across slices is
-	// bounded by construction at ISSUANCE (ValidateSubbandDivision) plus
-	// single-use, never by a running total here — this layer stays stateless. See
-	// VELOCITY-AND-CUMULATIVE-SPEND-DESIGN §3a and subband.go.
+	// (currency-qualified, positive, canonical, exact json.Number) so ONE
+	// transaction under a slice is bounded by the slice's budget. That is all
+	// this projection does. The cumulative SUM across slices rests on two other
+	// things: the division proved at ISSUANCE (ValidateSubbandDivision) and the
+	// verifier consuming each slice on its first ALLOW (verifier.Engine, per
+	// enforcement point). This layer stays stateless and claims nothing about
+	// counts. See VELOCITY-AND-CUMULATIVE-SPEND-DESIGN §3a and subband.go.
 	if _, ok := parent[cumulativeDim]; ok {
 		if _, qualified := parent["currency"]; !qualified {
 			return nil, fmt.Errorf("capability declares %q but no %q: %w",
