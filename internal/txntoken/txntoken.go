@@ -248,16 +248,26 @@ func Verify(tokenStr string, ttsPublicKey ed25519.PublicKey) (map[string]any, er
 	return claims, nil
 }
 
-// VerifyContextHash recomputes the context hash for tc using the adapter named
-// in the token's spt_txn_chain claim and reports whether it matches
-// spt_txn_context_hash. This is M5 Step 8 (transaction binding).
+// VerifyContextHash recomputes the context hash for tc and reports whether it
+// matches spt_txn_context_hash. This is M5 Step 8 (transaction binding).
+//
+// The adapter is selected by tc.Chain — the chain the EXECUTOR says it is
+// about to settle on — and the token's spt_txn_chain must name the same one.
+// Every other field of tc is compared against the token here; the field
+// naming the ledger is not an exception.
 func VerifyContextHash(claims map[string]any, tc ledger.TxnContext) error {
 	want, _ := claims["spt_txn_context_hash"].(string)
 	chain, _ := claims["spt_txn_chain"].(string)
 	if want == "" || chain == "" {
 		return fmt.Errorf("token missing context-hash binding claims")
 	}
-	l, err := ledger.Get(chain)
+	if tc.Chain == "" {
+		return fmt.Errorf("transaction names no chain: the executor must state the ledger it settles on")
+	}
+	if tc.Chain != chain {
+		return fmt.Errorf("transaction chain %q does not match the token's spt_txn_chain %q", tc.Chain, chain)
+	}
+	l, err := ledger.Get(tc.Chain)
 	if err != nil {
 		return err
 	}

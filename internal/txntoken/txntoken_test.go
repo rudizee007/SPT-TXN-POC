@@ -198,3 +198,38 @@ func TestIssue_ExpiredTokenFailsVerify(t *testing.T) {
 		t.Error("expired SPT-Txn Token must fail verification")
 	}
 }
+
+// TestVerifyContextHash_ChainMustMatchTheExecutor: the adapter is chosen by
+// the executor's tc.Chain and the token must name the same chain.
+func TestVerifyContextHash_ChainMustMatchTheExecutor(t *testing.T) {
+	claims := map[string]any{
+		"spt_txn_context_hash": "00",
+		"spt_txn_chain":        "xrpl",
+	}
+	// Compute the real hash for an xrpl context so only the chain differs.
+	l, err := ledger.Get("xrpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc := ledger.TxnContext{
+		Chain: "xrpl", Originator: "rPdvC6ccq8hCdPKSPJkPmyZ4Mi1oG2FFkT",
+		Beneficiary: "rsA2LpzuawewSBQXkiju3YQTMzW13pAAdW",
+		Amount:      "10", Currency: "USD", Timestamp: 1750000000,
+		Extra: map[string]string{"DestinationTag": "42"},
+	}
+	_, hexHash, err := ledger.ContextHash(l, tc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims["spt_txn_context_hash"] = hexHash
+	if err := txntoken.VerifyContextHash(claims, tc); err != nil {
+		t.Fatalf("matching chain refused: %v", err)
+	}
+	for _, chain := range []string{"", "solana", "ethereum", "not-a-chain"} {
+		bad := tc
+		bad.Chain = chain
+		if err := txntoken.VerifyContextHash(claims, bad); err == nil {
+			t.Fatalf("tc.Chain=%q verified against a token minted for xrpl", chain)
+		}
+	}
+}
