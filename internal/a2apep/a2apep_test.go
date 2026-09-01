@@ -452,3 +452,28 @@ func TestWellFormedRequestWithEmptyMessageDenied(t *testing.T) {
 	raw := []byte(`{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{}}}`)
 	assertDenied(t, rig.mw.Handle(context.Background(), raw), rig)
 }
+
+// TestUncoveredMetadataAndRoleAreRefused: a message.metadata member other
+// than the token, a role other than user, and a kind other than message are
+// each refused before the decision, with nothing forwarded.
+func TestUncoveredMetadataAndRoleAreRefused(t *testing.T) {
+	parts := `[{"kind":"text","text":"hello"}]`
+	cases := map[string]string{
+		"rpc.metadata-uncovered": fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"user","messageId":"m-1","parts":%s,"metadata":{"spt-txn/token":"tok-1","urn:example:ext":{"target":"https://example.net/"}}}}}`, parts),
+		"rpc.role-not-user":      fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"message/send","params":{"message":{"role":"agent","messageId":"m-1","parts":%s,"metadata":{"spt-txn/token":"tok-1"}}}}`, parts),
+		"rpc.kind-not-message":   fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"message/send","params":{"message":{"role":"user","kind":"task","messageId":"m-1","parts":%s,"metadata":{"spt-txn/token":"tok-1"}}}}`, parts),
+	}
+	for rule, raw := range cases {
+		rig := newRig(t)
+		resp := rig.mw.Handle(context.Background(), []byte(raw))
+		if len(rig.forwarded) != 0 {
+			t.Fatalf("forwarded: %s", raw)
+		}
+		if resp == nil || !strings.Contains(string(resp), "denied") {
+			t.Fatalf("expected denial for %s, got %s", rule, resp)
+		}
+		if got := lastRule(t, rig); got != rule {
+			t.Fatalf("rule %s, want %s", got, rule)
+		}
+	}
+}

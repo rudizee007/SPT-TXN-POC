@@ -270,3 +270,39 @@ func TestKeyOrderIrrelevant(t *testing.T) {
 		t.Fatalf("reordered-but-identical call denied: %s", resp)
 	}
 }
+
+// TestMethodsOffTheAllowlistAreDenied: resources/read with a caller-chosen
+// uri, prompts/get, subscriptions, log-level changes and a differently-cased
+// tools/call are denied with a receipt and nothing is forwarded.
+func TestMethodsOffTheAllowlistAreDenied(t *testing.T) {
+	cases := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"file:///tmp/notes.txt"}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"prompts/get","params":{"name":"summarize","arguments":{"topic":"x"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"resources/subscribe","params":{"uri":"file:///"}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"logging/setLevel","params":{"level":"debug"}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"completion/complete","params":{}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"tools/Call","params":{"name":"pay","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":7,"method":"not/a/method"}`,
+	}
+	for _, raw := range cases {
+		rig := newRig(t)
+		resp := rig.mw.Handle(context.Background(), []byte(raw))
+		if len(rig.forwarded) != 0 {
+			t.Fatalf("forwarded without a token: %s", raw)
+		}
+		if resp == nil || !strings.Contains(string(resp), "denied") {
+			t.Fatalf("expected a denial response for %s, got %s", raw, resp)
+		}
+		if lastRule(t, rig) != "rpc.method-not-permitted" {
+			t.Fatalf("rule %s for %s", lastRule(t, rig), raw)
+		}
+	}
+	// The allowlisted reads still pass, receipted as observation.
+	for _, m := range []string{"initialize", "ping", "resources/list", "prompts/list"} {
+		rig := newRig(t)
+		raw := []byte(`{"jsonrpc":"2.0","id":9,"method":"` + m + `"}`)
+		if resp := rig.mw.Handle(context.Background(), raw); len(rig.forwarded) != 1 || resp == nil {
+			t.Fatalf("%s did not pass through", m)
+		}
+	}
+}

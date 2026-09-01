@@ -65,6 +65,41 @@ func New(engine *decision.Engine, serverIdentity string, forward Forward) (*Midd
 	return &Middleware{Engine: engine, ServerIdentity: serverIdentity, Forward: forward}, nil
 }
 
+// observableMethods is the exact set of MCP client→server methods that only
+// READ metadata and carry no caller-chosen target. Anything that is neither
+// tools/call nor on this list is denied.
+//
+// This is an ALLOWLIST. "Anything but tools/call is observation" would assume
+// non-invocation traffic does not act, and it does:
+//
+//   - resources/read takes a caller-chosen uri; with resource templates it is a
+//     parametric read of whatever the wrapped server can reach.
+//   - prompts/get takes caller-chosen arguments and returns rendered content.
+//   - resources/subscribe, logging/setLevel, completion/complete change server
+//     state or return caller-steered data.
+//   - a method name the wrapped server tolerates but this PEP does not know is
+//     not the enforced surface by name.
+//
+// Extending authorization to resources/read or prompts/get is a spec change
+// (an intent binding for a uri, DELEGATION-INTENT-MCP §3); until it exists
+// they are denied, not observed. A method absent from this map is denied
+// whether or not it existed when this was written — the property a denylist
+// cannot have, and the same reasoning the A2A sibling already applies.
+//
+// Notifications carry no id and get no response; the three listed are the
+// lifecycle/progress signals a client sends and none names a target.
+var observableMethods = map[string]bool{
+	"initialize":                true,
+	"ping":                      true,
+	"tools/list":                true,
+	"resources/list":            true,
+	"resources/templates/list":  true,
+	"prompts/list":              true,
+	"notifications/initialized": true,
+	"notifications/cancelled":   true,
+	"notifications/progress":    true,
+}
+
 // rpcRequest is the minimal JSON-RPC 2.0 shape the PEP needs. Everything it
 // does not inspect stays as raw bytes.
 type rpcRequest struct {
@@ -92,7 +127,13 @@ func (m *Middleware) Handle(ctx context.Context, raw []byte) []byte {
 	}
 
 	if req.Method != "tools/call" {
-		// Pass through non-invocation traffic, receipted as observation.
+		// Everything that is not the enforced surface must be on the read-only
+		// allowlist. See observableMethods for why that is an allowlist and not
+		// the denylist ("anything but tools/call passes") this used to be.
+		if !observableMethods[req.Method] {
+			m.Engine.RecordDeny("rpc.method-not-permitted", false, "")
+			return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
+		}
 		m.Engine.RecordObserved("observe.passthrough." + req.Method)
 		resp, err := m.Forward(ctx, raw)
 		if err != nil {

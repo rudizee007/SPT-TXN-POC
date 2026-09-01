@@ -148,8 +148,17 @@ distinct digests; semantically identical inputs ⇒ identical bytes).
 
 The PEP wraps an MCP server (middleware). Every `tools/call` invocation MUST
 carry a valid SPT-Txn token whose intent binding matches the invocation.
-Everything else (`initialize`, `tools/list`, notifications) passes through
-unauthenticated but receipted as `observed`.
+Only a fixed allowlist of read-only, target-free methods passes through
+unauthenticated, receipted as `observed`: `initialize`, `ping`, `tools/list`,
+`resources/list`, `resources/templates/list`, `prompts/list`, and the
+`notifications/initialized`, `notifications/cancelled`, `notifications/progress`
+notifications. Every other method is denied. In particular `resources/read`,
+`prompts/get`, `resources/subscribe`, `logging/setLevel` and
+`completion/complete` carry a caller-chosen target or change server state and
+are NOT observation; authorizing them requires an intent binding of their own
+(a `uri` binding for `resources/read`), which this profile does not yet
+define. The list is an allowlist: a method absent from it is denied whether
+or not it existed when the list was written.
 
 ### 3.2 Rules (normative)
 

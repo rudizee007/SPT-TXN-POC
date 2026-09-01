@@ -89,6 +89,7 @@ type rpcRequest struct {
 // not inspect stays raw.
 type message struct {
 	Role      string                     `json:"role"`
+	Kind      string                     `json:"kind"`
 	Parts     json.RawMessage            `json:"parts"`
 	MessageID string                     `json:"messageId"`
 	TaskID    string                     `json:"taskId"`
@@ -114,9 +115,12 @@ type message struct {
 //     it, so binding it would make every token unusable. Replay of a whole
 //     message is handled by the decision engine's jti replay window, not here.
 //   - role      — a client sending a message is always "user"; binding a
-//     constant asserts nothing.
+//     constant asserts nothing, so Handle PINS it instead: any other value is
+//     refused (rpc.role-not-user).
 //   - metadata  — carries the credential itself, and is stripped before
-//     forwarding. A field cannot both be the key and be locked by it.
+//     forwarding. A field cannot both be the key and be locked by it. Any
+//     OTHER member of metadata is refused (rpc.metadata-uncovered): it is
+//     extension payload the digest does not cover.
 type bound struct {
 	Parts     json.RawMessage `json:"parts"`
 	TaskID    string          `json:"taskId,omitempty"`
@@ -197,6 +201,28 @@ func (m *Middleware) Handle(ctx context.Context, raw []byte) []byte {
 		m.Engine.RecordDeny("rpc.message-malformed", false, "")
 		return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
 	}
+	// role is not bound (a constant asserts nothing) — so it is PINNED instead.
+	// A client speaking to an agent is "user"; absent is accepted as the
+	// constant; anything else is refused. kind, when present, must be
+	// "message" for the same reason.
+	if msg.Role != "" && msg.Role != "user" {
+		m.Engine.RecordDeny("rpc.role-not-user", false, "")
+		return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
+	}
+	if msg.Kind != "" && msg.Kind != "message" {
+		m.Engine.RecordDeny("rpc.kind-not-message", false, "")
+		return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
+	}
+	// metadata carries the credential and nothing else. Any other member is
+	// extension payload A2A extensions act on and the intent digest does not
+	// cover it. Refused here, before the decision, so a denial cannot be
+	// confused with a strip failure.
+	for k := range msg.Metadata {
+		if k != TokenMetaKey {
+			m.Engine.RecordDeny("rpc.metadata-uncovered", false, "")
+			return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
+		}
+	}
 
 	boundJSON, err := json.Marshal(bound{Parts: msg.Parts, TaskID: msg.TaskID,
 		ContextID: msg.ContextID, HistoryLength: histLen})
@@ -263,15 +289,12 @@ func stripToken(raw []byte, req rpcRequest) ([]byte, error) {
 			return nil, fmt.Errorf("a2apep: reparse metadata: %w", err)
 		}
 		delete(meta, TokenMetaKey)
-		if len(meta) == 0 {
-			delete(msg, "metadata")
-		} else {
-			enc, err := json.Marshal(meta)
-			if err != nil {
-				return nil, err
-			}
-			msg["metadata"] = enc
+		if len(meta) != 0 {
+			// Handle refused this before deciding; reaching here means the two
+			// parses disagreed, which is itself a reason not to forward.
+			return nil, fmt.Errorf("a2apep: metadata carries members the intent digest does not cover")
 		}
+		delete(msg, "metadata")
 	}
 	newMsg, err := json.Marshal(msg)
 	if err != nil {

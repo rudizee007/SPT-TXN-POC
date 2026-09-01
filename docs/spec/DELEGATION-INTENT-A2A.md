@@ -62,9 +62,13 @@ where `bound` is the subobject of the A2A `Message` that the digest covers:
   Replay of a whole message is handled by the decision engine's `jti` replay
   window (MCP profile §3.2 rule 4), not here.
 - **`role`** — a client sending a message is always `"user"`. Binding a
-  constant asserts nothing.
+  constant asserts nothing, so the PEP pins it instead: a `role` other than
+  `"user"` (or a `kind` other than `"message"`) is refused: a token minted for
+  a user message authorizes a user message.
 - **`metadata`** — carries the credential itself and is stripped before
-  forwarding. A field cannot both be the key and be locked by it.
+  forwarding. A field cannot both be the key and be locked by it. Any OTHER
+  member of `metadata` is refused (`rpc.metadata-uncovered`): it is extension
+  payload the digest does not cover.
 
 A future revision that binds `messageId` MUST also change the minting path, and
 the happy-path test will fail loudly if only one side changes: the minter
