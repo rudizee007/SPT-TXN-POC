@@ -27,6 +27,7 @@ package trustregistry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,7 +43,25 @@ type PersistentRegistry struct {
 	mu      sync.RWMutex
 	records map[registryKey][]*Record
 	path    string
+
+	// manifest is the signed head the records were verified under, when the
+	// registry was opened through OpenVerified; nil for a writer-mode registry.
+	// Exposed through Manifest so a receipt can bind to the signed digest
+	// rather than to a re-read of the file.
+	manifest *trustsnapshot.Manifest
+
+	// freshUntil is the instant after which this snapshot's records may no
+	// longer be used. Zero means no bound (writer mode, or AllowStale). The
+	// staleness rule (spec §7) is evaluated at every Lookup and List, not only
+	// at open: a process that runs past max_age must stop trusting keys it
+	// loaded when they were fresh, and must not keep authorizing against a
+	// revocation it can no longer see.
+	freshUntil time.Time
 }
+
+// ErrSnapshotStale is returned by Lookup and List once the verified snapshot
+// this registry was opened from has aged past its max_age.
+var ErrSnapshotStale = errors.New("trustregistry: the verified snapshot is past its max_age; reload a fresher one")
 
 // fileFormat is the on-disk JSON envelope. Versioned so the format can
 // evolve without silently mis-parsing an older file.
@@ -148,7 +167,8 @@ func OpenVerified(manifestPath, bodyPath string, opts trustsnapshot.Options) (*P
 	if err != nil {
 		return nil, fmt.Errorf("read snapshot body: %w", err)
 	}
-	if _, err := trustsnapshot.Verify(manifestJSON, body, opts); err != nil {
+	m, err := trustsnapshot.Verify(manifestJSON, body, opts)
+	if err != nil {
 		return nil, fmt.Errorf("snapshot rejected: %w", err)
 	}
 	// Load the bytes that were VERIFIED, not the path they came from.
@@ -167,13 +187,35 @@ func OpenVerified(manifestPath, bodyPath string, opts trustsnapshot.Options) (*P
 		return nil, fmt.Errorf("trustregistry: empty db path")
 	}
 	reg := &PersistentRegistry{
-		records: make(map[registryKey][]*Record),
-		path:    bodyPath,
+		records:  make(map[registryKey][]*Record),
+		path:     bodyPath,
+		manifest: m,
+	}
+	if !opts.AllowStale {
+		reg.freshUntil = time.UnixMilli(int64(m.IssuedMs)).Add(opts.MaxAge)
 	}
 	if err := reg.loadFrom(body); err != nil {
 		return nil, err
 	}
 	return reg, nil
+}
+
+// Manifest returns the signed manifest this registry was verified under, or
+// nil for a registry that was not opened through OpenVerified.
+func (r *PersistentRegistry) Manifest() *trustsnapshot.Manifest {
+	if r.manifest == nil {
+		return nil
+	}
+	m := *r.manifest
+	return &m
+}
+
+// fresh reports whether the verified snapshot may still be consulted now.
+func (r *PersistentRegistry) fresh(now time.Time) error {
+	if !r.freshUntil.IsZero() && now.After(r.freshUntil) {
+		return fmt.Errorf("%w (fresh until %s)", ErrSnapshotStale, r.freshUntil.UTC().Format(time.RFC3339))
+	}
+	return nil
 }
 
 // ManifestPathFor returns the conventional manifest path for a body:
@@ -356,6 +398,9 @@ func (r *PersistentRegistry) Lookup(_ context.Context, iss string, role Role) (*
 
 	key := registryKey{iss, role}
 	now := time.Now().UTC()
+	if err := r.fresh(now); err != nil {
+		return nil, err
+	}
 	var best *Record
 	for _, rec := range r.records[key] {
 		if rec.IsCurrentlyValid(now) {
@@ -374,6 +419,9 @@ func (r *PersistentRegistry) Lookup(_ context.Context, iss string, role Role) (*
 func (r *PersistentRegistry) List(_ context.Context, role Role) ([]*Record, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if err := r.fresh(time.Now().UTC()); err != nil {
+		return nil, err
+	}
 
 	var out []*Record
 	for key, recs := range r.records {

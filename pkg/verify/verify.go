@@ -96,6 +96,19 @@ func FromSignedSnapshot(manifestPath, bodyPath string, opts SnapshotOptions) (*V
 	return &Verifier{eng: verifier.New(reg), reg: reg}, nil
 }
 
+// Snapshot returns the signed manifest the verifier's trust anchors were
+// verified under: its ID and DigestHex identify exactly which record set is
+// in force. A receipt that wants to bind to "the trust anchors in force"
+// binds to this, not to a hash of whatever bytes sit at the snapshot path
+// now — the file is mutable after verification; the manifest is what was
+// signed.
+func (v *Verifier) Snapshot() *trustsnapshot.Manifest {
+	if pr, ok := v.reg.(*trustregistry.PersistentRegistry); ok {
+		return pr.Manifest()
+	}
+	return nil
+}
+
 // IssuerKeys returns the Ed25519 public keys of every token-issuance authority
 // in the snapshot — all CT-issuer and TTS-issuer records, active or not.
 // Rotated, revoked and superseded keys are included on purpose: a receipt/log

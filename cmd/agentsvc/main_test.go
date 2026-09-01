@@ -106,7 +106,7 @@ func buildValid(t *testing.T) (*verifier.Engine, verifyRequest) {
 
 	req := verifyRequest{
 		TxnToken: txn.Token, DPoPProof: proof, HTM: htm, HTU: htu,
-		CTChain: []string{ct.Token}, CAT: cat.Token, Audience: aud,
+		CTChain: []string{ct.Token}, CAT: cat.Token,
 		Txn: txnBody{
 			Chain: tc.Chain, Originator: tc.Originator, Beneficiary: tc.Beneficiary,
 			Amount: tc.Amount, Currency: tc.Currency, Timestamp: tc.Timestamp, Extra: tc.Extra,
@@ -123,7 +123,7 @@ func post(t *testing.T, eng *verifier.Engine, req verifyRequest) (int, map[strin
 	}
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/agent/verify", bytes.NewReader(body))
-	handleVerify(eng)(rec, r)
+	handleVerify(eng, aud)(rec, r)
 	var out map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("decode response (%d): %v: %s", rec.Code, err, rec.Body.String())
@@ -142,18 +142,37 @@ func TestHandleVerify_AllowsValidChain(t *testing.T) {
 	}
 }
 
-func TestHandleVerify_DeniesWrongAudience(t *testing.T) {
+// The audience is the service's configured identity. A token minted for another
+// domain is denied at step 3 against THAT configuration, and a body that
+// carries an audience of its own is refused outright rather than honoured.
+func TestHandleVerify_AudienceIsConfiguration(t *testing.T) {
 	eng, req := buildValid(t)
-	req.Audience = "domain-x.intruder"
-	code, out := post(t, eng, req)
-	if code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (deny is still a 200 with allow:false)", code)
+	body, _ := json.Marshal(req)
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/agent/verify", bytes.NewReader(body))
+	handleVerify(eng, "domain-x.other")(rec, r)
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
 	}
 	if allow, _ := out["allow"].(bool); allow {
-		t.Fatal("wrong audience must be denied")
+		t.Fatal("a token for another domain must be denied under this service's audience")
 	}
 	if step, _ := out["step"].(float64); int(step) != 3 {
 		t.Fatalf("expected deny at step 3 (audience), got step %v (%v)", out["step"], out["step_name"])
+	}
+
+	req.Audience = aud // even the RIGHT value: the field is not accepted
+	if code, _ := post(t, eng, req); code != http.StatusBadRequest {
+		t.Fatalf("a body carrying an audience must be refused with 400, got %d", code)
+	}
+}
+
+func TestHandleVerify_RequiresRequestDescription(t *testing.T) {
+	eng, req := buildValid(t)
+	req.HTM = ""
+	if code, _ := post(t, eng, req); code != http.StatusBadRequest {
+		t.Fatalf("missing htm must be refused with 400, got %d", code)
 	}
 }
 
@@ -161,7 +180,7 @@ func TestHandleVerify_RejectsBadBody(t *testing.T) {
 	eng, _ := buildValid(t)
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/agent/verify", bytes.NewReader([]byte("{not json")))
-	handleVerify(eng)(rec, r)
+	handleVerify(eng, aud)(rec, r)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("malformed body status = %d, want 400", rec.Code)
 	}
@@ -171,7 +190,7 @@ func TestHandleVerify_MethodNotAllowed(t *testing.T) {
 	eng, _ := buildValid(t)
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/agent/verify", nil)
-	handleVerify(eng)(rec, r)
+	handleVerify(eng, aud)(rec, r)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET status = %d, want 405", rec.Code)
 	}

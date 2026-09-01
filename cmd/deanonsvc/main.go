@@ -105,10 +105,22 @@ func main() {
 	if manifestPath == "" {
 		manifestPath = trustregistry.ManifestPathFor(dbPath)
 	}
+	// The acceptance record lives OUTSIDE the snapshot directory, on a path
+	// the snapshot distribution cannot write; it is what lets a restart tell
+	// an update from a restore of an older, validly signed snapshot. For this
+	// service the records decide who may request a deanonymization.
+	statePath := os.Getenv("SPT_DEANON_SNAPSHOT_STATE")
+	if statePath == "" {
+		log.Fatal("SPT_DEANON_SNAPSHOT_STATE is required: the path of this service's own snapshot acceptance record, outside the snapshot directory")
+	}
+	if filepath.Dir(statePath) == filepath.Dir(dbPath) {
+		log.Fatalf("SPT_DEANON_SNAPSHOT_STATE %s sits in the snapshot directory; whoever writes the snapshot would also write the record that guards it", statePath)
+	}
 	reg, err := trustregistry.OpenVerified(manifestPath, dbPath, trustsnapshot.Options{
 		PinnedKeys: pinned,
 		MaxAge:     maxAge,
 		AllowStale: os.Getenv("SPT_DEANON_SNAPSHOT_ALLOW_STALE") == "1",
+		State:      trustsnapshot.FileState{Path: statePath},
 	})
 	if err != nil {
 		log.Fatalf("trust registry %s: %v", dbPath, err)

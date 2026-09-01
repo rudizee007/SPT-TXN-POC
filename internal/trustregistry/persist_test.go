@@ -207,7 +207,13 @@ func TestReplace_SaveFailureKeepsPriorActive(t *testing.T) {
 		t.Fatalf("register old: %v", err)
 	}
 
-	// Make the directory unwritable so save()'s os.CreateTemp fails.
+	// Make the directory unwritable so save()'s os.CreateTemp fails. Root
+	// ignores directory modes, so under root (containerised CI) the failure
+	// this test needs cannot be produced; skip rather than report a defect
+	// the code does not have.
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: an unwritable directory is writable, so the save failure cannot be induced")
+	}
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatalf("chmod dir: %v", err)
 	}

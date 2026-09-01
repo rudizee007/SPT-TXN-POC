@@ -35,6 +35,17 @@ var (
 	ErrDigestMismatch = errors.New("body digest does not match the signed manifest")
 	// ErrStale: the snapshot is older than the configured max_age (spec §7).
 	ErrStale = errors.New("snapshot is stale")
+	// ErrFuture: issued_ms is ahead of this verifier's clock by more than the
+	// tolerance. A future-dated snapshot would otherwise never go stale.
+	ErrFuture = errors.New("snapshot is issued in the future")
+	// ErrRollback: the snapshot is not newer than the one this verifier last
+	// accepted. A validly signed older snapshot is exactly what a restore from
+	// before a revocation looks like.
+	ErrRollback = errors.New("snapshot is older than the last one accepted here")
+	// ErrState: the verifier's own acceptance record could not be read or
+	// written. Without it the next start cannot tell a rollback from an update,
+	// so the load fails rather than proceeding unrecorded.
+	ErrState = errors.New("snapshot acceptance record")
 	// ErrMalformed: the manifest or body could not be parsed as its own format.
 	ErrMalformed = errors.New("snapshot is malformed")
 )
@@ -80,6 +91,34 @@ type Options struct {
 
 	// Now overrides the clock for tests. Zero means time.Now().
 	Now time.Time
+
+	// State is this verifier's own record of the last snapshot it accepted,
+	// kept OUTSIDE the snapshot directory. With it, Verify refuses any snapshot
+	// whose issued_ms is earlier than the recorded one, and records each newer
+	// acceptance. Without it the verifier compares against nothing and a
+	// validly signed older snapshot loads; nil is therefore acceptable only for
+	// one-shot tools and tests, and a long-running enforcement point should
+	// set it (see FileState).
+	State StateStore
+
+	// FutureSkew bounds how far ahead of Now an issued_ms may be. Zero means
+	// DefaultFutureSkew.
+	FutureSkew time.Duration
+}
+
+// DefaultFutureSkew is the clock tolerance applied to issued_ms.
+const DefaultFutureSkew = 5 * time.Minute
+
+// State is what a verifier remembers about the last snapshot it accepted.
+type State struct {
+	ID       string `json:"id"`
+	IssuedMs uint64 `json:"issued_ms"`
+}
+
+// StateStore persists a State. Load reports found=false on first use.
+type StateStore interface {
+	Load() (st State, found bool, err error)
+	Save(State) error
 }
 
 // Verify implements the normative verifier flow of spec §4, in order, failing
@@ -156,15 +195,50 @@ func Verify(manifestJSON, body []byte, opts Options) (*Manifest, error) {
 		return nil, fmt.Errorf("%w: computed %s, signed %s", ErrDigestMismatch, digest, m.DigestHex)
 	}
 
-	// 4. Staleness.
+	// 4. Staleness, in both directions. A negative age never exceeds MaxAge,
+	//    so a future-dated snapshot would stay fresh indefinitely; it is refused
+	//    beyond the clock tolerance instead.
 	now := opts.Now
 	if now.IsZero() {
 		now = time.Now()
 	}
+	if m.IssuedMs > uint64(1<<62) {
+		return nil, fmt.Errorf("%w: issued_ms out of range", ErrMalformed)
+	}
 	issued := time.UnixMilli(int64(m.IssuedMs))
+	skew := opts.FutureSkew
+	if skew == 0 {
+		skew = DefaultFutureSkew
+	}
+	if issued.After(now.Add(skew)) {
+		return nil, fmt.Errorf("%w: issued_ms is %s ahead of this clock", ErrFuture, issued.Sub(now).Truncate(time.Second))
+	}
 	age := now.Sub(issued)
 	if !opts.AllowStale && age > opts.MaxAge {
 		return nil, fmt.Errorf("%w: issued %s ago, max_age %s", ErrStale, age.Truncate(time.Second), opts.MaxAge)
+	}
+
+	// 5. Monotonicity against this verifier's own record. Reloading the same
+	//    snapshot (a restart) is fine; anything issued earlier than what was
+	//    accepted before is refused, signature or no signature.
+	if opts.State != nil {
+		st, found, err := opts.State.Load()
+		if err != nil {
+			return nil, fmt.Errorf("%w: load: %v", ErrState, err)
+		}
+		if found {
+			switch {
+			case m.IssuedMs < st.IssuedMs:
+				return nil, fmt.Errorf("%w: issued_ms %d, last accepted %d (%s)", ErrRollback, m.IssuedMs, st.IssuedMs, st.ID)
+			case m.IssuedMs == st.IssuedMs && m.ID != st.ID:
+				return nil, fmt.Errorf("%w: a different snapshot (%s) with the same issued_ms as the last accepted (%s)", ErrRollback, m.ID, st.ID)
+			}
+		}
+		if !found || m.IssuedMs > st.IssuedMs {
+			if err := opts.State.Save(State{ID: m.ID, IssuedMs: m.IssuedMs}); err != nil {
+				return nil, fmt.Errorf("%w: save: %v", ErrState, err)
+			}
+		}
 	}
 
 	return &m, nil

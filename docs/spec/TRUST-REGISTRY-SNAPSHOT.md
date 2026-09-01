@@ -259,9 +259,28 @@ window. An empty pin set MUST fail closed.
 
 Pin `{old, new}` during overlap; the publisher signs with `new` (or dual-signs)
 once every verifier holds `new`; `old` is removed only after the last snapshot it
-signed has aged out. `prev_snapshot_id` chaining lets a verifier detect a gap or
-rollback across a rotation. A key MUST NOT leave the pin set while any still-fresh
+signed has aged out. A key MUST NOT leave the pin set while any still-fresh
 snapshot was signed by it.
+
+### 6.2 Rollback
+
+A signature proves who published a snapshot, not that it is the current one:
+an older snapshot restored to the snapshot directory carries a valid signature.
+A long-running verifier therefore keeps its own **acceptance record** — the
+`id` and `issued_ms` of the last snapshot it accepted — on a path outside the
+snapshot directory that the snapshot distribution cannot write. On every load
+it MUST refuse a snapshot whose `issued_ms` is earlier than the record's (or
+equal with a different `id`), MUST accept the recorded snapshot again (a
+restart), and MUST advance the record only on a newer acceptance. A record it
+cannot read or write is a refusal, not an absence. A verifier with no record
+(a one-shot tool, a test) compares against nothing and MUST say so in its
+documentation. `issued_ms` more than a small tolerance ahead of the verifier's
+clock is refused: a future-dated snapshot would never go stale.
+
+`prev_snapshot_id` is the publisher's audit chain. It is signed, and an auditor
+can walk it; a verifier does not enforce continuity across it, because a
+verifier that was offline through several publications legitimately loads only
+the latest.
 
 ---
 
@@ -269,6 +288,10 @@ snapshot was signed by it.
 
 - Every verifier has a configurable `max_age`. If `now - issued_ms > max_age`,
   the snapshot is stale.
+- Staleness is evaluated **whenever the snapshot is consulted**, not only when
+  it is loaded: a process that runs past `max_age` stops resolving keys from
+  it, so a revocation published since cannot be missed indefinitely by a
+  verifier that simply never restarted.
 - Default posture is **fail-closed**: a stale snapshot is refused.
 - An operator MAY configure a **hold-last-known-good** degrade mode for
   disconnected/air-gapped segments, in which a stale snapshot keeps authorizing

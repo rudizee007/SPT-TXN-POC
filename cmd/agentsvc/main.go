@@ -52,6 +52,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -119,10 +120,21 @@ func main() {
 	if manifestPath == "" {
 		manifestPath = trustregistry.ManifestPathFor(regPath)
 	}
+	// The acceptance record lives OUTSIDE the snapshot directory, on a path
+	// the snapshot distribution cannot write. It is what lets a restart tell
+	// an update from a restore of an older, validly signed snapshot.
+	statePath := os.Getenv("SPT_AGENT_SNAPSHOT_STATE")
+	if statePath == "" {
+		log.Fatal("SPT_AGENT_SNAPSHOT_STATE is required: the path of this service's own snapshot acceptance record, outside the snapshot directory")
+	}
+	if filepath.Dir(statePath) == filepath.Dir(regPath) {
+		log.Fatalf("SPT_AGENT_SNAPSHOT_STATE %s sits in the snapshot directory; whoever writes the snapshot would also write the record that guards it", statePath)
+	}
 	reg, err := trustregistry.OpenVerified(manifestPath, regPath, trustsnapshot.Options{
 		PinnedKeys: pinned,
 		MaxAge:     maxAge,
 		AllowStale: allowStale,
+		State:      trustsnapshot.FileState{Path: statePath},
 	})
 	if err != nil {
 		log.Fatalf("trust registry snapshot %s: %v", regPath, err)
@@ -133,10 +145,18 @@ func main() {
 	eng := verifier.New(reg)
 	log.Printf("loaded trust registry snapshot: %s", regPath)
 
+	// The audience is this service's own identity and is deployment
+	// configuration. It is not a request field: a presenter does not get to
+	// name the domain a token must have been minted for.
+	audience := os.Getenv("SPT_AGENT_AUDIENCE")
+	if audience == "" {
+		log.Fatal("SPT_AGENT_AUDIENCE is required: the audience this service verifies for is configuration, not request input")
+	}
+
 	// ── HTTP mux ───────────────────────────────────────────────────────
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/health", handleHealth)
-	mux.HandleFunc("/agent/verify", handleVerify(eng))
+	mux.HandleFunc("/agent/verify", handleVerify(eng, audience))
 
 	srv := &http.Server{
 		Handler:      mux,
@@ -204,6 +224,14 @@ type txnBody struct {
 	Extra       map[string]string `json:"extra"`
 }
 
+// verifyRequest is what the RESOURCE SERVER sends after receiving a
+// presentation. htm, htu and txn describe the request it received; they are
+// supplied by the resource server from its own view of that request, never
+// forwarded from the presenter's body. The audience is not a field: it is the
+// service's configured identity (SPT_AGENT_AUDIENCE). A body that carries one
+// is refused, because a caller that believes it can choose the audience is
+// misconfigured, and a verdict for a chosen audience is not the verdict the
+// resource server needs.
 type verifyRequest struct {
 	TxnToken  string   `json:"txn_token"`
 	DPoPProof string   `json:"dpop_proof"`
@@ -212,11 +240,11 @@ type verifyRequest struct {
 	CTChain   []string `json:"ct_chain"` // root→leaf; multi-hop
 	CT        string   `json:"ct"`       // single-hop alternative (legacy)
 	CAT       string   `json:"cat"`
-	Audience  string   `json:"audience"`
+	Audience  string   `json:"audience"` // refused if present; see above
 	Txn       txnBody  `json:"txn"`
 }
 
-func handleVerify(eng *verifier.Engine) http.HandlerFunc {
+func handleVerify(eng *verifier.Engine, audience string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -233,6 +261,15 @@ func handleVerify(eng *verifier.Engine) http.HandlerFunc {
 			return
 		}
 
+		if req.Audience != "" {
+			jsonError(w, "audience is not a request field; it is this service's configured identity", http.StatusBadRequest)
+			return
+		}
+		if req.HTM == "" || req.HTU == "" {
+			jsonError(w, "htm and htu are required: the resource server states the request it received", http.StatusBadRequest)
+			return
+		}
+
 		in := verifier.Input{
 			TxnToken:  req.TxnToken,
 			DPoPProof: req.DPoPProof,
@@ -241,7 +278,7 @@ func handleVerify(eng *verifier.Engine) http.HandlerFunc {
 			CT:        req.CT,
 			CTChain:   req.CTChain,
 			CAT:       req.CAT,
-			Audience:  req.Audience,
+			Audience:  audience,
 			Txn: ledger.TxnContext{
 				Chain:       req.Txn.Chain,
 				Originator:  req.Txn.Originator,
