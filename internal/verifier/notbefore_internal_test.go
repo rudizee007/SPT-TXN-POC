@@ -49,8 +49,17 @@ func TestCheckTemporal_NbfFuture_NotYetValid(t *testing.T) {
 func TestCheckTemporal_NbfEmptyWindow_Refused(t *testing.T) {
 	now := time.Now().Unix()
 	// nbf at exp -> empty window
-	if err := checkChainTokenTemporal("CT", tclaims(now-10, now+50, pnbf(now+50))); err == nil {
+	err := checkChainTokenTemporal("CT", tclaims(now-10, now+50, pnbf(now+50)))
+	if err == nil {
 		t.Fatal("an empty window (nbf >= exp) must be refused")
+	}
+	// nbf is BOTH >= exp and in the future here, so the not-yet-valid check
+	// eight lines further down refuses this input too. Asserting only err != nil
+	// was therefore satisfied with the empty-window check deleted -- mutation
+	// V-3 survived exactly that way. Its three siblings in this file all assert
+	// a substring; this one did not.
+	if !strings.Contains(err.Error(), "window is empty") {
+		t.Fatalf("refused, but not as an empty window: %v", err)
 	}
 }
 

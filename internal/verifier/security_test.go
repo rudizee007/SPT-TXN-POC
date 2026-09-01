@@ -3,6 +3,7 @@ package verifier_test
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -81,6 +82,13 @@ func TestSec_ZeroKeyRejected(t *testing.T) {
 // own monotonicity check, independent of issuance.
 func TestSec_OverScopedCT_Forged(t *testing.T) {
 	h := build(t)
+	// Bind the forgery to its REAL parent. An earlier version of this test put a
+	// placeholder here, which the VER-1 parent-hash check rejected thirty-five
+	// lines before tbac.Contains was reached: the test passed, asserted step 6,
+	// and evidenced nothing about attenuation. Mutation V-1, which deletes the
+	// monotonicity check outright, left it green -- on the most load-bearing
+	// property in the package.
+	parentSum := sha256.Sum256([]byte(h.cat.Token))
 	forged := forgeToken(map[string]any{
 		"iss":                        issCT,
 		"sub":                        "alice",
@@ -93,10 +101,17 @@ func TestSec_OverScopedCT_Forged(t *testing.T) {
 		"delegation_depth_remaining": 2,
 		"holder_key":                 hex.EncodeToString(h.agentPub),
 		"spt_cat_ref":                h.cat.Claims["jti"],
-		"spt_parent_hash":            "x",
+		"spt_parent_hash":            b64u(parentSum[:]),
 	}, h.ctPriv)
 	h.in.CT = forged
-	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
+	d := h.eng.Verify(context.Background(), h.in)
+	mustDeny(t, d, 6)
+	// Step 6 is not enough. It holds roughly twenty guards in sequence, so
+	// `Step == 6` says only that something in the chain refused. Name the one.
+	if !strings.Contains(d.Reason, "scope exceeds its parent") {
+		t.Fatalf("denied at step 6, but NOT by the attenuation check this test "+
+			"exists for: %s", d.Reason)
+	}
 }
 
 // A non-positive transaction amount must be rejected by the layer that claims to

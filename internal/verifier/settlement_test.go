@@ -71,13 +71,20 @@ func TestVerifyForSettlement_NeedsNoDPoP(t *testing.T) {
 // so a forger who edits the payment cannot get signed facts for it.
 func TestVerifyForSettlement_RefusesAForgedContext(t *testing.T) {
 	h := build(t)
-	h.in.Txn.Amount = "999999" // the settler asserts a different payment
+	// The amount must stay INSIDE the leaf ceiling of 8000. An earlier version
+	// used 999999, which step 7 refused for exceeding the ceiling, so step 8 --
+	// the context binding this test is named for -- never ran, and the
+	// assertion accepted either step. 4000 is within every ceiling on the
+	// chain, so the only thing left to object to is that the signed token binds
+	// 5000 and the settler is asserting something else.
+	h.in.Txn.Amount = "4000"
 	_, d := h.eng.VerifyForSettlement(context.Background(), h.in)
 	if d.Allow {
 		t.Fatal("the settle path accepted a transaction the signed token does not bind")
 	}
-	if d.Step != 7 && d.Step != 8 {
-		t.Fatalf("expected refusal at scope(7) or context(8), got step %d (%s)", d.Step, d.StepName)
+	if d.Step != 8 {
+		t.Fatalf("expected refusal at the context binding (step 8), got step %d (%s): %s",
+			d.Step, d.StepName, d.Reason)
 	}
 }
 

@@ -3,6 +3,7 @@ package verifier_test
 import (
 	"context"
 	"crypto/ed25519"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,6 +170,14 @@ func TestAgentic_RevokeSubAgentIssuer_Cascades(t *testing.T) {
 	}
 	if dB.Step != 6 {
 		t.Fatalf("expected deny at step 6 (chain), got step %d (%s): %s", dB.Step, dB.StepName, dB.Reason)
+	}
+	// This is the test that carries the per-hop resolution, so it has to name
+	// it. issCTA signs CT_B and nothing else, so the refusal here can only come
+	// from resolving CT_B's own issuer -- unlike the one-issuer fixture in
+	// engine_test.go, where the CAT is resolved first and hides it.
+	if !strings.Contains(dB.Reason, "resolve issuer") {
+		t.Fatalf("denied at step 6, but not by resolving the sub-agent's issuer "+
+			"key -- the cascade this test exists for is unevidenced: %s", dB.Reason)
 	}
 
 	// Agent A's own one-hop action (leaf = CT_A, issued by the still-active org

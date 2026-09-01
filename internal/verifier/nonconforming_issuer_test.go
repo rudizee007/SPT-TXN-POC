@@ -104,6 +104,23 @@ func TestNonConformingIssuer_NonPositiveCeilingIsRefused(t *testing.T) {
 			if d.Allow {
 				t.Fatalf("BYPASS: a %s ceiling authorized a transaction of 100", name)
 			}
+			// A bare !Allow here was satisfied by ANY failure, including the
+			// three-level forging failing for an unrelated reason at step 1 or
+			// 6. Name the layer that must do the work.
+			//
+			// Honest scope: there is no dedicated non-positive-ceiling guard on
+			// the verify path. The refusal comes from the ordinary ceiling
+			// comparison, which is the correct layer but not a check specific to
+			// this input. Recorded rather than papered over: if a dedicated
+			// guard is ever added, this assertion should move to it.
+			if d.Step != 7 {
+				t.Fatalf("a %s ceiling must be refused by the scope step that bounds "+
+					"the amount, got step %d (%s): %s", name, d.Step, d.StepName, d.Reason)
+			}
+			if !strings.Contains(d.Reason, "exceeds parent ceiling") {
+				t.Fatalf("%s: refused at step 7 but not by the ceiling comparison: %s",
+					name, d.Reason)
+			}
 		})
 	}
 }

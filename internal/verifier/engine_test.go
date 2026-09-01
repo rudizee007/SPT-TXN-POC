@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,12 +194,24 @@ func TestVerify_Step4_RevokedTTSKey(t *testing.T) {
 
 // A revoked CT issuer key is caught when the chain resolves its key at step 6,
 // since Lookup returns only active records — not via an unverified pre-check.
+//
+// In this fixture issCT signs the CAT as well as the CT, and the CAT's issuer
+// is resolved FIRST, so what this test actually evidences is the CAT-side
+// resolution. It used to assert only step 6, which made it look like evidence
+// for the per-hop CT resolution it names; mutation V-2, which ignores the
+// per-hop resolution error entirely, left it green. The per-hop case is
+// evidenced by TestAgentic_RevokeSubAgentIssuer_Cascades, where the revoked key
+// signs exactly one CT and nothing else.
 func TestVerify_RevokedCTKey_DeniedAtChain(t *testing.T) {
 	h := build(t)
 	if err := h.reg.Revoke(context.Background(), issCT, trustregistry.RoleCTIssuer, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	mustDeny(t, h.eng.Verify(context.Background(), h.in), 6)
+	d := h.eng.Verify(context.Background(), h.in)
+	mustDeny(t, d, 6)
+	if !strings.Contains(d.Reason, "CAT: resolve issuer") {
+		t.Fatalf("denied at step 6, but not by issuer resolution: %s", d.Reason)
+	}
 }
 
 func TestVerify_Step5_WrongDPoPKey(t *testing.T) {
