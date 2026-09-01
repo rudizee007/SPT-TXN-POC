@@ -9,8 +9,9 @@
 // WHAT IS MEASURED
 //
 //	human_anchor      a BN254 field element (32 B), base64url
-//	scope_binding     SHA-256 over JCS of the request identity plus the
-//	                  SELECTED PaymentRequirements tuple, base64url
+//	scope_binding     SHA-256 over JCS of the request identity, HTTP method,
+//	                  RFC 9530 content digest, and the SELECTED
+//	                  PaymentRequirements tuple, base64url
 //	zk_proof          Groth16 over BN254, chain circuit, gnark serialization,
 //	                  base64url
 //	envelope          the extensions wrapper the attestation travels inside
@@ -101,17 +102,36 @@ func main() {
 
 	proof, anchor, elapsed := proveChain(art, *depth)
 
-	// scope_binding: SHA-256 over JCS of the request identity plus the SELECTED
-	// PaymentRequirements tuple that PaymentPayload.accepted names. Computed
-	// here from the baseline's own accepted block, so it is the real preimage
-	// for the real payload below, not a placeholder of the right length.
+	// scope_binding: SHA-256 over JCS of the request identity, the HTTP method,
+	// the request-content digest, and the SELECTED PaymentRequirements tuple
+	// that PaymentPayload.accepted names. Computed here from the baseline's own
+	// accepted block, so it is the real preimage for the real payload below,
+	// not a placeholder of the right length.
+	//
+	// method and content_digest were added after review in x402 issue 3086
+	// (Silentpartnercoding, 2026-09-01). Binding only the resource URL lets GET
+	// and POST to the same endpoint collide, and two different POST bodies
+	// collide, which reproduces one layer up the exact gap this extension
+	// exists to close. content_digest is RFC 9530 Content-Digest.
+	//
+	// Absent means OMITTED, not null: a request with no body leaves the member
+	// out of the object entirely. Under JCS those are different bytes, so the
+	// rule has to be stated or two conforming implementations disagree.
+	//
+	// None of this changes a single figure below, because scope_binding is a
+	// hash output. That is the point worth making in the thread: the binding
+	// got strictly stronger at zero cost on the wire.
 	var base map[string]any
 	if err := json.Unmarshal([]byte(baselinePayload), &base); err != nil {
 		log.Fatalf("baseline payload: %v", err)
 	}
+	body := []byte(`{"report":"q3","format":"pdf"}`)
+	bodySum := sha256.Sum256(body)
 	preimage := map[string]any{
-		"resource": "https://api.example/v1/report",
-		"accepted": base["accepted"],
+		"resource":       "https://api.example/v1/report",
+		"method":         "POST",
+		"content_digest": "sha-256=:" + base64.StdEncoding.EncodeToString(bodySum[:]) + ":",
+		"accepted":       base["accepted"],
 	}
 	canon, err := jcs.Canonicalize(preimage)
 	if err != nil {
