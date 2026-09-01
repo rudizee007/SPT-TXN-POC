@@ -136,10 +136,15 @@ func (m *Middleware) Handle(ctx context.Context, raw []byte) []byte {
 		// Any OTHER message/* method is refused rather than passed through.
 		// message/stream and any future sibling deliver payloads this PEP does
 		// not model, and forwarding an unmodelled payload is exactly the hole
-		// this middleware exists to close. Non-message traffic (agent card
-		// fetch, task query) is observation and passes.
+		// this middleware exists to close.
 		if len(req.Method) >= 8 && req.Method[:8] == "message/" {
 			m.Engine.RecordDeny("rpc.unmodelled-message-method", false, "")
+			return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
+		}
+		// Everything else must be on the read-only allowlist. See
+		// observableMethods for why that is an allowlist and not a denylist.
+		if !observableMethods[req.Method] {
+			m.Engine.RecordDeny("rpc.method-not-permitted", false, "")
 			return errorResponse(req.ID, CodeDenied, "spt-txn: denied")
 		}
 		m.Engine.RecordObserved("observe.passthrough." + req.Method)
@@ -252,6 +257,48 @@ func stripToken(raw []byte, req rpcRequest) ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(rpcRequest{Jsonrpc: req.Jsonrpc, ID: req.ID, Method: req.Method, Params: newParams})
+}
+
+// observableMethods is the exact set of A2A methods that only READ. Anything
+// that is neither message/send nor on this list is denied.
+//
+// This is an ALLOWLIST, and it replaces a denylist that was wrong. The earlier
+// rule was "refuse message/* siblings, pass everything else through as
+// observation", which assumed that non-message traffic does not act. Only three
+// of A2A v0.3.0's ten methods are reads. The rest change state, and one of them
+// is a capability grant:
+//
+//   - tasks/pushNotificationConfig/set installs a client-supplied webhook URL
+//     that all subsequent task updates are pushed to, and task updates carry
+//     message content. A hijacked or prompt-injected agent does not need to
+//     defeat the intent binding on message/send at all: it points the webhook
+//     at a host it controls, and every authorized message thereafter is copied
+//     out through a method the PEP had classified as observation. This is the
+//     defect that forced the rule to change.
+//   - tasks/pushNotificationConfig/delete removes one, silencing the operator's
+//     own notifications.
+//   - tasks/cancel transitions a task to canceled. Calling it is not observing
+//     it; it is a denial of service against work already authorized.
+//   - tasks/resubscribe reopens a stream this PEP does not model, which is the
+//     same objection that refuses message/stream.
+//   - agent/getAuthenticatedExtendedCard returns an agent card, and a card
+//     names endpoints. cmd/a2a-pep rewrites the well-known card precisely so it
+//     cannot advertise the agent behind the enforcement point; passing this
+//     method through would republish that bypass over JSON-RPC, where the card
+//     rewriter never looks.
+//
+// A method absent from this map is denied whether or not it existed when this
+// was written. That is the property a denylist cannot have, and it is the same
+// reasoning that makes allowedSendParams and allowedMessageMembers allowlists.
+//
+// A second consequence: the observe.passthrough.<method> rule path below now
+// only ever concatenates one of these three constants. Under the denylist it
+// concatenated attacker-supplied text, giving the receipt log an unbounded
+// cardinality of rule paths that an adversary chose the contents of.
+var observableMethods = map[string]bool{
+	"tasks/get":                         true,
+	"tasks/pushNotificationConfig/get":  true,
+	"tasks/pushNotificationConfig/list": true,
 }
 
 // allowedSendParams is the exact set of top-level message/send params members

@@ -19,6 +19,9 @@
 #   A-9  a duplicated Message member is accepted
 #   A-10 the jsonrpc version check is dropped
 #   A-11 an empty method is proxied
+#   A-12 the read-only method allowlist is bypassed
+#   A-13 the webhook installer is added to the allowlist
+#   A-14 a read-only method stops being observable
 #
 # A-3, A-4 and A-5 mutate the json TAG on the `bound` struct rather than the
 # call site. That is deliberate. The test rig mints against the same struct, so
@@ -145,6 +148,25 @@ run_mutation "A-11 empty method proxied" \
   "TestMalformedNotForwarded" \
   "	if err := json.Unmarshal(raw, &req); err != nil || req.Jsonrpc != \"2.0\" || req.Method == \"\" {" \
   "	if err := json.Unmarshal(raw, &req); err != nil || req.Jsonrpc != \"2.0\" {" || rc=1
+
+# A-12/A-13/A-14 are the method allowlist. A-13 is the one that matters: it adds
+# exactly the method that installs a client-supplied webhook, which is the
+# defect the allowlist was written to close.
+
+run_mutation "A-12 read-only allowlist bypassed" \
+  "TestStateChangingAndUnknownMethodsDenied" \
+  "		if !observableMethods[req.Method] {" \
+  "		if false && !observableMethods[req.Method] {" || rc=1
+
+run_mutation "A-13 webhook installer added to the allowlist" \
+  "TestStateChangingAndUnknownMethodsDenied" \
+  "	\"tasks/pushNotificationConfig/list\": true," \
+  "	\"tasks/pushNotificationConfig/list\": true, \"tasks/pushNotificationConfig/set\": true," || rc=1
+
+run_mutation "A-14 a read-only method stops being observable" \
+  "TestReadOnlyMethodsPassThrough" \
+  "	\"tasks/pushNotificationConfig/list\": true," \
+  "	\"tasks/pushNotificationConfig/list\": false," || rc=1
 
 if [ "$rc" -eq 0 ]; then
   echo
