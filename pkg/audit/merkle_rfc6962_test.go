@@ -225,10 +225,10 @@ var rfcKATPathHex = map[int][][]string{
 		{katN0123}, // m=4: MTH(D[0:4]) only
 	},
 	7: {
-		{rfcKATLeafHex[1], katN23, katN456}, // m=0: L1, N23, MTH(D[4:7])
-		{rfcKATLeafHex[0], katN23, katN456}, // m=1
-		{rfcKATLeafHex[3], katN01, katN456}, // m=2
-		{rfcKATLeafHex[2], katN01, katN456}, // m=3
+		{rfcKATLeafHex[1], katN23, katN456},            // m=0: L1, N23, MTH(D[4:7])
+		{rfcKATLeafHex[0], katN23, katN456},            // m=1
+		{rfcKATLeafHex[3], katN01, katN456},            // m=2
+		{rfcKATLeafHex[2], katN01, katN456},            // m=3
 		{rfcKATLeafHex[5], rfcKATLeafHex[6], katN0123}, // m=4: L5, MTH(D[6:7])=L6, MTH(D[0:4])
 		{rfcKATLeafHex[4], rfcKATLeafHex[6], katN0123}, // m=5
 		{katN45, katN0123},                             // m=6: MTH(D[4:6])=N45, MTH(D[0:4])
