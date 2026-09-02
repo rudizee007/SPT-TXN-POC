@@ -207,6 +207,24 @@ wrapped agent's card unmodified publishes the address of the agent *behind* the
 enforcement point, and the first thing any compliant client does with that card
 is route around the PEP. The enforcement point ships its own bypass.
 
+**This is established practice, not an observation of this profile's.** Kong's
+AI A2A Proxy rewrites the card's `url` and its `additionalInterfaces[].url` to
+the gateway address; Gravitee and Agentgateway ship A2A proxies of the same
+shape. One protocol out, Azure API Management rewrites an OpenAPI document's
+`servers` block to the gateway rather than the backend, and rewriting OIDC
+`.well-known/openid-configuration` at a reverse proxy has many independent
+implementations. This section is written to say what THIS profile requires, not
+to claim the requirement is new.
+
+Two requirements below diverge from that practice, deliberately:
+
+- Kong REWRITES `additionalInterfaces[].url` to the gateway. This profile
+  DROPS those entries (rule 3). A JSON-RPC PEP cannot enforce a gRPC interface,
+  so rewriting one advertises a route the enforcement point does not guard.
+- Kong derives the gateway address from `X-Forwarded-*` headers. This profile
+  requires the operator to state it (rule 1), because a value reconstructed
+  from forwarded headers is influenced by the caller.
+
 Therefore:
 
 1. Card relay MUST be disabled unless the operator supplies the URL clients
@@ -218,6 +236,15 @@ Therefore:
    bypass that happens to look authorized. An operator who needs those
    transports guarded needs a PEP for those transports, not a card implying one
    exists.
+4. Dropping them MUST be reported to the operator. A multi-transport agent
+   silently degraded to JSON-RPC only leaves its gRPC clients unable to discover
+   an endpoint, with nothing anywhere saying why. A card that misleads is what
+   rules 1 to 3 prevent; a card that silently loses capability is the same
+   defect facing the other way.
+5. The advertised URL MUST be validated as an absolute http(s) URL before it is
+   published. Rule 1 requires the operator to state the address precisely
+   because a stated value can be trusted where a reconstructed one cannot --
+   which only holds if the stated value is checked.
 
 ### 6.2 Header isolation
 

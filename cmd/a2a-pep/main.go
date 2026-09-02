@@ -133,9 +133,14 @@ func main() {
 		os.Exit(2)
 	}
 
-	upURL, err := validateUpstream(*upstream)
+	upURL, err := validateAbsoluteURL(*upstream)
 	if err != nil {
 		log.Fatalf("upstream: %v", err)
+	}
+	if *publicURL != "" {
+		if _, err := validateAbsoluteURL(*publicURL); err != nil {
+			log.Fatalf("public-url: %v", err)
+		}
 	}
 
 	engine, closeAudit, err := buildEngine(pepConfig{
@@ -322,10 +327,18 @@ func (p *proxy) serveCard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "upstream agent card unavailable", http.StatusBadGateway)
 		return
 	}
-	rewritten, err := rewriteCard(body, p.publicURL)
+	rewritten, dropped, err := rewriteCard(body, p.publicURL)
 	if err != nil {
 		http.Error(w, "upstream agent card is not a JSON object", http.StatusBadGateway)
 		return
+	}
+	if dropped > 0 {
+		// Every relay, not once: a persistent misconfiguration deserves a
+		// persistent complaint, and a discovery endpoint is not a hot path.
+		log.Printf("agent card: dropped %d additionalInterfaces entry/entries. Clients "+
+			"can no longer discover those transports through this PEP, which does not "+
+			"enforce them. If they must stay reachable, put a PEP in front of them; "+
+			"do not re-advertise a route this one cannot guard.", dropped)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -345,22 +358,44 @@ func (p *proxy) serveCard(w http.ResponseWriter, r *http.Request) {
 // advertise a bypass that happens to look authorized. An operator who needs
 // those transports guarded needs a PEP for those transports, not a card that
 // implies one exists.
-func rewriteCard(card []byte, publicURL string) ([]byte, error) {
+//
+// It returns how many entries it dropped, because dropping them silently is
+// the same defect facing the other way: a multi-transport agent degraded to
+// JSON-RPC only leaves its other clients unable to discover an endpoint with
+// nothing anywhere saying why. The caller tells the operator.
+//
+// An additionalInterfaces that is present but is not an array is refused
+// rather than deleted. The count is the whole point; a value that cannot be
+// counted cannot be reported, and dropping it uncounted is the behaviour this
+// return value exists to end.
+func rewriteCard(card []byte, publicURL string) ([]byte, int, error) {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(card, &obj); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if obj == nil {
-		return nil, errors.New("a2a-pep: agent card is null")
+		return nil, 0, errors.New("a2a-pep: agent card is null")
 	}
 	enc, err := json.Marshal(publicURL)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	dropped := 0
+	if raw, ok := obj["additionalInterfaces"]; ok {
+		var alts []json.RawMessage
+		if err := json.Unmarshal(raw, &alts); err != nil {
+			return nil, 0, fmt.Errorf("a2a-pep: agent card additionalInterfaces is present but is not an array: %w", err)
+		}
+		dropped = len(alts)
 	}
 	obj["url"] = enc
 	obj["preferredTransport"] = json.RawMessage(`"JSONRPC"`)
 	delete(obj, "additionalInterfaces")
-	return json.Marshal(obj)
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return nil, 0, err
+	}
+	return out, dropped, nil
 }
 
 // newUpstreamClient builds the client used for both the agent and its card.
@@ -396,8 +431,16 @@ func isEventStream(ct string) bool {
 	return mt == "text/event-stream"
 }
 
-// validateUpstream rejects anything that is not an absolute http(s) endpoint.
-func validateUpstream(raw string) (*url.URL, error) {
+// validateAbsoluteURL rejects anything that is not an absolute http(s) endpoint.
+//
+// It guards BOTH -upstream and -public-url. -public-url was previously taken on
+// trust and marshalled straight into the relayed card, which made the weakest
+// link the one value whose entire purpose is to be an address clients dial: a
+// typo published a broken endpoint to every client that fetched the card. The
+// whole argument for requiring the operator to state it (rather than
+// reconstructing it from forwarded headers) is that a stated value is
+// trustworthy. That only holds if it is checked.
+func validateAbsoluteURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, err

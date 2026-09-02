@@ -21,7 +21,7 @@
 #   T-11 the agent card is relayed with no -public-url to advertise
 #   T-12 the relayed card keeps the wrapped agent's url
 #   T-13 the relayed card keeps additionalInterfaces
-#   T-14 the upstream scheme check is dropped
+#   T-14 the absolute-URL scheme check is dropped (guards -upstream AND -public-url)
 #   T-15 -upstream stops being required
 #   T-16 a bad tts public key no longer stops startup
 #
@@ -150,7 +150,7 @@ run_mutation "T-13 relayed card keeps additionalInterfaces" \
   "	_ = obj" || rc=1
 
 run_mutation "T-14 upstream scheme check dropped" \
-  "TestValidateUpstream" \
+  "TestValidateAbsoluteURL" \
   "	if u.Scheme != \"http\" && u.Scheme != \"https\" {" \
   "	if false && u.Scheme != \"http\" && u.Scheme != \"https\" {" || rc=1
 

@@ -451,24 +451,52 @@ func TestCard_UpstreamFailureIsABadGateway(t *testing.T) {
 
 func TestRewriteCard_RejectsWhatIsNotAnObject(t *testing.T) {
 	for _, bad := range []string{`[]`, `"a string"`, `null`, `not json`, ``} {
-		if _, err := rewriteCard([]byte(bad), "https://guarded.example/"); err == nil {
+		if _, _, err := rewriteCard([]byte(bad), "https://guarded.example/"); err == nil {
 			t.Errorf("rewriteCard accepted %q", bad)
+		}
+	}
+}
+
+// Dropping alternate interfaces silently degrades a multi-transport agent to
+// JSON-RPC only, and the clients that stop discovering those transports have no
+// way to learn why. The count is what lets the operator be told.
+func TestRewriteCard_ReportsHowManyInterfacesItDropped(t *testing.T) {
+	if _, n, err := rewriteCard([]byte(upstreamCard), "https://guarded.example/"); err != nil {
+		t.Fatal(err)
+	} else if n != 1 {
+		t.Fatalf("dropped = %d, want 1", n)
+	}
+	none := `{"name":"x","url":"http://a.invalid/"}`
+	if _, n, err := rewriteCard([]byte(none), "https://guarded.example/"); err != nil {
+		t.Fatal(err)
+	} else if n != 0 {
+		t.Fatalf("dropped = %d on a card with no alternates, want 0", n)
+	}
+}
+
+// -public-url is marshalled straight into the relayed card, so it is an address
+// clients dial. It was previously taken on trust while -upstream was checked,
+// which put the weakest validation on the value with the widest blast radius.
+func TestPublicURLIsHeldToTheSameStandardAsUpstream(t *testing.T) {
+	for _, bad := range []string{"banana", " ", "/relative/path", "ftp://x.invalid/", "http://"} {
+		if u, err := validateAbsoluteURL(bad); err == nil {
+			t.Errorf("a card would have advertised %q (parsed as %v)", bad, u)
 		}
 	}
 }
 
 // ── configuration ─────────────────────────────────────────────────────────
 
-func TestValidateUpstream(t *testing.T) {
+func TestValidateAbsoluteURL(t *testing.T) {
 	for _, ok := range []string{"http://127.0.0.1:9000/", "https://agent.example/a2a/v1"} {
-		if _, err := validateUpstream(ok); err != nil {
-			t.Errorf("validateUpstream(%q) = %v", ok, err)
+		if _, err := validateAbsoluteURL(ok); err != nil {
+			t.Errorf("validateAbsoluteURL(%q) = %v", ok, err)
 		}
 	}
 	for _, bad := range []string{"", "/just/a/path", "agent.example:9000",
 		"file:///etc/passwd", "ftp://agent.example/", "http://"} {
-		if u, err := validateUpstream(bad); err == nil {
-			t.Errorf("validateUpstream(%q) accepted it as %v", bad, u)
+		if u, err := validateAbsoluteURL(bad); err == nil {
+			t.Errorf("validateAbsoluteURL(%q) accepted it as %v", bad, u)
 		}
 	}
 }
